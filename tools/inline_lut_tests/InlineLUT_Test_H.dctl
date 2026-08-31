@@ -1,0 +1,31 @@
+// InlineLUT_Test_H.dctl   -   proves the LUT DATA is actually being read.
+//
+// F and G showed no change, which is correct for an identity LUT - but it is
+// also what you would see if APPLY_LUT were silently doing nothing. This LUT
+// is NOT an identity: it swaps the red and blue channels.
+//
+// EXPECTED: a dramatic, obvious colour change. Blue sky turns red/orange,
+// skin turns blue. If the image is unchanged, the LUT data is being ignored.
+//
+// It also verifies entry ORDER. The .cube format varies the red index fastest,
+// so if the ordering were wrong you would get some other wrong result rather
+// than a clean red/blue swap.
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+    float3 result = APPLY_LUT(p_R, p_G, p_B, CC_TEST_SWAP);
+
+    return result;
+}
+
+DEFINE_CUBE_LUT(CC_TEST_SWAP) {
+LUT_3D_SIZE 2
+0.000000 0.000000 0.000000
+0.000000 0.000000 1.000000
+0.000000 1.000000 0.000000
+0.000000 1.000000 1.000000
+1.000000 0.000000 0.000000
+1.000000 0.000000 1.000000
+1.000000 1.000000 0.000000
+1.000000 1.000000 1.000000
+}

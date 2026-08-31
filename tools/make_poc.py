@@ -18,16 +18,16 @@ TEST_LOOK = sys.argv[2] if len(sys.argv) > 2 else 'Koda'
 def inline_block(macro, size, data):
     """Inline CUBE LUT, per the DCTL documentation:
 
-        DEFINE_CUBE_LUT([lutName])
-        {
-            [LUT_Content]
+        DEFINE_CUBE_LUT([lutName]) {
+        [LUT_Content]
         }
 
-    The content is wrapped in curly brackets and follows the standard CUBE
-    format - LUT_3D_SIZE then the RGB triplets, red index varying fastest.
-    There is no terminator keyword.
+    Verified against the target Resolve build: the opening brace must be on the
+    same line as the macro, the content is the standard CUBE format -
+    LUT_3D_SIZE then RGB triplets with the red index varying fastest - and
+    there is no terminator keyword.
     """
-    lines = [f"DEFINE_CUBE_LUT({macro})", "{", f"LUT_3D_SIZE {size}"]
+    lines = [f"DEFINE_CUBE_LUT({macro}) {{", f"LUT_3D_SIZE {size}"]
     lines += [f"{c[0]:.8f} {c[1]:.8f} {c[2]:.8f}" for c in data]
     lines.append("}")
     return "\n".join(lines)
@@ -61,12 +61,21 @@ f"//    Test Look ({TEST_LOOK})       {tst_s}^3, {tst_s**3} entries\n"
 + inline_block('CC_LUT_TEST', tst_s, tst_d) + "\n")
 
 out = re.sub(r'// ---- LUT declarations -+\n(?:.*\n)*?DEFINE_LUT\(CC_LUT_VISTA[^\n]*\n',
-             block, out)
+             '', out)
+# Inline LUT data goes at the very end, after the main entry function. The
+# documentation permits either side, and keeping 2 MB of numbers out of the
+# readable part of the file is worth doing.
+out = out.rstrip() + "\n\n\n" + block
 
 # --- 3. lookup switch ------------------------------------------------------
+# APPLY_LUT is assigned to a float3 and that variable returned. Returning
+# APPLY_LUT directly makes Resolve reject the file with "main DCTL function's
+# return value must be float3" - confirmed on the target build.
 out = re.sub(r'    if \(look == CC_LOOK_REFERENCE\).*?\n    return v;\n',
-             '    if (look == CC_LOOK_TEST) return APPLY_LUT(v.x, v.y, v.z, CC_LUT_TEST);\n\n'
-             '    return APPLY_LUT(v.x, v.y, v.z, CC_LUT_REFERENCE);\n', out, flags=re.S)
+             '    float3 result;\n\n'
+             '    if (look == CC_LOOK_TEST) result = APPLY_LUT(v.x, v.y, v.z, CC_LUT_TEST);\n'
+             '    else                      result = APPLY_LUT(v.x, v.y, v.z, CC_LUT_REFERENCE);\n\n'
+             '    return result;\n', out, flags=re.S)
 # with only two entries there is no None, so the look stage always applies one
 out = out.replace("    if (look == CC_LOOK_NONE || mix <= 0.0f) return v;",
                   "    if (mix <= 0.0f) return v;")
