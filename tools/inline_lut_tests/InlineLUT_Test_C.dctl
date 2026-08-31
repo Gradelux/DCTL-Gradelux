@@ -1,13 +1,28 @@
-// InlineLUT_Test_C.dctl
-// Only once one of the above builds. TWO inline LUTs, both identities, placed
-// after the main entry function. Answers whether multiple inline LUTs coexist,
-// which decides whether all 19 looks can be embedded.
+// InlineLUT_Test_C.dctl   -   CAN TWO INLINE LUTS COEXIST?
+//
+// This is now the only open question. Single inline LUTs work: tests F, G and H
+// all built. The 2 MB CineCore build failed with 'use of undeclared identifier'
+// for CC_LUT_TESTParams / ShaperR / ShaperG / ShaperB - the generated symbols
+// for the SECOND LUT in the file. The first one, CC_LUT_REFERENCE, was not
+// reported. That suggests only the first DEFINE_CUBE_LUT is being processed.
+//
+// Both LUTs here are 2x2x2 IDENTITIES, and both are applied, so:
+//   BUILDS, image unchanged  -> multiple inline LUTs work; the CineCore failure
+//                               is about size or position, not multiplicity
+//   FAILS on CC_TEST_LUT_TWO -> only one inline LUT per DCTL on this build,
+//                               and embedding 19 this way is impossible
+//
+// Uses the syntax confirmed working in F and G: brace on the same line, LUTs
+// after the main function, every APPLY_LUT assigned to a float3 and never
+// returned directly.
 
 __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
 {
     float3 a = APPLY_LUT(p_R, p_G, p_B, CC_TEST_LUT_ONE);
 
-    return APPLY_LUT(a.x, a.y, a.z, CC_TEST_LUT_TWO);
+    float3 b = APPLY_LUT(a.x, a.y, a.z, CC_TEST_LUT_TWO);
+
+    return b;
 }
 
 DEFINE_CUBE_LUT(CC_TEST_LUT_ONE) {
