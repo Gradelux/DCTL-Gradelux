@@ -94,10 +94,10 @@ DEFINE_UI_PARAMS(gSplitBalance, Split Tone Balance, DCTLUI_SLIDER_FLOAT, 0.0f, -
 DEFINE_UI_PARAMS(gBleachBypass, Bleach Bypass, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gBleachMix, Bleach Bypass Mix, DCTLUI_SLIDER_FLOAT, 1.0f, 0.0f, 1.0f, 0.001f)
 
-// ---- Optical ---------------------------------------------------------------
-//  These read neighbouring pixels, which is why this DCTL uses the
-//  texture form of the main entry function. Both are skipped entirely at zero,
-//  so they cost nothing when unused.
+// ---- Optical, per-pixel ----------------------------------------------------
+//  Vignette and Matte read only the pixel they are working on, so they cost
+//  nothing beyond arithmetic. The sampled effects that do read neighbours are
+//  grouped separately below.
 DEFINE_UI_PARAMS(gVignette, Vignette, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gVignetteSize, Vignette Size, DCTLUI_SLIDER_FLOAT, 0.5f, 0.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gVignetteSoft, Vignette Softness, DCTLUI_SLIDER_FLOAT, 0.5f, 0.0f, 1.0f, 0.001f)
