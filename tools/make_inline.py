@@ -15,7 +15,7 @@ from bake_luts import load_cube
 BAKED = sys.argv[1]
 SIZE  = int(sys.argv[2]) if len(sys.argv) > 2 else 33
 
-LOOKS = [('CC_LUT_REFERENCE', '_Reference_Identity'), ('CC_LUT_70S', '70s'),
+LOOKS = [('CC_LUT_70S', '70s'),
          ('CC_LUT_ALPINE','Alpine'), ('CC_LUT_CHROME','Chrome'), ('CC_LUT_CLEAN','Clean'),
          ('CC_LUT_COAST','Coast'), ('CC_LUT_DAZE','Daze'), ('CC_LUT_DUSK','Dusk'),
          ('CC_LUT_KODA','Koda'), ('CC_LUT_LAGUNA','Laguna'), ('CC_LUT_LUCID','Lucid'),
@@ -45,17 +45,38 @@ def resample(src_size, src_data, n):
     return [sample(r/(n-1), g/(n-1), b/(n-1))
             for b in range(n) for g in range(n) for r in range(n)]
 
-def block(macro, size, data):
-    return "\n".join([f"DEFINE_CUBE_LUT({macro}) {{", f"LUT_3D_SIZE {size}"]
-                     + [f"{c[0]:.8f} {c[1]:.8f} {c[2]:.8f}" for c in data] + ["}"])
+def raw_cube(path):
+    """Return (size, [raw data lines]) with the numbers EXACTLY as written in the
+    source file. Reformatting them loses precision: values in scientific
+    notation such as 6.10361e-05 do not survive a fixed-decimal round trip."""
+    size, rows = None, []
+    for line in open(path):
+        t = line.strip()
+        if not t or t.startswith('#') or t.startswith('TITLE') or t.startswith('DOMAIN'):
+            continue
+        if t.startswith('LUT_3D_SIZE'):
+            size = int(t.split()[1]); continue
+        if len(t.split()) == 3:
+            rows.append(t)
+    assert size and len(rows) == size ** 3, f"{path}: {size}^3 vs {len(rows)} rows"
+    return size, rows
+
+def block(macro, size, rows):
+    return "\n".join([f"DEFINE_CUBE_LUT({macro}) {{", f"LUT_3D_SIZE {size}"] + rows + ["}"])
 
 src = open('CineCore.dctl', encoding='utf-8').read()
 out = src
 
-blocks = []
+# Reference Identity is generated, not loaded: a 2x2x2 identity is exact under
+# trilinear interpolation, so it is a true no-op rather than a near one.
+ident = [f"{i & 1}.000000 {(i >> 1) & 1}.000000 {(i >> 2) & 1}.000000" for i in range(8)]
+blocks = [block('CC_LUT_REFERENCE', 2, ident)]
+
+# Every look is embedded EXACTLY as supplied: original values, original grid
+# size, no colour space conversion and no resampling of any kind.
 for macro, fn in LOOKS:
-    s, d = load_cube(os.path.join(BAKED, fn + '.cube'))
-    blocks.append(block(macro, SIZE, resample(s, d, SIZE)))
+    s, rows = raw_cube(os.path.join(BAKED, fn + '.cube'))
+    blocks.append(block(macro, s, rows))
 
 header = ("// ---- Inline LUT data ------------------------------------------------------\n"
           "//  All look data is embedded here. This DCTL has NO external file dependency\n"
@@ -65,14 +86,16 @@ header = ("// ---- Inline LUT data ---------------------------------------------
           "//  are emitted where the block sits, and referencing them earlier in the file\n"
           "//  fails to compile.\n"
           "//\n"
-          "//  Values are the original look data, emitted verbatim at 8 decimals.\n"
+          "//  Values are the original look data EXACTLY as supplied - original values,\n"
+          "//  original grid size, no colour space conversion, no resampling.\n"
           + "\n\n".join(blocks) + "\n")
 
 out = re.sub(r'// ---- LUT declarations -+\n(?:.*\n)*?DEFINE_LUT\(CC_LUT_VISTA[^\n]*\n',
              header, out)
 
 # APPLY_LUT assigned to a float3, never returned directly.
-lookup = ["__DEVICE__ float3 cc_lookup(float3 v, int look)", "{", "    float3 result = v;", ""]
+lookup = ["__DEVICE__ float3 cc_lookup(float3 v, int look)", "{", "    float3 result = v;", "",
+          "    if (look == CC_LOOK_REFERENCE) result = APPLY_LUT(v.x, v.y, v.z, CC_LUT_REFERENCE);"]
 for macro, fn in LOOKS:
     key = 'CC_LOOK_' + ('REFERENCE' if fn.startswith('_') else fn.upper().replace('70S','70S'))
     lookup.append(f"    if (look == {key}) result = APPLY_LUT(v.x, v.y, v.z, {macro});")
@@ -83,7 +106,7 @@ out = re.sub(r'__DEVICE__ float3 cc_lookup\(float3 v, int look\)\n\{\n(?:.*\n)*?
 assert 'DEFINE_LUT(' not in out and 'luts/' not in out and 'END_CUBE_LUT' not in out
 assert not re.findall(r'[\w./\\-]+\.cube', out)
 assert 'return APPLY_LUT' not in out
-assert out.count('DEFINE_CUBE_LUT') == len(LOOKS)
+assert out.count('DEFINE_CUBE_LUT') == len(LOOKS) + 1
 tpos = out.index('__DEVICE__ float3 cc_lookup')
 for m in re.finditer(r'^DEFINE_CUBE_LUT\((\w+)\) \{$', out, re.M):
     assert m.start() < tpos, f"{m.group(1)} defined after the code that uses it"
