@@ -68,7 +68,6 @@ DEFINE_UI_PARAMS(gFilmDensity, Film Density, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.
 DEFINE_UI_PARAMS(gDensityStrength, Density Strength, DCTLUI_SLIDER_FLOAT, 0.5f, 0.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gSubSaturation, Subtractive Saturation, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gRichness, Richness, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
-DEFINE_UI_PARAMS(gColorSeparation, Color Separation, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
 
 // ---- Hue density ----------------------------------------------------------
 //  Positive adds density to that hue family - deeper, heavier. Negative opens
@@ -118,13 +117,8 @@ DEFINE_UI_PARAMS(gNegPrint, Negative to Print, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f,
 // ---- Chroma response -------------------------------------------------------
 DEFINE_UI_PARAMS(gHiDesat, Highlight Desaturation, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gLoDesat, Shadow Desaturation, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
-DEFINE_UI_PARAMS(gLoDesatStart, Shadow Desat Start, DCTLUI_SLIDER_FLOAT, 0.22f, 0.05f, 0.5f, 0.001f)
 
 // ---- Dye layer behaviour ---------------------------------------------------
-DEFINE_UI_PARAMS(gCrossR, Red Crosstalk, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
-DEFINE_UI_PARAMS(gCrossG, Green Crosstalk, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
-DEFINE_UI_PARAMS(gCrossB, Blue Crosstalk, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
-DEFINE_UI_PARAMS(gCrossAmount, Crosstalk Amount, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gChanDensR, Red Channel Density, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gChanDensG, Green Channel Density, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gChanDensB, Blue Channel Density, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
@@ -291,10 +285,16 @@ DEFINE_UI_PARAMS(gLoHueShift, Shadow Hue Shift, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f
 //  in log, which is exactly zero for a neutral and needs no luminance
 //  weighting, no square root and no arc tangent to compute.
 #define CC_CHROMA_NORM      0.40f       // log spread treated as fully saturated
+//  Film density gets its own, tighter reference. Sharing 0.40 with the hue
+//  bands was the reason the control did almost nothing: real footage rarely
+//  exceeds a log spread of 0.30, so the gate never reached 1.0 and the control
+//  never reached the strength it advertised. At 0.25 a moderately coloured
+//  subject actually lands in the working part of the curve.
+#define CC_DENSITY_NORM     0.25f       // spread at which film density is fully engaged
 #define CC_CHROMA_FLOOR     0.002f      // below this a pixel is treated as neutral
 
 // --- film density ---
-#define CC_DENSITY_AMOUNT   0.055f      // max log density at full chroma, ~0.75 stop
+#define CC_DENSITY_AMOUNT   0.090f      // max log density at full chroma, ~1.2 stops
 #define CC_DENSITY_EXP_LO   3.0f        // strength 0 : only the purest colors gain
 #define CC_DENSITY_EXP_HI   1.2f        // strength 1 : reaches down into mid chroma
 
@@ -325,16 +325,6 @@ DEFINE_UI_PARAMS(gLoHueShift, Shadow Hue Shift, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f
 #define CC_BLEACH_DESAT     0.65f       // desaturation towards luminance at full strength
 #define CC_BLEACH_GAMMA     0.55f       // added log gamma at full strength
 
-// --- color separation ---
-#define CC_SEP_MAX          0.85f       // max blend towards the hue contrast curve
-//  A LINEAR chroma gate, not the quadratic one film density uses. The quadratic
-//  gate was tried first and made the control useless: at a typical chroma of
-//  0.15 it kept only 14 percent of the effect, so the median channel moved
-//  0.0012 in code value - about a sixtieth of a stop, and hue moved half a
-//  degree. Protecting skin is worth doing, but not at the cost of the control
-//  doing nothing at all. Skin's low chroma still protects it under a linear
-//  gate; it simply is not protected six times over.
-#define CC_SEP_EXP          1.0f        // chroma selectivity of the effect
 
 // --- optical effects ---
 #define CC_MICRO_LIMIT      0.075f      // micro contrast detail limit, stops ringing
@@ -366,10 +356,10 @@ DEFINE_UI_PARAMS(gLoHueShift, Shadow Hue Shift, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f
 #define CC_HIDESAT_START    0.45f       // luminance at which highlights start to lose chroma
 #define CC_HIDESAT_ROLL     0.205f      // width of that transition
 #define CC_HIDESAT_MAX      0.85f       // most chroma removable from highlights
+#define CC_LODESAT_START    0.22f       // luminance below which shadows lose chroma
 #define CC_LODESAT_MAX      0.75f       // most chroma removable from shadows
 
 // --- dye layer behaviour ---
-#define CC_CROSS_MAX        0.18f       // strongest inter-channel bleed
 #define CC_CHANDENS_MAX     0.07f       // strongest per-channel density, in log
 
 // --- tonal density ---
@@ -581,9 +571,9 @@ __DEVICE__ float cc_chroma(float3 v)
 // without any hue detection: skin's log spread is roughly a quarter of a
 // saturated primary's, and squaring that ratio leaves it at a few percent of
 // the full effect.
-__DEVICE__ float cc_chroma_weight(float chroma, float exponent)
+__DEVICE__ float cc_chroma_weight(float chroma, float norm, float exponent)
 {
-    return cc_pow_pos(_saturatef(chroma / CC_CHROMA_NORM), exponent);
+    return cc_pow_pos(_saturatef(chroma / _fmaxf(norm, CC_EPS)), exponent);
 }
 
 // Tone norm driving the highlight shoulder. Biasing towards the max channel
@@ -891,7 +881,7 @@ __DEVICE__ float3 cc_film_density(float3 v, float amount, float strength)
     if (amount <= 0.0f) return v;
 
     float e = cc_lerp(CC_DENSITY_EXP_LO, CC_DENSITY_EXP_HI, _saturatef(strength));
-    float w = cc_chroma_weight(cc_chroma(v), e);
+    float w = cc_chroma_weight(cc_chroma(v), CC_DENSITY_NORM, e);
     float o = -_saturatef(amount) * CC_DENSITY_AMOUNT * w;
 
     return make_float3(v.x + o, v.y + o, v.z + o);
@@ -1170,7 +1160,7 @@ __DEVICE__ float3 cc_hue_density(float3 v, float red, float orange, float yellow
             + magenta * cc_hue_band(h, 5.0f);
 
     // Positive control means more density, which means darker, hence the sign.
-    float o = -a * CC_HUE_DENSITY_AMT * cc_chroma_weight(chroma, CC_HUE_DENSITY_EXP);
+    float o = -a * CC_HUE_DENSITY_AMT * cc_chroma_weight(chroma, CC_CHROMA_NORM, CC_HUE_DENSITY_EXP);
 
     return make_float3(v.x + o, v.y + o, v.z + o);
 }
@@ -1296,91 +1286,6 @@ __DEVICE__ float3 cc_bleach_bypass(float3 v, float amount, float mix)
     s = make_float3(cc_bleach_curve(s.x, g), cc_bleach_curve(s.y, g), cc_bleach_curve(s.z, g));
 
     return cc_lerp3(v, s, _saturatef(mix));
-}
-
-// --- Color separation -------------------------------------------------------
-// INTENDED BEHAVIOR: neighbouring hues become easier to tell apart, while skin
-// and neutrals stay where they are and the primaries do not swing around.
-//
-// APPROACH: separation is a change in how fast hue varies, not a rotation, so
-// this is built as a contrast curve on hue position rather than as an offset.
-//
-// Sort the channels into min, median and max. The max and min identify which
-// 60-degree sector of the hue circle the pixel is in; the median's position
-// inside that sector,
-//
-//     p = (median - min) / (max - min)        in 0..1
-//
-// is where the hue sits within the sector. Applying a smoothstep to p is a
-// contrast curve on hue: p = 0 and p = 1 are exact fixed points, so the six
-// pure hue axes cannot move at all, while hues in the middle of a sector are
-// pushed apart from each other at up to 1.5x the original rate. That is
-// separation between neighbouring hues with no rotation of the primaries.
-//
-// Only the median channel is moved. Min and max are preserved exactly, so the
-// chroma measure is unchanged to the last bit and this stage cannot alter
-// saturation, brightness or density. It is a pure hue operation.
-//
-// STABILITY: pixels below the chroma floor return untouched, because hue is
-// meaningless for a neutral and p would be ill-conditioned. Above the floor the
-// effect is scaled by a chroma selectivity curve,
-// so low-chroma colors barely move: skin sits at roughly a quarter of a
-// saturated primary's spread, and the squared weight leaves it at a few percent
-// of the effect. The blend is capped at CC_SEP_MAX so the mapping's slope stays
-// strictly positive across the whole sector, which means hue order is preserved
-// and hues near a primary compress towards it without ever collapsing onto it.
-//
-// LIMITATIONS: hue position here is defined in log RGB, not in a perceptual hue
-// space, so equal changes in p are not perceptually equal across the circle.
-// This is an APPROXIMATION of hue and is labelled as one. Also, since the
-// average slope of any fixed-endpoint mapping is 1, extra separation in the
-// middle of a sector is necessarily paid for with mild compression near the
-// sector ends. That trade is deliberate: it is what gives cleaner primaries.
-//
-// WHY THIS APPROACH: an arc tangent hue angle followed by a rotation was
-// rejected on two grounds. It is ill-conditioned near neutral, exactly where
-// stability matters most, and a rotation moves colors bodily around the wheel,
-// which is the aggressive hue shifting this control is supposed to avoid. The
-// sector-position formulation has no trigonometry, no ill-conditioning, and
-// pins the six primaries by construction.
-
-// Rebuilds a pixel after the median channel has been moved. Written as a
-// monotone piecewise-linear remap pinned at min, median and max rather than as
-// an offset applied to whichever channel is the median, because that handles
-// ties between equal channels without double-counting them. Both denominators
-// are tested before use.
-__DEVICE__ float cc_remap_mid(float c, float mn, float md, float mx, float mdOut)
-{
-    if (c <= md)
-    {
-        float d = md - mn;
-        return (d > CC_EPS) ? (mn + (c - mn) * (mdOut - mn) / d) : mdOut;
-    }
-    float d = mx - md;
-    return (d > CC_EPS) ? (mdOut + (c - md) * (mx - mdOut) / d) : mdOut;
-}
-
-__DEVICE__ float3 cc_color_separation(float3 v, float amount)
-{
-    if (amount <= 0.0f) return v;
-
-    float mx = cc_maxc(v);
-    float mn = cc_minc(v);
-    float range = mx - mn;
-
-    // Near-neutral: hue carries no information and p is ill-conditioned.
-    if (range < CC_CHROMA_FLOOR) return v;
-
-    float md = cc_median3(v.x, v.y, v.z);
-    float p  = _saturatef((md - mn) / range);          // guarded by the floor
-
-    float k  = _saturatef(amount) * CC_SEP_MAX * cc_chroma_weight(range, CC_SEP_EXP);
-    float sp = p * p * (3.0f - 2.0f * p);              // fixed at p = 0 and p = 1
-    float mdOut = mn + (p + k * (sp - p)) * range;
-
-    return make_float3(cc_remap_mid(v.x, mn, md, mx, mdOut),
-                       cc_remap_mid(v.y, mn, md, mx, mdOut),
-                       cc_remap_mid(v.z, mn, md, mx, mdOut));
 }
 
 
@@ -1532,7 +1437,7 @@ __DEVICE__ float3 cc_neg_print(float3 v, float amount, float pivot)
 // Chroma is scaled towards the pixel's own luminance, so luminance is preserved
 // exactly and only colourfulness moves. The weight is a smoothstep, so the
 // effect eases in rather than switching on at a threshold.
-__DEVICE__ float3 cc_tonal_desat(float3 v, float hiAmt, float loAmt, float loStart)
+__DEVICE__ float3 cc_tonal_desat(float3 v, float hiAmt, float loAmt)
 {
     if (hiAmt <= 0.0f && loAmt <= 0.0f) return v;
 
@@ -1546,40 +1451,13 @@ __DEVICE__ float3 cc_tonal_desat(float3 v, float hiAmt, float loAmt, float loSta
     }
     if (loAmt > 0.0f)
     {
-        float w = _fmaxf(loStart, CC_EPS);
-        k -= _saturatef(loAmt) * CC_LODESAT_MAX * cc_smooth01((loStart - y) / w);
+        k -= _saturatef(loAmt) * CC_LODESAT_MAX
+             * cc_smooth01((CC_LODESAT_START - y) / CC_LODESAT_START);
     }
 
     k = _fmaxf(k, 0.0f);
 
     return make_float3(y + (v.x - y) * k, y + (v.y - y) * k, y + (v.z - y) * k);
-}
-
-// --- Colour crosstalk -------------------------------------------------------
-// Real dye layers are not independent: each absorbs a little outside its own
-// band, so a strong exposure in one layer leaves a trace in the others. That
-// unwanted absorption is most of what gives a stock its colour signature.
-//
-// Each channel picks up a fraction of the mean of the other two. The amount
-// taken is subtracted from the channel's own weight, so every row of the
-// implied matrix still sums to 1 and A NEUTRAL IS EXACTLY UNCHANGED - crosstalk
-// tints colour, never grey.
-__DEVICE__ float3 cc_crosstalk(float3 v, float cr, float cg, float cb, float amount)
-{
-    if (amount <= 0.0f) return v;
-
-    float a = _saturatef(amount) * CC_CROSS_MAX;
-    float kr = _clampf(cr, -1.0f, 1.0f) * a;
-    float kg = _clampf(cg, -1.0f, 1.0f) * a;
-    float kb = _clampf(cb, -1.0f, 1.0f) * a;
-
-    float mr = (v.y + v.z) * 0.5f;
-    float mg = (v.x + v.z) * 0.5f;
-    float mb = (v.x + v.y) * 0.5f;
-
-    return make_float3(v.x + kr * (mr - v.x),
-                       v.y + kg * (mg - v.y),
-                       v.z + kb * (mb - v.z));
 }
 
 // --- Channel density --------------------------------------------------------
@@ -1692,6 +1570,22 @@ __DEVICE__ float3 cc_color_bias(float3 v, float master, float mid)
     }
 
     return make_float3(v.x + ax.x * a, v.y + ax.y * a, v.z + ax.z * a);
+}
+
+// Rebuilds a pixel after its median channel has been moved, for the tonal hue
+// shifts below. Written as a monotone piecewise-linear remap pinned at min,
+// median and max rather than as an offset applied to whichever channel is the
+// median, because that handles ties between equal channels without
+// double-counting them. Both denominators are tested before use.
+__DEVICE__ float cc_remap_mid(float c, float mn, float md, float mx, float mdOut)
+{
+    if (c <= md)
+    {
+        float d = md - mn;
+        return (d > CC_EPS) ? (mn + (c - mn) * (mdOut - mn) / d) : mdOut;
+    }
+    float d = mx - md;
+    return (d > CC_EPS) ? (mdOut + (c - md) * (mx - mdOut) / d) : mdOut;
 }
 
 // Hue movement confined to one end of the tone scale. It reuses the sextant hue
@@ -1832,14 +1726,14 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
         gBlackPoint == 0.0f && gWhitePoint == 0.0f &&
         gHighlightShoulder == 0.0f && gShadowToe == 0.0f && gShadowDepth == 0.0f &&
         gFilmDensity == 0.0f && gSubSaturation == 0.0f && gRichness == 0.0f &&
-        gColorSeparation == 0.0f && gBleachBypass == 0.0f &&
+        gBleachBypass == 0.0f &&
         gRedDensity == 0.0f && gOrangeDensity == 0.0f && gYellowDensity == 0.0f &&
         gGreenDensity == 0.0f && gCyanDensity == 0.0f && gBlueDensity == 0.0f &&
         gMagentaDensity == 0.0f &&
         gWarmHighlights == 0.0f && gCoolShadows == 0.0f &&
         gMatte == 0.0f &&
         gPrintContrast == 0.0f && gNegPrint == 0.0f &&
-        gHiDesat == 0.0f && gLoDesat == 0.0f && gCrossAmount == 0.0f &&
+        gHiDesat == 0.0f && gLoDesat == 0.0f &&
         gChanDensR == 0.0f && gChanDensG == 0.0f && gChanDensB == 0.0f &&
         gBlackDensity == 0.0f && gHighlightDensity == 0.0f && gFilmFade == 0.0f &&
         gFilmBias == 0.0f && gMidBias == 0.0f &&
@@ -1976,19 +1870,15 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     // -- 14. Richness --------------------------------------------------------
     cv = cc_richness(cv, gRichness);
 
-    // -- 15. Color separation ------------------------------------------------
-    cv = cc_color_separation(cv, gColorSeparation);
-
     // -- 15b. Hue-specific density shaping -----------------------------------
     cv = cc_hue_density(cv, gRedDensity, gOrangeDensity, gYellowDensity,
                         gGreenDensity, gCyanDensity, gBlueDensity, gMagentaDensity);
 
     // -- 15c. Dye layer behaviour --------------------------------------------
-    cv = cc_crosstalk(cv, gCrossR, gCrossG, gCrossB, gCrossAmount);
     cv = cc_channel_density(cv, gChanDensR, gChanDensG, gChanDensB);
 
     // -- 15d. Tonal chroma response -------------------------------------------
-    cv = cc_tonal_desat(cv, gHiDesat, gLoDesat, gLoDesatStart);
+    cv = cc_tonal_desat(cv, gHiDesat, gLoDesat);
 
     // -- 15e. Tonal density ---------------------------------------------------
     cv = cc_tonal_density(cv, gBlackDensity, gHighlightDensity);
