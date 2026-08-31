@@ -36,6 +36,13 @@ static float gHalation=0,gHalationWidth=0.5f,gHalationThresh=0.45f;
 static float gBloom=0,gBloomWidth=0.5f,gBloomThresh=0.50f;
 static float gVignette=0,gVignetteSize=0.5f,gVignetteSoft=0.5f,gMatte=0;
 static float gSharpen=0,gSharpenRadius=0.35f,gSharpenThresh=0.15f;
+static float gPrintContrast=0,gPrintPivot=0.336f,gPrintShoulder=0.5f,gPrintToe=0.5f,gNegPrint=0;
+static float gHiDesat=0,gHiDesatStart=0.45f,gHiDesatRoll=0.5f,gLoDesat=0,gLoDesatStart=0.22f;
+static float gCrossR=0,gCrossG=0,gCrossB=0,gCrossAmount=0;
+static float gChanDensR=0,gChanDensG=0,gChanDensB=0;
+static float gBlackDensity=0,gHighlightDensity=0,gFilmFade=0;
+static float gFilmBias=0,gMidBias=0,gHiHueShift=0,gLoHueShift=0;
+static float gHaloWarm=0,gHaloSat=1,gBloomWarm=0,gVignetteWarm=0;
 #include "CineCore.dctl"
 
 static int fails=0;
@@ -47,7 +54,12 @@ static void reset(void){ gExposure=0;gTemperature=0;gTint=0;gContrast=1;gPivot=0
   gMagentaDensity=0;gWarmHighlights=0;gCoolShadows=0;gSplitBalance=0;gBleachBypass=0;gBleachMix=1;
   gHalation=0;gHalationWidth=0.5f;gHalationThresh=0.45f;gBloom=0;gBloomWidth=0.5f;gBloomThresh=0.5f;
   gVignette=0;gVignetteSize=0.5f;gVignetteSoft=0.5f;gMatte=0;gBypass=0;
-  gSharpen=0;gSharpenRadius=0.35f;gSharpenThresh=0.15f; }
+  gSharpen=0;gSharpenRadius=0.35f;gSharpenThresh=0.15f;
+  gPrintContrast=0;gPrintPivot=0.336f;gPrintShoulder=0.5f;gPrintToe=0.5f;gNegPrint=0;
+  gHiDesat=0;gHiDesatStart=0.45f;gHiDesatRoll=0.5f;gLoDesat=0;gLoDesatStart=0.22f;
+  gCrossR=0;gCrossG=0;gCrossB=0;gCrossAmount=0;gChanDensR=0;gChanDensG=0;gChanDensB=0;
+  gBlackDensity=0;gHighlightDensity=0;gFilmFade=0;gFilmBias=0;gMidBias=0;
+  gHiHueShift=0;gLoHueShift=0;gHaloWarm=0;gHaloSat=1;gBloomWarm=0;gVignetteWarm=0; }
 static float3 T(int x,int y){ return transform(W,H,x,y,&TR,&TG,&TB); }
 static float md(float3 a,float3 b){ return fmaxf(fmaxf(fabsf(a.x-b.x),fabsf(a.y-b.y)),fabsf(a.z-b.z)); }
 static float3 IN(int x,int y){ return make_float3(TR.p[y][x],TG.p[y][x],TB.p[y][x]); }
@@ -167,6 +179,98 @@ int main(void){
     float rim=0; for(int y=0;y<H;y++){ rim=fmaxf(rim,fabsf(T(0,y).x-T(1,y).x)); }
     sprintf(buf,"largest edge step %.4f",rim);
     check("no edge artefact from clamped sampling", rim<0.02f, buf);
+
+    printf("\n--- film response ---\n");
+    /* flat grey ramp frame for tonal work, plus a saturated patch */
+    for(int y=0;y<H;y++) for(int x=0;x<W;x++){ float v=(float)x/(W-1);
+        TR.p[y][x]=v; TG.p[y][x]=v; TB.p[y][x]=v; }
+    /* mid probe sits AT the pivot value, not at the middle of the frame */
+    int lo=12, mmid=(int)(0.336f*(W-1)), hi=W-14;
+
+    /* An S-curve steepens the middle and compresses BOTH ends. Asserting that
+       it raises everything would be asserting it is not an S-curve. Probes:
+       shadow, the pivot itself, the upper midtones, and an extreme specular. */
+    int umid=(int)(0.60f*(W-1));
+    reset(); float3 a0=T(lo,H/2), b0=T(mmid,H/2), u0=T(umid,H/2), c0=T(hi,H/2);
+    reset(); gPrintContrast=1.0f;
+    float3 a1=T(lo,H/2), bq=T(mmid,H/2), u1=T(umid,H/2), cq=T(hi,H/2);
+    sprintf(buf,"shadow %+.4f  pivot %+.4f  upper mid %+.4f  specular %+.4f",
+            a1.x-a0.x, bq.x-b0.x, u1.x-u0.x, cq.x-c0.x);
+    check("print curve: shadows down, pivot held, upper mids up, speculars compressed",
+          a1.x < a0.x - 0.005f && fabsf(bq.x-b0.x) < 0.01f &&
+          u1.x > u0.x + 0.005f && cq.x < c0.x, buf);
+    reset(); gPrintContrast=1.0f; int nm2=0; float pv=-9;
+    for(int x=0;x<W;x++){ float v=T(x,H/2).x; if(v<pv-1e-6f) nm2++; pv=v; }
+    sprintf(buf,"%d reversals",nm2);
+    check("print curve stays monotonic", nm2==0, buf);
+    reset(); gNegPrint=1.0f; float3 n1=T(hi,H/2);
+    reset(); gNegPrint=-1.0f; float3 n2=T(hi,H/2);
+    sprintf(buf,"print %+.4f vs negative %+.4f", n1.x-c0.x, n2.x-c0.x);
+    check("negative and print pull in opposite directions", (n1.x-c0.x)*(n2.x-c0.x)<0.0f, buf);
+
+    /* saturated colour frame */
+    for(int y=0;y<H;y++) for(int x=0;x<W;x++){ float t=(float)x/(W-1);
+        TR.p[y][x]=0.15f+t*0.55f; TG.p[y][x]=0.10f+t*0.30f; TB.p[y][x]=0.08f+t*0.22f; }
+    int dk=10, br=W-12;
+    reset(); float3 s0=T(br,H/2), t0=T(dk,H/2);
+    float ch0=fmaxf(fmaxf(s0.x,s0.y),s0.z)-fminf(fminf(s0.x,s0.y),s0.z);
+    float cl0=fmaxf(fmaxf(t0.x,t0.y),t0.z)-fminf(fminf(t0.x,t0.y),t0.z);
+    /* the bright patch has luminance 0.44, so the start must sit below it */
+    reset(); gHiDesat=1.0f; gHiDesatStart=0.30f; float3 sq=T(br,H/2), t1=T(dk,H/2);
+    float ch1=fmaxf(fmaxf(sq.x,sq.y),sq.z)-fminf(fminf(sq.x,sq.y),sq.z);
+    float cl1=fmaxf(fmaxf(t1.x,t1.y),t1.z)-fminf(fminf(t1.x,t1.y),t1.z);
+    sprintf(buf,"highlight chroma %.4f->%.4f, shadow %.4f->%.4f",ch0,ch1,cl0,cl1);
+    check("highlight desat removes chroma from highlights only", ch1<ch0*0.5f && fabsf(cl1-cl0)<1e-4f, buf);
+    sprintf(buf,"luma delta %.2e", fabsf((sq.x*0.2126f+sq.y*0.7152f+sq.z*0.0722f)-(s0.x*0.2126f+s0.y*0.7152f+s0.z*0.0722f)));
+    check("highlight desat preserves luminance", fabsf((sq.x*0.2126f+sq.y*0.7152f+sq.z*0.0722f)-(s0.x*0.2126f+s0.y*0.7152f+s0.z*0.0722f))<1e-5f, buf);
+    reset(); gLoDesat=1.0f; float3 t2=T(dk,H/2);
+    float cl2=fmaxf(fmaxf(t2.x,t2.y),t2.z)-fminf(fminf(t2.x,t2.y),t2.z);
+    sprintf(buf,"shadow chroma %.4f->%.4f",cl0,cl2);
+    check("shadow desat removes chroma from shadows", cl2<cl0*0.7f, buf);
+
+    /* crosstalk and channel density must leave neutrals alone / not */
+    float ntint=0, ctint=0;
+    for(int g=1;g<10;g++){ float v=g*0.09f;
+      for(int y=0;y<H;y++) for(int x=0;x<W;x++){ TR.p[y][x]=v;TG.p[y][x]=v;TB.p[y][x]=v; }
+      reset(); gCrossR=1;gCrossG=-1;gCrossB=1;gCrossAmount=1;
+      float3 o=T(mmid,H/2); ntint=fmaxf(ntint, fmaxf(fmaxf(o.x,o.y),o.z)-fminf(fminf(o.x,o.y),o.z));
+      reset(); gChanDensR=1;gChanDensB=-1;
+      float3 o2=T(mmid,H/2); ctint=fmaxf(ctint, fmaxf(fmaxf(o2.x,o2.y),o2.z)-fminf(fminf(o2.x,o2.y),o2.z)); }
+    sprintf(buf,"largest neutral spread %.2e",ntint);
+    check("crosstalk leaves neutrals exactly neutral", ntint<1e-6f, buf);
+    sprintf(buf,"neutral spread %.4f",ctint);
+    check("channel density does shift colour, as intended", ctint>0.001f, buf);
+    for(int y=0;y<H;y++) for(int x=0;x<W;x++){ float t=(float)x/(W-1);
+        TR.p[y][x]=0.15f+t*0.55f; TG.p[y][x]=0.10f+t*0.30f; TB.p[y][x]=0.08f+t*0.22f; }
+    reset(); float3 x0=T(mmid,H/2);
+    reset(); gCrossR=1;gCrossG=1;gCrossB=1;gCrossAmount=1; float3 x1=T(mmid,H/2);
+    sprintf(buf,"delta %.4f",md(x1,x0));
+    check("crosstalk does affect coloured pixels", md(x1,x0)>0.002f, buf);
+
+    /* tonal density, fade, bias, hue shift */
+    reset(); gBlackDensity=1.0f; float3 bd=T(dk,H/2);
+    check("black density darkens shadows", bd.x<t0.x-0.002f, "");
+    reset(); gHighlightDensity=1.0f; float3 hd=T(br,H/2);
+    check("highlight density darkens highlights", hd.x<s0.x-0.002f, "");
+    reset(); gFilmFade=1.0f; float3 fd=T(dk,H/2), fb=T(br,H/2);
+    float fdc=fmaxf(fmaxf(fb.x,fb.y),fb.z)-fminf(fminf(fb.x,fb.y),fb.z);
+    sprintf(buf,"shadow %+.4f, highlight %+.4f, chroma %.4f->%.4f",fd.x-t0.x,fb.x-s0.x,ch0,fdc);
+    check("film fade lifts shadows, compresses and desaturates",
+          fd.x>t0.x && fb.x<s0.x && fdc<ch0, buf);
+    reset(); gFilmBias=1.0f; float3 w1=T(mmid,H/2);
+    reset(); gFilmBias=-1.0f; float3 w2=T(mmid,H/2);
+    sprintf(buf,"warm R%+.4f B%+.4f / cool R%+.4f B%+.4f",w1.x-x0.x,w1.z-x0.z,w2.x-x0.x,w2.z-x0.z);
+    check("film bias moves warm and cool oppositely", (w1.x-x0.x)>0 && (w1.z-x0.z)<0 && (w2.x-x0.x)<0, buf);
+    float ly0=x0.x*0.2126f+x0.y*0.7152f+x0.z*0.0722f;
+    float ly1=w1.x*0.2126f+w1.y*0.7152f+w1.z*0.0722f;
+    sprintf(buf,"luma delta %.2e",fabsf(ly1-ly0));
+    check("film bias preserves luminance", fabsf(ly1-ly0)<1e-5f, buf);
+    reset(); gHiHueShift=1.0f; float3 h3=T(br,H/2), h4=T(dk,H/2);
+    float cA=fmaxf(fmaxf(h3.x,h3.y),h3.z)-fminf(fminf(h3.x,h3.y),h3.z);
+    sprintf(buf,"highlight moved %.4f, shadow moved %.4f, chroma %.4f->%.4f",
+            md(h3,s0), md(h4,t0), ch0, cA);
+    check("highlight hue shift moves highlights not shadows, chroma intact",
+          md(h3,s0)>0.001f && md(h4,t0)<md(h3,s0)*0.3f && fabsf(cA-ch0)<1e-4f, buf);
 
     printf("\n%s\n", fails?"FAILURES PRESENT":"ALL CHECKS PASSED");
     return fails?1:0; }

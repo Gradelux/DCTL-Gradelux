@@ -94,6 +94,46 @@ DEFINE_UI_PARAMS(gSharpen, Sharpness, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.0
 DEFINE_UI_PARAMS(gSharpenRadius, Sharpen Radius, DCTLUI_SLIDER_FLOAT, 0.35f, 0.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gSharpenThresh, Sharpen Threshold, DCTLUI_SLIDER_FLOAT, 0.15f, 0.0f, 1.0f, 0.001f)
 
+// ---- Film print ------------------------------------------------------------
+DEFINE_UI_PARAMS(gPrintContrast, Print Contrast, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gPrintPivot, Print Pivot, DCTLUI_SLIDER_FLOAT, 0.336f, 0.15f, 0.6f, 0.001f)
+DEFINE_UI_PARAMS(gPrintShoulder, Print Shoulder, DCTLUI_SLIDER_FLOAT, 0.5f, 0.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gPrintToe, Print Toe, DCTLUI_SLIDER_FLOAT, 0.5f, 0.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gNegPrint, Negative to Print, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
+
+// ---- Chroma response -------------------------------------------------------
+DEFINE_UI_PARAMS(gHiDesat, Highlight Desaturation, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gHiDesatStart, Highlight Desat Start, DCTLUI_SLIDER_FLOAT, 0.45f, 0.2f, 0.9f, 0.001f)
+DEFINE_UI_PARAMS(gHiDesatRoll, Highlight Desat Roll Off, DCTLUI_SLIDER_FLOAT, 0.5f, 0.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gLoDesat, Shadow Desaturation, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gLoDesatStart, Shadow Desat Start, DCTLUI_SLIDER_FLOAT, 0.22f, 0.05f, 0.5f, 0.001f)
+
+// ---- Dye layer behaviour ---------------------------------------------------
+DEFINE_UI_PARAMS(gCrossR, Red Crosstalk, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gCrossG, Green Crosstalk, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gCrossB, Blue Crosstalk, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gCrossAmount, Crosstalk Amount, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gChanDensR, Red Channel Density, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gChanDensG, Green Channel Density, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gChanDensB, Blue Channel Density, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
+
+// ---- Tonal density ---------------------------------------------------------
+DEFINE_UI_PARAMS(gBlackDensity, Black Density, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gHighlightDensity, Highlight Density, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gFilmFade, Film Fade, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
+
+// ---- Color bias ------------------------------------------------------------
+DEFINE_UI_PARAMS(gFilmBias, Film Color Bias, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gMidBias, Midtone Color Bias, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gHiHueShift, Highlight Hue Shift, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gLoHueShift, Shadow Hue Shift, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
+
+// ---- Optical colour --------------------------------------------------------
+DEFINE_UI_PARAMS(gHaloWarm, Halation Color, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gHaloSat, Halation Saturation, DCTLUI_SLIDER_FLOAT, 1.0f, 0.0f, 2.0f, 0.001f)
+DEFINE_UI_PARAMS(gBloomWarm, Bloom Color, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gVignetteWarm, Vignette Color, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
+
 
 
 // ============================================================================
@@ -131,6 +171,8 @@ DEFINE_UI_PARAMS(gSharpenThresh, Sharpen Threshold, DCTLUI_SLIDER_FLOAT, 0.15f, 
 
 #define CC_DI_MID           0.336043f   // code value of linear 0.18
 #define CC_DI_WHITE         0.513837f   // code value of linear 1.00
+#define CC_DI_HEADROOM      1.10f       // reference top of the working range,
+                                        //   used to size compression ranges
 
 // ---------------------------------------------------------------------------
 //  2.2  LUMINANCE METHOD
@@ -296,6 +338,37 @@ DEFINE_UI_PARAMS(gSharpenThresh, Sharpen Threshold, DCTLUI_SLIDER_FLOAT, 0.15f, 
 #define CC_VIGNETTE_AMOUNT  0.22f       // max log falloff at the corners
 #define CC_MATTE_LIFT       0.055f      // max black lift
 #define CC_MATTE_COMPRESS   0.30f       // max highlight softening
+
+// --- film print curve ---
+#define CC_PRINT_GAIN       0.55f       // extra slope at full print contrast
+#define CC_PRINT_SH_RANGE   0.50f       // shoulder range, as a share of headroom
+#define CC_PRINT_TOE_RANGE  0.62f       // toe range, as a share of the knee
+#define CC_NEGPRINT_GAIN    0.30f       // contrast swing of the negative/print slider
+
+// --- chroma response ---
+#define CC_HIDESAT_MAX      0.85f       // most chroma removable from highlights
+#define CC_LODESAT_MAX      0.75f       // most chroma removable from shadows
+
+// --- dye layer behaviour ---
+#define CC_CROSS_MAX        0.18f       // strongest inter-channel bleed
+#define CC_CHANDENS_MAX     0.07f       // strongest per-channel density, in log
+
+// --- tonal density ---
+#define CC_BLACKDENS_MAX    0.060f
+#define CC_HIDENS_MAX       0.055f
+#define CC_FADE_LIFT        0.065f
+#define CC_FADE_COMPRESS    0.35f
+#define CC_FADE_DESAT       0.45f
+
+// --- colour bias ---
+#define CC_BIAS_AMOUNT      0.028f      // master warm/cool, log offset
+#define CC_MIDBIAS_AMOUNT   0.030f
+#define CC_HUESHIFT_MAX     0.12f       // hue movement, in 60 degree sector units
+
+// --- optical colour ---
+#define CC_HALOWARM_RANGE   0.35f
+#define CC_BLOOMWARM_RANGE  0.30f
+#define CC_VIGWARM_AMOUNT   0.035f
 
 // --- output safety net ---
 //  A VALIDITY net, not a range limiter. The knees sit far outside anything a
@@ -1426,7 +1499,275 @@ __DEVICE__ float3 cc_matte(float3 v, float amount)
 }
 
 // ============================================================================
-//  SECTION 11 :: OUTPUT SAFETY
+//  SECTION 11 :: FILM RESPONSE
+//  Dye-layer and print behaviour. Everything here is per-pixel: no neighbouring
+//  samples, so none of it adds texture taps or costs anything when at default.
+// ============================================================================
+
+// --- Film print contrast ----------------------------------------------------
+// A print S-curve, deliberately separate from the primary Contrast control.
+// Contrast is a straight slope through a pivot and is a correction; this is the
+// shape a print stock imposes - added slope through the middle, paid back with
+// a shoulder and a toe that are independently adjustable, so the curve can be
+// hard at the top and soft at the bottom or the reverse.
+//
+// The slope and the two compressions are applied in that order, which is what
+// keeps the pivot fixed: extra slope moves everything away from the pivot, then
+// the shoulder and toe pull the extremes back without touching the middle.
+__DEVICE__ float3 cc_print_contrast(float3 v, float amount, float pivot,
+                                    float shoulder, float toe)
+{
+    if (amount <= 0.0f) return v;
+
+    float a = _saturatef(amount);
+    float p = _clampf(pivot, 0.05f, 0.95f);
+    float g = 1.0f + a * CC_PRINT_GAIN;
+
+    float shK = p + (CC_DI_WHITE - p) * 0.55f;
+    float toK = p * 0.45f;
+
+    // The compression ranges are sized against the HEADROOM either side of the
+    // knee, not fixed. A fixed range is the trap here: the signal above the
+    // shoulder knee runs to well past 1.0 once the slope has been applied, so a
+    // range of a tenth turns the shoulder into a hard clip instead of a curve.
+    // Higher Shoulder / Toe values mean a tighter, harder compression.
+    float shR = _fmaxf((CC_DI_HEADROOM - shK) * cc_lerp(CC_PRINT_SH_RANGE * 2.0f,
+                                                       CC_PRINT_SH_RANGE * 0.7f,
+                                                       _saturatef(shoulder)), CC_EPS);
+    float toR = _fmaxf(toK * cc_lerp(CC_PRINT_TOE_RANGE * 2.6f,
+                                     CC_PRINT_TOE_RANGE * 1.0f,
+                                     _saturatef(toe)), CC_EPS);
+
+    float3 o = make_float3((v.x - p) * g + p, (v.y - p) * g + p, (v.z - p) * g + p);
+
+    o = make_float3(cc_soft_ceil(o.x, shK, shR), cc_soft_ceil(o.y, shK, shR),
+                    cc_soft_ceil(o.z, shK, shR));
+    o = make_float3(cc_soft_floor(o.x, toK, toR), cc_soft_floor(o.y, toK, toR),
+                    cc_soft_floor(o.z, toK, toR));
+
+    return cc_lerp3(v, o, a);
+}
+
+// --- Negative to print character --------------------------------------------
+// One slider across the two ends of the photochemical chain. Negative stock
+// holds enormous latitude with a gentle slope; a print is short and hard. It is
+// a pivoted slope, so it cannot shift exposure, and it is separate from Contrast
+// so the two can be set independently.
+__DEVICE__ float3 cc_neg_print(float3 v, float amount, float pivot)
+{
+    if (amount == 0.0f) return v;
+
+    float g = 1.0f + _clampf(amount, -1.0f, 1.0f) * CC_NEGPRINT_GAIN;
+    float p = _clampf(pivot, 0.05f, 0.95f);
+
+    return make_float3((v.x - p) * g + p, (v.y - p) * g + p, (v.z - p) * g + p);
+}
+
+// --- Highlight and shadow desaturation --------------------------------------
+// Film loses chroma as it approaches either end of its range: the dyes saturate
+// at the top and there is simply less signal at the bottom. Digital sensors do
+// not do this, which is a large part of why bright skies and skin read as
+// electronic.
+//
+// Chroma is scaled towards the pixel's own luminance, so luminance is preserved
+// exactly and only colourfulness moves. The weight is a smoothstep, so the
+// effect eases in rather than switching on at a threshold.
+__DEVICE__ float3 cc_tonal_desat(float3 v, float hiAmt, float hiStart, float hiRoll,
+                                 float loAmt, float loStart)
+{
+    if (hiAmt <= 0.0f && loAmt <= 0.0f) return v;
+
+    float y = cc_luma(v);
+    float k = 1.0f;
+
+    if (hiAmt > 0.0f)
+    {
+        float w = _fmaxf(cc_lerp(0.35f, 0.06f, _saturatef(hiRoll)), CC_EPS);
+        k -= _saturatef(hiAmt) * CC_HIDESAT_MAX * cc_smooth01((y - hiStart) / w);
+    }
+    if (loAmt > 0.0f)
+    {
+        float w = _fmaxf(loStart, CC_EPS);
+        k -= _saturatef(loAmt) * CC_LODESAT_MAX * cc_smooth01((loStart - y) / w);
+    }
+
+    k = _fmaxf(k, 0.0f);
+
+    return make_float3(y + (v.x - y) * k, y + (v.y - y) * k, y + (v.z - y) * k);
+}
+
+// --- Colour crosstalk -------------------------------------------------------
+// Real dye layers are not independent: each absorbs a little outside its own
+// band, so a strong exposure in one layer leaves a trace in the others. That
+// unwanted absorption is most of what gives a stock its colour signature.
+//
+// Each channel picks up a fraction of the mean of the other two. The amount
+// taken is subtracted from the channel's own weight, so every row of the
+// implied matrix still sums to 1 and A NEUTRAL IS EXACTLY UNCHANGED - crosstalk
+// tints colour, never grey.
+__DEVICE__ float3 cc_crosstalk(float3 v, float cr, float cg, float cb, float amount)
+{
+    if (amount <= 0.0f) return v;
+
+    float a = _saturatef(amount) * CC_CROSS_MAX;
+    float kr = _clampf(cr, -1.0f, 1.0f) * a;
+    float kg = _clampf(cg, -1.0f, 1.0f) * a;
+    float kb = _clampf(cb, -1.0f, 1.0f) * a;
+
+    float mr = (v.y + v.z) * 0.5f;
+    float mg = (v.x + v.z) * 0.5f;
+    float mb = (v.x + v.y) * 0.5f;
+
+    return make_float3(v.x + kr * (mr - v.x),
+                       v.y + kg * (mg - v.y),
+                       v.z + kb * (mb - v.z));
+}
+
+// --- Channel density --------------------------------------------------------
+// Per-channel density, distinct from the hue densities in Section 9. Those pick
+// a hue family and add density to it; this adds density to a CHANNEL in
+// proportion to how much of that channel is present, which is how a dye layer
+// behaves - the more exposure that layer received, the more dye it carries.
+//
+// Applied as an offset on the channel alone, so unlike the uniform offsets used
+// elsewhere it does shift colour, which is the point.
+__DEVICE__ float3 cc_channel_density(float3 v, float dr, float dg, float db)
+{
+    if (dr == 0.0f && dg == 0.0f && db == 0.0f) return v;
+
+    float wr = _saturatef(v.x / CC_DI_WHITE);
+    float wg = _saturatef(v.y / CC_DI_WHITE);
+    float wb = _saturatef(v.z / CC_DI_WHITE);
+
+    return make_float3(v.x - _clampf(dr, -1.0f, 1.0f) * CC_CHANDENS_MAX * wr,
+                       v.y - _clampf(dg, -1.0f, 1.0f) * CC_CHANDENS_MAX * wg,
+                       v.z - _clampf(db, -1.0f, 1.0f) * CC_CHANDENS_MAX * wb);
+}
+
+// --- Black and highlight density --------------------------------------------
+// Weight in the blacks without crushing them, and weight in the highlights
+// without dulling them. Both are uniform log offsets, so both preserve hue and
+// chroma exactly; both use a weight that reaches zero at the far end so they
+// stay in their own territory.
+//
+// Black density leaves black itself alone - the weight peaks just above it -
+// so the floor does not move and shadow separation survives.
+__DEVICE__ float3 cc_tonal_density(float3 v, float blackAmt, float hiAmt)
+{
+    if (blackAmt <= 0.0f && hiAmt <= 0.0f) return v;
+
+    float n = cc_luma(v);
+    float o = 0.0f;
+
+    if (blackAmt > 0.0f)
+    {
+        float u = _saturatef(n / CC_DI_MID);
+        float b = u * (1.0f - u);
+        o -= _saturatef(blackAmt) * CC_BLACKDENS_MAX * 16.0f * b * b;
+    }
+    if (hiAmt > 0.0f)
+    {
+        o -= _saturatef(hiAmt) * CC_HIDENS_MAX
+             * cc_smooth01((n - CC_DI_MID) / (CC_DI_WHITE - CC_DI_MID));
+    }
+
+    return make_float3(v.x + o, v.y + o, v.z + o);
+}
+
+// --- Film fade --------------------------------------------------------------
+// One control for what actually happens to a faded print: the blacks lift, the
+// range compresses, the dyes lose strength, and the shadows drift cool as the
+// least stable dye goes first. Doing all four from one slider is the point -
+// they are not independent in the real thing.
+__DEVICE__ float3 cc_film_fade(float3 v, float amount)
+{
+    if (amount <= 0.0f) return v;
+
+    float a = _saturatef(amount);
+    float y = cc_luma(v);
+
+    // compress towards mid grey, then lift the floor
+    float g = 1.0f - a * CC_FADE_COMPRESS;
+    float3 o = make_float3((v.x - CC_DI_MID) * g + CC_DI_MID,
+                           (v.y - CC_DI_MID) * g + CC_DI_MID,
+                           (v.z - CC_DI_MID) * g + CC_DI_MID);
+
+    float lowW = 1.0f - cc_smooth01(y / CC_DI_MID);
+    float lift = a * CC_FADE_LIFT * lowW;
+    o = make_float3(o.x + lift, o.y + lift, o.z + lift);
+
+    // dyes weaken
+    float oy = cc_luma(o);
+    float k = 1.0f - a * CC_FADE_DESAT;
+    o = make_float3(oy + (o.x - oy) * k, oy + (o.y - oy) * k, oy + (o.z - oy) * k);
+
+    // the shadows go cool as the weakest dye fades first
+    float3 ax = cc_warm_axis();
+    float c = -a * 0.35f * CC_SPLIT_AMOUNT * lowW;
+
+    return make_float3(o.x + ax.x * c, o.y + ax.y * c, o.z + ax.z * c);
+}
+
+// --- Colour bias, midtone bias and hue shift --------------------------------
+// Film Color Bias is a master warm/cool that is NOT Temperature. Temperature is
+// a channel gain in linear and behaves like a lens filter, changing with
+// exposure. This is a luminance-neutral offset in log, so it moves the whole
+// response evenly regardless of how bright a pixel is - the way a stock's own
+// bias reads.
+//
+// Midtone Color Bias completes the split-toning system, which until now shaped
+// only the two ends. Its weight is a bump that reaches zero at both, so it
+// cannot fight the highlight and shadow toning.
+__DEVICE__ float3 cc_color_bias(float3 v, float master, float mid)
+{
+    if (master == 0.0f && mid == 0.0f) return v;
+
+    float3 ax = cc_warm_axis();
+    float a = _clampf(master, -1.0f, 1.0f) * CC_BIAS_AMOUNT;
+
+    if (mid != 0.0f)
+    {
+        float u = _saturatef(cc_luma(v) / CC_DI_WHITE);
+        float b = u * (1.0f - u);
+        a += _clampf(mid, -1.0f, 1.0f) * CC_MIDBIAS_AMOUNT * 16.0f * b * b;
+    }
+
+    return make_float3(v.x + ax.x * a, v.y + ax.y * a, v.z + ax.z * a);
+}
+
+// Hue movement confined to one end of the tone scale. It reuses the sextant hue
+// position from Section 9 - min and max are pinned and only the median channel
+// moves - so chroma is preserved exactly and this is a pure hue rotation. The
+// range is small on purpose: a subtle drift is the effect, and a large one just
+// looks like a broken white balance.
+__DEVICE__ float3 cc_tonal_hue_shift(float3 v, float hiAmt, float loAmt)
+{
+    if (hiAmt == 0.0f && loAmt == 0.0f) return v;
+
+    float mx = cc_maxc(v);
+    float mn = cc_minc(v);
+    float range = mx - mn;
+    if (range < CC_CHROMA_FLOOR) return v;
+
+    float y = cc_luma(v);
+    float hiW = cc_smooth01((y - CC_DI_MID) / (CC_DI_WHITE - CC_DI_MID));
+    float loW = 1.0f - cc_smooth01(y / CC_DI_MID);
+
+    float shift = (_clampf(hiAmt, -1.0f, 1.0f) * hiW + _clampf(loAmt, -1.0f, 1.0f) * loW)
+                  * CC_HUESHIFT_MAX;
+    if (shift == 0.0f) return v;
+
+    float md = cc_median3(v.x, v.y, v.z);
+    float p  = _saturatef((md - mn) / range);
+    float mdOut = mn + _saturatef(p + shift) * range;
+
+    return make_float3(cc_remap_mid(v.x, mn, md, mx, mdOut),
+                       cc_remap_mid(v.y, mn, md, mx, mdOut),
+                       cc_remap_mid(v.z, mn, md, mx, mdOut));
+}
+
+// ============================================================================
+//  SECTION 12 :: OUTPUT SAFETY
 // ============================================================================
 
 // PURPOSE: a containment net, not a look. Both limiters are asymptotic and
@@ -1452,7 +1793,7 @@ __DEVICE__ float3 cc_out_limit3(float3 v)
 
 
 // ============================================================================
-//  SECTION 12 :: MAIN TRANSFORM
+//  SECTION 13 :: MAIN TRANSFORM
 // ============================================================================
 
 // NOTE: Resolve parses this signature textually from the line containing
@@ -1482,7 +1823,12 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
         gMagentaDensity == 0.0f &&
         gWarmHighlights == 0.0f && gCoolShadows == 0.0f &&
         gHalation == 0.0f && gBloom == 0.0f && gVignette == 0.0f && gMatte == 0.0f &&
-        gSharpen == 0.0f)
+        gSharpen == 0.0f && gPrintContrast == 0.0f && gNegPrint == 0.0f &&
+        gHiDesat == 0.0f && gLoDesat == 0.0f && gCrossAmount == 0.0f &&
+        gChanDensR == 0.0f && gChanDensG == 0.0f && gChanDensB == 0.0f &&
+        gBlackDensity == 0.0f && gHighlightDensity == 0.0f && gFilmFade == 0.0f &&
+        gFilmBias == 0.0f && gMidBias == 0.0f &&
+        gHiHueShift == 0.0f && gLoHueShift == 0.0f && gVignetteWarm == 0.0f)
     {
         return rgb;
     }
@@ -1616,6 +1962,12 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     // -- 9 / 10. Black point and white point --------------------------------
     cv = cc_black_white_point(cv, gBlackPoint, gWhitePoint);
 
+    // -- 10b. Film print curve and negative/print character ------------------
+    //  After the primary tone controls and before the colour block, which is
+    //  where a print sits in the real chain.
+    cv = cc_print_contrast(cv, gPrintContrast, gPrintPivot, gPrintShoulder, gPrintToe);
+    cv = cc_neg_print(cv, gNegPrint, gPrintPivot);
+
     // -- 11. Saturation ------------------------------------------------------
     cv = cc_saturation(cv, gSaturation);
 
@@ -1635,11 +1987,28 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     cv = cc_hue_density(cv, gRedDensity, gOrangeDensity, gYellowDensity,
                         gGreenDensity, gCyanDensity, gBlueDensity, gMagentaDensity);
 
+    // -- 15c. Dye layer behaviour --------------------------------------------
+    cv = cc_crosstalk(cv, gCrossR, gCrossG, gCrossB, gCrossAmount);
+    cv = cc_channel_density(cv, gChanDensR, gChanDensG, gChanDensB);
+
+    // -- 15d. Tonal chroma response -------------------------------------------
+    cv = cc_tonal_desat(cv, gHiDesat, gHiDesatStart, gHiDesatRoll, gLoDesat, gLoDesatStart);
+
+    // -- 15e. Tonal density ---------------------------------------------------
+    cv = cc_tonal_density(cv, gBlackDensity, gHighlightDensity);
+
     // -- 17. Split toning ----------------------------------------------------
     cv = cc_split_tone(cv, gWarmHighlights, gCoolShadows, gSplitBalance);
 
+    // -- 17b. Colour bias and tonal hue shift ---------------------------------
+    cv = cc_color_bias(cv, gFilmBias, gMidBias);
+    cv = cc_tonal_hue_shift(cv, gHiHueShift, gLoHueShift);
+
     // -- 18. Bleach bypass ---------------------------------------------------
     cv = cc_bleach_bypass(cv, gBleachBypass, gBleachMix);
+
+    // -- 18b. Film fade -------------------------------------------------------
+    cv = cc_film_fade(cv, gFilmFade);
 
     // -- 19. Halation --------------------------------------------------------
     //  Scattered light ADDS, so this is applied as light rather than as a
@@ -1649,9 +2018,25 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     if (gHalation > 0.0f)
     {
         float a = _saturatef(gHalation) * CC_HALO_AMOUNT;
-        cv = make_float3(cv.x + halo.x * a * CC_HALO_R,
-                         cv.y + halo.y * a * CC_HALO_G,
-                         cv.z + halo.z * a * CC_HALO_B);
+
+        //  The scatter tint, biased warm or cool by Halation Color and pulled
+        //  towards neutral by Halation Saturation. At saturation 0 the halo is
+        //  achromatic, which turns halation into a wide neutral glow.
+        float wtR = CC_HALO_R;
+        float wtG = CC_HALO_G + _clampf(gHaloWarm, -1.0f, 1.0f) * CC_HALOWARM_RANGE * 0.5f;
+        float wtB = CC_HALO_B + _clampf(gHaloWarm, -1.0f, 1.0f) * CC_HALOWARM_RANGE;
+        wtG = _fmaxf(wtG, 0.0f);
+        wtB = _fmaxf(wtB, 0.0f);
+
+        float mean = (wtR + wtG + wtB) * 0.33333333f;
+        float sat = _clampf(gHaloSat, 0.0f, 2.0f);
+        wtR = mean + (wtR - mean) * sat;
+        wtG = mean + (wtG - mean) * sat;
+        wtB = mean + (wtB - mean) * sat;
+
+        cv = make_float3(cv.x + halo.x * a * _fmaxf(wtR, 0.0f),
+                         cv.y + halo.y * a * _fmaxf(wtG, 0.0f),
+                         cv.z + halo.z * a * _fmaxf(wtB, 0.0f));
     }
 
     // -- 20. Bloom -----------------------------------------------------------
@@ -1660,12 +2045,39 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     if (gBloom > 0.0f)
     {
         float a = _saturatef(gBloom) * CC_BLOOM_AMOUNT;
-        cv = make_float3(cv.x + bloom.x * a, cv.y + bloom.y * a, cv.z + bloom.z * a);
+
+        //  Bloom Color leans the glow warm or cool. At 0 it stays achromatic,
+        //  which is the veiling glare of a clean lens.
+        float b = _clampf(gBloomWarm, -1.0f, 1.0f) * CC_BLOOMWARM_RANGE;
+
+        cv = make_float3(cv.x + bloom.x * a * (1.0f + b),
+                         cv.y + bloom.y * a,
+                         cv.z + bloom.z * a * (1.0f - b));
     }
 
     // -- 21. Vignette --------------------------------------------------------
     cv = cc_vignette(cv, gVignette, gVignetteSize, gVignetteSoft,
                      p_Width, p_Height, p_X, p_Y);
+
+    //  Lens Vignette Color: a slight warm or cool drift towards the edges,
+    //  alongside the darkening. Luminance-neutral, so it tints without
+    //  darkening further.
+    if (gVignetteWarm != 0.0f)
+    {
+        float cx = (float)(p_Width - 1) * 0.5f;
+        float cy = (float)(p_Height - 1) * 0.5f;
+        float dx = ((float)p_X - cx) / _fmaxf(cx, 1.0f);
+        float dy = ((float)p_Y - cy) / _fmaxf(cy, 1.0f);
+        float r = cc_sqrt(dx * dx + dy * dy) * 0.70710678f;
+
+        float start = cc_lerp(0.15f, 0.85f, _saturatef(gVignetteSize));
+        float width = _fmaxf(cc_lerp(0.10f, 0.90f, _saturatef(gVignetteSoft)), CC_EPS);
+        float wgt = cc_smooth01((r - start) / width);
+
+        float3 ax = cc_warm_axis();
+        float c = _clampf(gVignetteWarm, -1.0f, 1.0f) * CC_VIGWARM_AMOUNT * wgt;
+        cv = make_float3(cv.x + ax.x * c, cv.y + ax.y * c, cv.z + ax.z * c);
+    }
 
     // -- 22. Matte -----------------------------------------------------------
     cv = cc_matte(cv, gMatte);
