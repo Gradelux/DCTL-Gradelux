@@ -35,6 +35,7 @@ static float gWarmHighlights=0,gCoolShadows=0,gSplitBalance=0,gBleachBypass=0,gB
 static float gHalation=0,gHalationWidth=0.5f,gHalationThresh=0.45f;
 static float gBloom=0,gBloomWidth=0.5f,gBloomThresh=0.50f;
 static float gVignette=0,gVignetteSize=0.5f,gVignetteSoft=0.5f,gMatte=0;
+static float gSharpen=0,gSharpenRadius=0.35f,gSharpenThresh=0.15f;
 #include "CineCore.dctl"
 
 static int fails=0;
@@ -45,7 +46,8 @@ static void reset(void){ gExposure=0;gTemperature=0;gTint=0;gContrast=1;gPivot=0
   gRedDensity=0;gOrangeDensity=0;gYellowDensity=0;gGreenDensity=0;gCyanDensity=0;gBlueDensity=0;
   gMagentaDensity=0;gWarmHighlights=0;gCoolShadows=0;gSplitBalance=0;gBleachBypass=0;gBleachMix=1;
   gHalation=0;gHalationWidth=0.5f;gHalationThresh=0.45f;gBloom=0;gBloomWidth=0.5f;gBloomThresh=0.5f;
-  gVignette=0;gVignetteSize=0.5f;gVignetteSoft=0.5f;gMatte=0;gBypass=0; }
+  gVignette=0;gVignetteSize=0.5f;gVignetteSoft=0.5f;gMatte=0;gBypass=0;
+  gSharpen=0;gSharpenRadius=0.35f;gSharpenThresh=0.15f; }
 static float3 T(int x,int y){ return transform(W,H,x,y,&TR,&TG,&TB); }
 static float md(float3 a,float3 b){ return fmaxf(fmaxf(fabsf(a.x-b.x),fabsf(a.y-b.y)),fabsf(a.z-b.z)); }
 static float3 IN(int x,int y){ return make_float3(TR.p[y][x],TG.p[y][x],TB.p[y][x]); }
@@ -120,11 +122,42 @@ int main(void){
     sprintf(buf,"%d reversals",nm);
     check("matte keeps the ramp monotonic", nm==0, buf);
 
+    printf("\n--- sharpening ---\n");
+    /* hard vertical edge down the middle, plus a low-amplitude noise field */
+    for(int y=0;y<H;y++) for(int x=0;x<W;x++){
+        float v = (x < W/2) ? 0.30f : 0.55f;
+        if(y > H*3/4) v = 0.40f + (((x*7+y*13)%5)-2) * 0.0025f;   /* tiny noise */
+        TR.p[y][x]=v; TG.p[y][x]=v; TB.p[y][x]=v; }
+    /* probes sit ONE pixel either side of the edge: the default radius is under
+       2 px, so a probe 2 px away correctly sees no detail at all. */
+    int eL=W/2-1, eR=W/2+1, flatX=20, flatY=20, noiseY=H*3/4+10;
+    reset(); float3 pL=T(eL,H/4), pR=T(eR,H/4), pF=T(flatX,flatY), pN=T(flatX,noiseY);
+    reset(); gSharpen=1.0f;
+    float3 sL=T(eL,H/4), sR=T(eR,H/4), sF=T(flatX,flatY), sN=T(flatX,noiseY);
+    sprintf(buf,"dark side %+.4f, light side %+.4f", sL.x-pL.x, sR.x-pR.x);
+    check("sharpening increases contrast across an edge", (sR.x-pR.x)>0.004f && (sL.x-pL.x)<-0.004f, buf);
+    sprintf(buf,"R %+.5f  G %+.5f  B %+.5f", sR.x-pR.x, sR.y-pR.y, sR.z-pR.z);
+    check("sharpening produces no colour fringing",
+          fabsf((sR.x-pR.x)-(sR.y-pR.y))<1e-6f && fabsf((sR.y-pR.y)-(sR.z-pR.z))<1e-6f, buf);
+    sprintf(buf,"delta %.2e", md(sF,pF));
+    check("flat areas are untouched", md(sF,pF)<1e-6f, buf);
+    sprintf(buf,"noise delta %.5f vs edge delta %.5f", md(sN,pN), fabsf(sR.x-pR.x));
+    check("threshold suppresses noise while keeping edges",
+          md(sN,pN) < fabsf(sR.x-pR.x)*0.2f, buf);
+    reset(); gSharpen=1.0f; gSharpenThresh=0.0f;
+    float3 nT=T(flatX,noiseY);
+    check("threshold at 0 does let fine detail through", md(nT,pN) > md(sN,pN), "");
+    /* overshoot is bounded */
+    reset(); gSharpen=1.0f; gSharpenRadius=1.0f;
+    float mx2=0; for(int y=0;y<H/2;y++) for(int x=0;x<W;x++) mx2=fmaxf(mx2,fabsf(T(x,y).x-IN(x,y).x));
+    sprintf(buf,"largest excursion %.4f",mx2);
+    check("overshoot is soft-limited, not unbounded", mx2 < 0.11f, buf);
+
     printf("\n--- stability ---\n");
     int bad=0;
     reset(); gHalation=1;gBloom=1;gVignette=1;gMatte=1;gContrast=2.5f;gExposure=5;
     gFilmDensity=1;gSubSaturation=1;gRichness=1;gColorSeparation=1;gBleachBypass=1;
-    gHighlightShoulder=1;gShadowToe=1;gShadowDepth=1;gSaturation=2;
+    gHighlightShoulder=1;gShadowToe=1;gShadowDepth=1;gSaturation=2;gSharpen=1;gSharpenRadius=1;
     for(int y=0;y<H;y+=3) for(int x=0;x<W;x+=3){ float3 o=T(x,y);
         if(o.x!=o.x||o.y!=o.y||o.z!=o.z||isinf(o.x)||isinf(o.y)||isinf(o.z)) bad++; }
     sprintf(buf,"%d non-finite",bad);

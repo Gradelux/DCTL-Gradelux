@@ -90,6 +90,9 @@ DEFINE_UI_PARAMS(gVignette, Vignette, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.
 DEFINE_UI_PARAMS(gVignetteSize, Vignette Size, DCTLUI_SLIDER_FLOAT, 0.5f, 0.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gVignetteSoft, Vignette Softness, DCTLUI_SLIDER_FLOAT, 0.5f, 0.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gMatte, Matte, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gSharpen, Sharpness, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gSharpenRadius, Sharpen Radius, DCTLUI_SLIDER_FLOAT, 0.35f, 0.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gSharpenThresh, Sharpen Threshold, DCTLUI_SLIDER_FLOAT, 0.15f, 0.0f, 1.0f, 0.001f)
 
 
 
@@ -284,6 +287,12 @@ DEFINE_UI_PARAMS(gMatte, Matte, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
 #define CC_HALO_R           1.00f       // halation tint: red scatters furthest in the base
 #define CC_HALO_G           0.42f
 #define CC_HALO_B           0.14f
+#define CC_SHARP_RADIUS_MIN 0.8f        // sharpening radius in PIXELS, not a
+#define CC_SHARP_RADIUS_MAX 4.0f        //   fraction of frame - see Section 10
+#define CC_SHARP_AMOUNT     1.00f       // detail gain at full strength
+#define CC_SHARP_THRESH_MAX 0.045f      // detail below this is treated as noise
+#define CC_SHARP_LIMIT      0.050f      // detail is soft-limited here to stop ringing
+
 #define CC_VIGNETTE_AMOUNT  0.22f       // max log falloff at the corners
 #define CC_MATTE_LIFT       0.055f      // max black lift
 #define CC_MATTE_COMPRESS   0.30f       // max highlight softening
@@ -1304,6 +1313,50 @@ __DEVICE__ float cc_tap(__TEXTURE__ t, int w, int h, float x, float y)
     return _tex2D(t, xi, yi);
 }
 
+// --- Sharpening -------------------------------------------------------------
+// INTENDED BEHAVIOR: recover the crispness a lens and a debayer take out,
+// without the two things that make sharpening look digital - coloured fringes
+// along edges, and crawling noise in flat areas.
+//
+// APPROACH: an unsharp mask driven by LUMINANCE only. The detail signal is the
+// difference between this pixel's luminance and the mean of a ring of samples
+// around it, and it is added back as a UNIFORM offset across the three
+// channels. A uniform log offset is an exposure change on that pixel, so
+// channel ratios are untouched and coloured fringing is impossible by
+// construction rather than by being tuned out.
+//
+// Radius is in PIXELS, deliberately, unlike the glow radii which scale with the
+// frame. Sharpening addresses the sensor and the lens, which do not know how
+// large the frame is; a 2-pixel radius means the same thing at any resolution.
+//
+// TWO GUARDS:
+//   * Threshold. Detail below the threshold is faded out smoothly rather than
+//     cut, so grain and sensor noise are not amplified while real edges are.
+//   * Soft limit. The detail signal is passed through the same asymptotic
+//     ceiling used by the highlight shoulder, so a hard edge cannot produce an
+//     unbounded overshoot. Halos are inherent to unsharp masking; this bounds
+//     how large they can get rather than pretending they are absent.
+//
+// LIMITATION: sharpening is applied to the INPUT, before grading, because
+// _tex2D can only read the node's input. That is also the sensible order -
+// detail is sharpened once and then graded with everything else, so a contrast
+// change scales edges consistently instead of leaving them at a fixed
+// amplitude on top of a stretched image.
+__DEVICE__ float cc_sharpen_detail(float centre, float blurred, float thresh)
+{
+    float d = centre - blurred;
+    float ad = _fabs(d);
+
+    // Fade out low-amplitude detail: noise, not edges.
+    float t = thresh * CC_SHARP_THRESH_MAX;
+    float keep = (t > CC_EPS) ? cc_smooth01((ad - t) / t) : 1.0f;
+
+    // Bound the overshoot a hard edge can produce.
+    float lim = cc_soft_ceil(ad * keep, CC_SHARP_LIMIT, CC_SHARP_LIMIT);
+
+    return _copysignf(lim, d);
+}
+
 // --- Vignette ---------------------------------------------------------------
 // INTENDED BEHAVIOR: the gentle corner falloff of a real lens, or its inverse.
 //
@@ -1428,7 +1481,8 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
         gGreenDensity == 0.0f && gCyanDensity == 0.0f && gBlueDensity == 0.0f &&
         gMagentaDensity == 0.0f &&
         gWarmHighlights == 0.0f && gCoolShadows == 0.0f &&
-        gHalation == 0.0f && gBloom == 0.0f && gVignette == 0.0f && gMatte == 0.0f)
+        gHalation == 0.0f && gBloom == 0.0f && gVignette == 0.0f && gMatte == 0.0f &&
+        gSharpen == 0.0f)
     {
         return rgb;
     }
@@ -1501,6 +1555,30 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
         }
         float inv = cc_div(1.0f, wsum);
         bloom = make_float3(bloom.x * inv, bloom.y * inv, bloom.z * inv);
+    }
+
+    // -- Sharpening ----------------------------------------------------------
+    //  Applied to the input, before grading. Luminance-driven and added as a
+    //  uniform offset, so it cannot introduce colour fringing.
+    if (gSharpen > 0.0f)
+    {
+        float rad = cc_lerp(CC_SHARP_RADIUS_MIN, CC_SHARP_RADIUS_MAX, _saturatef(gSharpenRadius));
+
+        float blur = 0.0f;
+        for (int k = 0; k < 8; ++k)
+        {
+            float sx = (float)p_X + dirX[k] * rad;
+            float sy = (float)p_Y + dirY[k] * rad;
+            blur += cc_luma(make_float3(cc_tap(p_TexR, p_Width, p_Height, sx, sy),
+                                        cc_tap(p_TexG, p_Width, p_Height, sx, sy),
+                                        cc_tap(p_TexB, p_Width, p_Height, sx, sy)));
+        }
+        blur *= 0.125f;
+
+        float d = cc_sharpen_detail(cc_luma(rgb), blur, _saturatef(gSharpenThresh));
+        float o = d * _saturatef(gSharpen) * CC_SHARP_AMOUNT;
+
+        rgb = make_float3(rgb.x + o, rgb.y + o, rgb.z + o);
     }
 
     float3 cv;  // code value, DaVinci Intermediate log
