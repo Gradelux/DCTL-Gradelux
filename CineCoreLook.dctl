@@ -1,0 +1,156 @@
+// ============================================================================
+//  CineCore Look
+//  LUT-based film look selector for DaVinci Resolve
+//  ---------------------------------------------------------------------------
+//  Companion to CineCore.dctl. Kept as a separate DCTL for now for two
+//  reasons, both documented in DEVNOTES.md:
+//
+//    1. COLOR SPACE. Every LUT this selector loads is a display-referred
+//       Rec.709 LUT with a 0..1 domain. CineCore.dctl works in DaVinci Wide
+//       Gamut / DaVinci Intermediate. Those two are not interchangeable, and
+//       merging this stage into CineCore would require a color space
+//       conversion inside the DCTL, which the project rules currently forbid.
+//
+//    2. LUT AVAILABILITY. A DCTL that references a LUT file fails to compile
+//       if that file is missing. Keeping the LUT stage separate means
+//       CineCore.dctl still builds for anyone without this LUT set.
+//
+//  ---------------------------------------------------------------------------
+//  INPUT CONTRACT  -- READ THIS BEFORE USE
+//  ---------------------------------------------------------------------------
+//  This DCTL applies its LUT to whatever values arrive, with NO color space
+//  conversion of any kind. The LUTs expect Rec.709 display-referred input,
+//  so this node must sit somewhere in the chain where the image is already
+//  Rec.709. In a DaVinci Wide Gamut timeline that means:
+//
+//      [ CineCore.dctl ]  ->  [ CST: DaVinci WG/Intermediate -> Rec.709 ]
+//                         ->  [ CineCoreLook.dctl ]
+//
+//  Placing this node directly on DaVinci Intermediate data will produce a
+//  badly wrong image, not a subtly wrong one. That is a property of the LUTs,
+//  not a defect in this file.
+//  ---------------------------------------------------------------------------
+//  LUT FILES
+//  ---------------------------------------------------------------------------
+//  Expected in a "luts" folder beside this DCTL, named exactly as below.
+//  The .cube files are NOT distributed with this project. Several of them are
+//  licensed to an individual owner and may not be redistributed. See
+//  luts/README.md.
+// ============================================================================
+
+
+// ============================================================================
+//  SECTION 1 :: UI PARAMETERS
+// ============================================================================
+
+DEFINE_UI_PARAMS(gLook, Film Look, DCTLUI_COMBO_BOX, 0, {CC_LOOK_NONE, CC_LOOK_70S, CC_LOOK_ALPINE, CC_LOOK_CHROME, CC_LOOK_CLEAN, CC_LOOK_COAST, CC_LOOK_DAZE, CC_LOOK_DUSK, CC_LOOK_KODA, CC_LOOK_LAGUNA, CC_LOOK_LUCID, CC_LOOK_LUX, CC_LOOK_MIST, CC_LOOK_MONACO, CC_LOOK_NORDIC, CC_LOOK_OBSIDIAN, CC_LOOK_PALMA, CC_LOOK_SILVER, CC_LOOK_STERLING, CC_LOOK_VISTA}, {None, 70s, Alpine, Chrome, Clean, Coast, Daze, Dusk, Koda, Laguna, Lucid, Lux, Mist, Monaco, Nordic, Obsidian, Palma, Silver, Sterling, Vista})
+DEFINE_UI_PARAMS(gLookMix, Look Mix, DCTLUI_SLIDER_FLOAT, 1.0f, 0.0f, 1.0f, 0.001f)
+
+
+// ============================================================================
+//  SECTION 2 :: LUT DECLARATIONS
+//  Paths are relative to this DCTL file.
+// ============================================================================
+
+DEFINE_LUT(CC_LUT_70S, luts/70s.cube)
+DEFINE_LUT(CC_LUT_ALPINE, luts/Alpine.cube)
+DEFINE_LUT(CC_LUT_CHROME, luts/Chrome.cube)
+DEFINE_LUT(CC_LUT_CLEAN, luts/Clean.cube)
+DEFINE_LUT(CC_LUT_COAST, luts/Coast.cube)
+DEFINE_LUT(CC_LUT_DAZE, luts/Daze.cube)
+DEFINE_LUT(CC_LUT_DUSK, luts/Dusk.cube)
+DEFINE_LUT(CC_LUT_KODA, luts/Koda.cube)
+DEFINE_LUT(CC_LUT_LAGUNA, luts/Laguna.cube)
+DEFINE_LUT(CC_LUT_LUCID, luts/Lucid.cube)
+DEFINE_LUT(CC_LUT_LUX, luts/Lux.cube)
+DEFINE_LUT(CC_LUT_MIST, luts/Mist.cube)
+DEFINE_LUT(CC_LUT_MONACO, luts/Monaco.cube)
+DEFINE_LUT(CC_LUT_NORDIC, luts/Nordic.cube)
+DEFINE_LUT(CC_LUT_OBSIDIAN, luts/Obsidian.cube)
+DEFINE_LUT(CC_LUT_PALMA, luts/Palma.cube)
+DEFINE_LUT(CC_LUT_SILVER, luts/Silver.cube)
+DEFINE_LUT(CC_LUT_STERLING, luts/Sterling.cube)
+DEFINE_LUT(CC_LUT_VISTA, luts/Vista.cube)
+
+
+// ============================================================================
+//  SECTION 3 :: HELPERS
+// ============================================================================
+
+__DEVICE__ float cc_safe(float x)
+{
+    if (x >= -1.0e7f && x <= 1.0e7f) return x;
+    if (x > 0.0f) return 1.0e7f;
+    if (x < 0.0f) return -1.0e7f;
+    return 0.0f;      // NaN fails every ordered comparison and lands here
+}
+
+// A .cube LUT is only defined across its declared domain, which for every LUT
+// in this set is 0..1. This is one of the few places where a hard clamp is
+// technically necessary rather than stylistic: outside the domain there is no
+// data to interpolate and the sampler's behavior is not something to rely on.
+// The clamp applies ONLY to the value handed to the sampler. The unclamped
+// original is what the mix blends against, so a mix of 0 is an exact
+// pass-through even for out-of-domain pixels.
+__DEVICE__ float3 cc_lut_domain(float3 v)
+{
+    return make_float3(_saturatef(v.x), _saturatef(v.y), _saturatef(v.z));
+}
+
+__DEVICE__ float3 cc_mix3(float3 a, float3 b, float t)
+{
+    return make_float3(a.x + (b.x - a.x) * t,
+                       a.y + (b.y - a.y) * t,
+                       a.z + (b.z - a.z) * t);
+}
+
+
+// ============================================================================
+//  SECTION 4 :: LOOK SELECTION
+//  The selector is a uniform branch: every pixel in the frame takes the same
+//  path, so there is no warp divergence and the cost is a single LUT fetch
+//  regardless of how many looks are declared. Declaring more looks costs GPU
+//  memory and compile time, not per-pixel speed.
+// ============================================================================
+
+__DEVICE__ float3 cc_lookup(float3 v, int look)
+{
+    if (look == CC_LOOK_70S)       return APPLY_LUT(v.x, v.y, v.z, CC_LUT_70S);
+    if (look == CC_LOOK_ALPINE)    return APPLY_LUT(v.x, v.y, v.z, CC_LUT_ALPINE);
+    if (look == CC_LOOK_CHROME)    return APPLY_LUT(v.x, v.y, v.z, CC_LUT_CHROME);
+    if (look == CC_LOOK_CLEAN)     return APPLY_LUT(v.x, v.y, v.z, CC_LUT_CLEAN);
+    if (look == CC_LOOK_COAST)     return APPLY_LUT(v.x, v.y, v.z, CC_LUT_COAST);
+    if (look == CC_LOOK_DAZE)      return APPLY_LUT(v.x, v.y, v.z, CC_LUT_DAZE);
+    if (look == CC_LOOK_DUSK)      return APPLY_LUT(v.x, v.y, v.z, CC_LUT_DUSK);
+    if (look == CC_LOOK_KODA)      return APPLY_LUT(v.x, v.y, v.z, CC_LUT_KODA);
+    if (look == CC_LOOK_LAGUNA)    return APPLY_LUT(v.x, v.y, v.z, CC_LUT_LAGUNA);
+    if (look == CC_LOOK_LUCID)     return APPLY_LUT(v.x, v.y, v.z, CC_LUT_LUCID);
+    if (look == CC_LOOK_LUX)       return APPLY_LUT(v.x, v.y, v.z, CC_LUT_LUX);
+    if (look == CC_LOOK_MIST)      return APPLY_LUT(v.x, v.y, v.z, CC_LUT_MIST);
+    if (look == CC_LOOK_MONACO)    return APPLY_LUT(v.x, v.y, v.z, CC_LUT_MONACO);
+    if (look == CC_LOOK_NORDIC)    return APPLY_LUT(v.x, v.y, v.z, CC_LUT_NORDIC);
+    if (look == CC_LOOK_OBSIDIAN)  return APPLY_LUT(v.x, v.y, v.z, CC_LUT_OBSIDIAN);
+    if (look == CC_LOOK_PALMA)     return APPLY_LUT(v.x, v.y, v.z, CC_LUT_PALMA);
+    if (look == CC_LOOK_SILVER)    return APPLY_LUT(v.x, v.y, v.z, CC_LUT_SILVER);
+    if (look == CC_LOOK_STERLING)  return APPLY_LUT(v.x, v.y, v.z, CC_LUT_STERLING);
+    if (look == CC_LOOK_VISTA)     return APPLY_LUT(v.x, v.y, v.z, CC_LUT_VISTA);
+    return v;
+}
+
+
+// ============================================================================
+//  SECTION 5 :: MAIN TRANSFORM
+// ============================================================================
+
+// NOTE: Resolve parses this signature textually from the line containing
+// "transform(", so it MUST stay on a single line.
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+    float3 rgb = make_float3(cc_safe(p_R), cc_safe(p_G), cc_safe(p_B));
+
+    if (gLook == CC_LOOK_NONE || gLookMix <= 0.0f) return rgb;
+
+    float3 look = cc_lookup(cc_lut_domain(rgb), gLook);
+
+    return cc_mix3(rgb, look, _saturatef(gLookMix));
+}

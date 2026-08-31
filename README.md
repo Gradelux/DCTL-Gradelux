@@ -45,6 +45,26 @@ DCTL OpenFX plugin on a node.
 Every control is neutral at its default: with the panel untouched the DCTL
 returns its input unchanged.
 
+## LUT looks
+
+`CineCoreLook.dctl` is a separate DCTL that applies a selectable `.cube` look
+with a mix control. It is kept separate from `CineCore.dctl` on purpose: the
+supplied LUTs are display-referred **Rec.709**, while CineCore works in DaVinci
+Wide Gamut / DaVinci Intermediate, so the look node must sit after a colour
+space transform:
+
+```
+[ CineCore.dctl ] -> [ CST: DaVinci WG/Intermediate -> Rec.709 ] -> [ CineCoreLook.dctl ]
+```
+
+Applying it directly to DaVinci Intermediate data gives a broken image, not a
+look. A DCTL also fails to compile if a LUT it references is missing, so
+keeping the stage separate means `CineCore.dctl` still builds without any LUTs
+present.
+
+The `.cube` files are not distributed with this project — see
+[luts/README.md](luts/README.md).
+
 ## Notes
 
 Color-science decisions, labelled approximations and verification results are

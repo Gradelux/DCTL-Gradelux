@@ -298,6 +298,68 @@ Subtractive saturation is excluded from the skin figures above, deliberately:
 it is a saturation control and is *expected* to saturate skin. Measured
 separately it moves mid skin 0.853 stop at maximum, bounded and hue-stable.
 
+## 1.8 LUT looks — findings and the open decision
+
+A set of 19 `.cube` look LUTs was supplied (15 x 33³, 4 x 65³). Two properties
+of that set determine how they can be used, and neither is a code problem.
+
+### 1.8.1 They are display-referred Rec.709 LUTs
+
+Eleven state `# Input: Rec.709` in their own headers. The other eight, baked in
+Resolve, state nothing, but all 19 have a 0..1 domain and a 0..1 output range,
+which is the signature of a display-referred LUT.
+
+CineCore works in DaVinci Wide Gamut / DaVinci Intermediate. **These are not
+interchangeable.** DI mid-grey is code value 0.336 and DI 1.0 is linear 100, so
+a Rec.709 LUT reads a DI mid-grey as something close to black, and the gamuts do
+not match either. Applying one directly to DI data produces a broken image, not
+a look.
+
+Resolving this inside the DCTL requires a DaVinci WG/Intermediate -> Rec.709
+conversion, which collides with three standing project rules: no Rec.709
+transform baked in, no output CST unless requested, keep the pipeline
+scene-referred. **Not resolved unilaterally — awaiting a decision.** The three
+viable routes, in the order they are recommended:
+
+| Route | What it needs | Consequence |
+|---|---|---|
+| **A. Re-bake the LUTs for DI input** | Resolve node tree `CST DI->709 / LUT / CST 709->DI`, then Generate 3D LUT | Best fit. LUTs become native to the working space, no conversion in the DCTL, every project rule preserved, and the stage can merge straight into CineCore. Costs LUT resolution across DI's very wide range |
+| **B. Keep the look stage on a separate node after a CST** | Nothing — works today | Zero risk, standard Resolve practice, no rule changes. Costs the single-node integration |
+| **C. Add a DWG->Rec.709 conversion inside the DCTL** | Lifting the three rules, plus an official DWG matrix | Single node, full integration. But the matrix is not in the documentation available here and must not be derived, so this route is blocked on a documented matrix being supplied |
+
+`CineCoreLook.dctl` implements route B today and is written so that routes A and
+C need no change to its logic — only to what the LUTs contain, or to what feeds
+the node.
+
+### 1.8.2 Licensing
+
+Eleven of the LUTs are Dehancer-generated and carry an explicit notice in their
+headers: property of Dehancer Ltd, usable by the plugin licence owner only,
+copying and sharing prohibited.
+
+Consequences applied:
+
+- The `.cube` files are **not** committed. `.gitignore` excludes `*.cube` so
+  they cannot be added by accident.
+- `CineCoreLook.dctl` contains no LUT data. It references files by name, so it
+  is distributable even though its LUT set is not.
+- **If CineCore is ever distributed commercially, this LUT set cannot go with
+  it.** The parametric look engine in Phase 4 is the route to shippable looks;
+  the LUT selector is best treated as a personal-use convenience layer.
+
+### 1.8.3 Syntax confidence
+
+`DEFINE_LUT` / `APPLY_LUT` are used as documented DCTL features. Confidence is
+high but **unverified in this environment** — no Resolve compiler is available
+here, and no DCTL documentation was supplied to the project to check against.
+The C-level structure is verified by the same shim method used for CineCore.
+`CineCoreLook.dctl` is deliberately small so it doubles as the syntax test: if
+the macros are wrong, it fails alone and `CineCore.dctl` keeps building.
+
+This is also why the LUT stage is not inside `CineCore.dctl`: a DCTL that
+references a missing LUT file fails to compile, so merging the stage would make
+the main grading tool unbuildable for anyone without this exact LUT set.
+
 ## 2. Labelled approximations
 
 | Approximation | Nature | Why accepted |
@@ -357,6 +419,7 @@ Every division is guarded or has a non-zero compile-time constant denominator;
 | 3 | Hue densities, split toning, highlight warmth, shadow cooling, bleach bypass | Not started |
 | 4 | Film-look engine and profile architecture | Not started |
 | 5 | ~20 film looks on the shared engine | Not started |
+| — | `CineCoreLook.dctl`, LUT look selector, 19 looks | **Usable, pending the 1.8.1 decision** |
 | 6 | GPU, cleanliness, stability, Resolve compatibility | Not started |
 
 Phase 3 inserts at the marked point in `SECTION 11`, after color separation.
