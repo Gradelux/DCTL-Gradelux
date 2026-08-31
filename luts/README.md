@@ -32,6 +32,67 @@ parametric engine in Phase 4. Note that a distributed CineCore would need its
 `DEFINE_LUT` lines adjusted to whatever LUT set ships with it, since a missing
 file stops the DCTL compiling.
 
+## Colour space contract
+
+**Every LUT in this folder is DaVinci Wide Gamut / DaVinci Intermediate in and
+out.** CineCore applies them with no conversion of any kind. Each file's TITLE
+records this. They are NOT interchangeable with the Rec.709 originals.
+
+| | |
+|---|---|
+| Input gamut | DaVinci Wide Gamut |
+| Input transfer | DaVinci Intermediate |
+| Output gamut | DaVinci Wide Gamut |
+| Output transfer | DaVinci Intermediate |
+| Domain | 0.0 – 1.0 |
+| Grid | 33³ |
+
+They were produced by `tools/bake_luts.py` from the Rec.709 originals. Resolve's
+Generate 3D LUT is not involved. Per grid point:
+
+```
+DI code -> linear DWG        DaVinci Intermediate EOTF
+        -> CIE XYZ           DWG_TO_XYZ      (Blackmagic published, verbatim)
+        -> linear Rec.709    XYZ_TO_REC709   (published ITU-R BT.709, D65)
+        -> Rec.709 code      BT.709 OETF
+        -> [ creative look ] clamped to the LUT domain, as a LUT node does
+        -> linear Rec.709    inverse OETF
+        -> CIE XYZ           REC709_TO_XYZ
+        -> linear DWG        XYZ_TO_DWG      (Blackmagic published, verbatim)
+        -> DI code           DaVinci Intermediate OETF
+```
+
+Rec.709 appears here only because the source LUTs are Rec.709 LUTs; converting
+into and out of that space is the entire job. It is confined to the offline
+baker and appears nowhere in the DCTL.
+
+### Known characteristics, measured
+
+| | value |
+|---|---|
+| Round trip at grid points | exact, 0.00e+00 |
+| Forward recomputation agreement | 4.6e-09 |
+| Output ceiling | DI 0.513837, diffuse white |
+| Interpolation error at the clamp knee | 0.0132 DI, 0.18 stop (65³: 0.05 stop) |
+| Worst diagonal non-monotonicity | 0.0040 DI, 0.055 stop (65³: 0.018 stop) |
+
+The last two are properties of a 33³ uniform grid in a log domain, not bake
+errors: grid points are evenly spaced in DI but exponentially spaced in linear,
+so interpolating the curved round trip is imperfect between them. The source
+LUTs show zero diagonal dip; 65³ halves it rather than removing it. Re-bake at
+65-point by changing `out_size` in `bake_luts.py` if it ever shows.
+
+## `_Reference_Identity.cube`
+
+Baked through the identical pipeline with the creative stage replaced by an
+identity. Selecting **Reference Identity** in CineCore should leave the image
+visibly unchanged below diffuse white. If it changes the image, the LUT set is
+wrong or the node is not receiving DaVinci Intermediate. It separates "bad LUT
+set" from "bad look" in one click.
+
+Verified as an exact identity at every grid point, including in-gamut colour,
+and correctly saturating above diffuse white.
+
 ## Expected filenames
 
 | File | Source | Size | Stated input |
@@ -56,10 +117,8 @@ file stops the DCTL compiling.
 | Sterling.cube | Dehancer | 33³ | Rec.709 |
 | Vista.cube | Resolve | 33³ | not stated |
 
-All 19 have a 0..1 domain and 0..1 output range, i.e. they are all
-display-referred. The eight "not stated" files were baked in Resolve and their
-ranges are consistent with Rec.709 input, but that is an inference from the
-data, not a declaration in the file.
+The table above describes the ORIGINAL Rec.709 sources. The files actually in
+this folder are their DI-baked counterparts, all 33³.
 
 `Chrome` (Ilford HP5 Plus 400) and `Obsidian` (Kodak Plus-X Pan 125) are black
 and white stocks — those two LUTs are monochrome conversions and will behave

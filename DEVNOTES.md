@@ -431,6 +431,52 @@ This is also why the LUT stage is not inside `CineCore.dctl`: a DCTL that
 references a missing LUT file fails to compile, so merging the stage would make
 the main grading tool unbuildable for anyone without this exact LUT set.
 
+### 1.8.2 Software bake — the working method
+
+Blackmagic's published DWG matrices were supplied, so the bake was done in
+software (`tools/bake_luts.py`), with Resolve's Generate 3D LUT out of the path
+entirely. The supplied matrices were checked before use: inverse pair to
+1.2e-08, white point and all three primary chromaticities matching the stated
+values to ~1e-09.
+
+Rec.709 enters only because the sources are Rec.709 LUTs. It is confined to the
+offline baker and appears nowhere in the DCTL.
+
+**Gamma choice.** The BT.709 OETF, matching the LUTs' own "Rec.709" label.
+Still the one unresolved judgement call — the files do not state whether they
+mean the OETF or a 2.4 power function. Worth knowing: for the look to land
+exactly as authored, the encoding used in the bake should also match the
+project's output transform, since the two then cancel. One flag in the baker
+re-bakes the set as `gamma24`.
+
+**Results.** Round trip exact (0.00e+00) at every grid point below diffuse
+white, including in-gamut colour; independent forward recomputation agrees to
+4.6e-09; output correctly ceilings at DI 0.513837.
+
+**Two measured 33³ characteristics, neither a bake error.** Grid points are
+uniform in DI but exponential in linear, so interpolating the curved round trip
+between them is imperfect:
+
+| | 33³ | 65³ |
+|---|---|---|
+| Interpolation error at the clamp knee | 0.18 stop | 0.05 stop |
+| Worst diagonal non-monotonicity | 0.055 stop | 0.018 stop |
+
+The knee error rounds off the corner where Rec.709 saturates at diffuse white,
+which softens the clip rather than damaging it. The diagonal dip is the less
+welcome one — the source LUTs show zero — but at 0.055 stop it is small, and
+65³ halves rather than removes it. 33-point was delivered as specified; 65 is
+an `out_size` change away.
+
+**A verification lesson worth keeping.** Four checks failed on the first run and
+all four were badly specified, not real defects: identity and forward-agreement
+were compared against *interpolated* values rather than at grid points, where
+the answer is exact; "neutrals stay neutral" was applied to creative looks,
+which are entitled to tint greys and mostly do; and monotonicity was measured on
+the trilinear diagonal, which mixes in off-diagonal corners. Testing a numeric
+pipeline at the points it actually defines is the difference between measuring
+the pipeline and measuring the sampler.
+
 ## 2. Labelled approximations
 
 | Approximation | Nature | Why accepted |
@@ -439,6 +485,7 @@ the main grading tool unbuildable for anyone without this exact LUT set.
 | White balance as normalized channel gains | Not a chromatic adaptation transform | A true CAT needs a documented DWG matrix this project does not have. Gain model is the standard well-behaved substitute, exact in stops and exposure-preserving on neutrals |
 | Saturation in log rather than linear | Not chromaticity-preserving in a strict colorimetric sense | Log saturation is far gentler and reads as color rather than clipping; linear saturation drives channels negative almost immediately on saturated color. Extreme boosts drift slightly in hue |
 | 25% per-channel share in shoulder and toe | Introduces a small hue shift by construction | This *is* the film behaviour being modelled; at 25% it stays well short of a pure per-channel curve's hue skew |
+| BT.709 OETF assumed for the source LUTs' encoding | The files say "Rec.709" without settling OETF vs 2.4 power | Matches the label; re-bakeable with one flag if the looks land wrong |
 | Hue position `p` measured in log RGB | Not a perceptual hue space | No trigonometry, no ill-conditioning near neutral, and the six primaries are exact fixed points. A perceptual hue space would need a documented DWG matrix this project does not have |
 | Chroma as max − min channel spread | Not a colorimetric chroma | Exactly zero for neutrals, always non-negative, no square root or arc tangent, and stable to the last bit near grey — which is precisely where a hue-angle formulation fails |
 | Skin protection via chroma selectivity | Statistical, not semantic | No hue detection is used anywhere in Phase 2; an unusually saturated skin tone will be treated as saturated color. Measured 12.7× selectivity between saturated red and mid skin |

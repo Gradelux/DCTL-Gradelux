@@ -24,6 +24,13 @@
 //  .cube listed there, named exactly.
 //
 //  Those LUTs must be baked for DaVinci Intermediate input. See BAKING.md.
+//
+//  "Reference Identity" is a diagnostic look, not a creative one. It was baked
+//  through the identical pipeline with the creative stage replaced by an
+//  identity, so selecting it should leave the image visibly UNCHANGED below
+//  diffuse white. If it changes the image, the LUT set is wrong or the node is
+//  not receiving DaVinci Intermediate. It is the fastest way to tell a bad LUT
+//  set apart from a bad look.
 //  A Rec.709 LUT applied to DI data gives a badly wrong image, not a subtly
 //  wrong one, because DI mid grey is code value 0.336 and DI 1.0 is linear 100.
 //  If a look looks wildly dark or crushed, that LUT has not been re-baked.
@@ -84,7 +91,7 @@ DEFINE_UI_PARAMS(gRichness, Richness, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.0
 DEFINE_UI_PARAMS(gColorSeparation, Color Separation, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
 
 // ---- Film look ------------------------------------------------------------
-DEFINE_UI_PARAMS(gLook, Film Look, DCTLUI_COMBO_BOX, 0, {CC_LOOK_NONE, CC_LOOK_70S, CC_LOOK_ALPINE, CC_LOOK_CHROME, CC_LOOK_CLEAN, CC_LOOK_COAST, CC_LOOK_DAZE, CC_LOOK_DUSK, CC_LOOK_KODA, CC_LOOK_LAGUNA, CC_LOOK_LUCID, CC_LOOK_LUX, CC_LOOK_MIST, CC_LOOK_MONACO, CC_LOOK_NORDIC, CC_LOOK_OBSIDIAN, CC_LOOK_PALMA, CC_LOOK_SILVER, CC_LOOK_STERLING, CC_LOOK_VISTA}, {None, 70s, Alpine, Chrome, Clean, Coast, Daze, Dusk, Koda, Laguna, Lucid, Lux, Mist, Monaco, Nordic, Obsidian, Palma, Silver, Sterling, Vista})
+DEFINE_UI_PARAMS(gLook, Film Look, DCTLUI_COMBO_BOX, 0, {CC_LOOK_NONE, CC_LOOK_REFERENCE, CC_LOOK_70S, CC_LOOK_ALPINE, CC_LOOK_CHROME, CC_LOOK_CLEAN, CC_LOOK_COAST, CC_LOOK_DAZE, CC_LOOK_DUSK, CC_LOOK_KODA, CC_LOOK_LAGUNA, CC_LOOK_LUCID, CC_LOOK_LUX, CC_LOOK_MIST, CC_LOOK_MONACO, CC_LOOK_NORDIC, CC_LOOK_OBSIDIAN, CC_LOOK_PALMA, CC_LOOK_SILVER, CC_LOOK_STERLING, CC_LOOK_VISTA}, {None, Reference Identity, 70s, Alpine, Chrome, Clean, Coast, Daze, Dusk, Koda, Laguna, Lucid, Lux, Mist, Monaco, Nordic, Obsidian, Palma, Silver, Sterling, Vista})
 DEFINE_UI_PARAMS(gLookMix, Look Mix, DCTLUI_SLIDER_FLOAT, 1.0f, 0.0f, 1.0f, 0.001f)
 
 // ---- LUT declarations -----------------------------------------------------
@@ -95,6 +102,7 @@ DEFINE_UI_PARAMS(gLookMix, Look Mix, DCTLUI_SLIDER_FLOAT, 1.0f, 0.0f, 1.0f, 0.00
 //
 //  The .cube files are not distributed with this project; several are licensed
 //  to an individual owner and may not be redistributed. See luts/README.md.
+DEFINE_LUT(CC_LUT_REFERENCE, luts/_Reference_Identity.cube)
 DEFINE_LUT(CC_LUT_70S, luts/70s.cube)
 DEFINE_LUT(CC_LUT_ALPINE, luts/Alpine.cube)
 DEFINE_LUT(CC_LUT_CHROME, luts/Chrome.cube)
@@ -1088,6 +1096,7 @@ __DEVICE__ float3 cc_lut_domain(float3 v)
 // compile time, not per-pixel speed.
 __DEVICE__ float3 cc_lookup(float3 v, int look)
 {
+    if (look == CC_LOOK_REFERENCE) return APPLY_LUT(v.x, v.y, v.z, CC_LUT_REFERENCE);
     if (look == CC_LOOK_70S)       return APPLY_LUT(v.x, v.y, v.z, CC_LUT_70S);
     if (look == CC_LOOK_ALPINE)    return APPLY_LUT(v.x, v.y, v.z, CC_LUT_ALPINE);
     if (look == CC_LOOK_CHROME)    return APPLY_LUT(v.x, v.y, v.z, CC_LUT_CHROME);
