@@ -17,6 +17,10 @@ DENSITY_AMOUNT=0.055; DENSITY_EXP_LO=3.0; DENSITY_EXP_HI=1.2
 SUBSAT_GAIN=0.60; SUBSAT_LIMIT=0.90
 RICH_GAIN=0.35; RICH_LO=0.12; RICH_HI=0.70; RICH_PROTECT=1.50
 SEP_MAX=0.60; SEP_EXP=2.0
+HUE_BAND_WIDTH=1.0; HUE_DENSITY_AMT=0.09; HUE_DENSITY_EXP=1.0
+SPLIT_AMOUNT=0.030; SPLIT_WIDTH=0.18; SPLIT_RANGE=0.12
+BLEACH_DESAT=0.65; BLEACH_GAMMA=0.55
+DI_MID=0.336043
 OC_K,OC_R,OF_K,OF_R=2.00,1.00,-1.00,0.50
 
 def clampf(x,a,b): return max(a,min(b,x))
@@ -154,6 +158,59 @@ def color_separation(v,amount):
     mdOut=mn+(p+k*(sp-p))*rng
     return [remap_mid(x,mn,md,mx,mdOut) for x in v]
 
+def smooth01(t):
+    x=sat1(t); return x*x*(3.0-2.0*x)
+
+def hue6(v,mx,ch):
+    if mx==v[0]: h=(v[1]-v[2])/ch
+    elif mx==v[1]: h=2.0+(v[2]-v[0])/ch
+    else: h=4.0+(v[0]-v[1])/ch
+    return h+6.0 if h<0.0 else h
+
+def hue_band(h,anchor):
+    d=abs(h-anchor)
+    if d>3.0: d=6.0-d
+    return smooth01(1.0-d/HUE_BAND_WIDTH)
+
+def hue_density(v,r,o,y,g,c,b,m):
+    if r==0 and o==0 and y==0 and g==0 and c==0 and b==0 and m==0: return v
+    mx=max(v); ch=mx-min(v)
+    if ch<CHROMA_FLOOR: return v
+    h=hue6(v,mx,ch)
+    a=(r*hue_band(h,0.0)+o*hue_band(h,0.5)+y*hue_band(h,1.0)+g*hue_band(h,2.0)
+       +c*hue_band(h,3.0)+b*hue_band(h,4.0)+m*hue_band(h,5.0))
+    off=-a*HUE_DENSITY_AMT*chroma_weight(ch,HUE_DENSITY_EXP)
+    return [x+off for x in v]
+
+def warm_axis():
+    d=[1.0,0.15,-1.0]; yy=luma(d)
+    n=[x-yy for x in d]; mm=max(abs(x) for x in n)
+    inv=cc_div(1.0,mm)
+    return [x*inv for x in n]
+
+def split_tone(v,warmHi,coolLo,balance):
+    if warmHi==0 and coolLo==0: return v
+    cross=DI_MID+clampf(balance,-1,1)*SPLIT_RANGE
+    yy=luma(v)
+    hi=smooth01((yy-cross)/SPLIT_WIDTH); lo=smooth01((cross-yy)/SPLIT_WIDTH)
+    a=(warmHi*hi-coolLo*lo)*SPLIT_AMOUNT
+    ax=warm_axis()
+    return [v[i]+ax[i]*a for i in range(3)]
+
+def bleach_curve(x,g):
+    if x>=DI_WHITE: return DI_WHITE+(x-DI_WHITE)*g
+    t=x/DI_WHITE
+    m=pow_pos(abs(t),g)
+    return DI_WHITE*math.copysign(m,t)
+
+def bleach_bypass(v,amount,mix):
+    if amount<=0 or mix<=0: return v
+    a=sat1(amount); yy=luma(v); d=a*BLEACH_DESAT
+    sv=[lerp(x,yy,d) for x in v]
+    g=1.0+a*BLEACH_GAMMA
+    sv=[bleach_curve(x,g) for x in sv]
+    return [lerp(v[i],sv[i],sat1(mix)) for i in range(3)]
+
 def out_limit(x): return soft_floor(soft_ceil(x,OC_K,OC_R),OF_K,OF_R)
 
 def transform(rgb, P, enc=0, bypass=False):
@@ -174,13 +231,18 @@ def transform(rgb, P, enc=0, bypass=False):
     cv=subtractive_saturation(cv,P['sub'])
     cv=richness(cv,P['rich'])
     cv=color_separation(cv,P['sep'])
+    cv=hue_density(cv,P['hr'],P['ho'],P['hy'],P['hg'],P['hc'],P['hb'],P['hm'])
+    cv=split_tone(cv,P['whi'],P['clo'],P['sbal'])
+    cv=bleach_bypass(cv,P['bl'],P['blmix'])
     cv=[out_limit(c) for c in cv]
     if enc==1: cv=[di2lin(c) for c in cv]
     return [cc_safe(c) for c in cv]
 
 DEF=dict(exp=0.0,temp=0.0,tint=0.0,con=1.0,piv=0.336,sat=1.0,bp=0.0,wp=0.0,
          sh=0.0,ro=0.5,toe=0.0,dep=0.0,
-         den=0.0,dens=0.5,sub=0.0,rich=0.0,sep=0.0)
+         den=0.0,dens=0.5,sub=0.0,rich=0.0,sep=0.0,
+         hr=0.0,ho=0.0,hy=0.0,hg=0.0,hc=0.0,hb=0.0,hm=0.0,
+         whi=0.0,clo=0.0,sbal=0.0,bl=0.0,blmix=1.0)
 
 fails=[]
 def check(name,cond,info=""):
@@ -232,7 +294,11 @@ for _ in range(60000):
            bp=random.uniform(-0.05,0.05),wp=random.uniform(-0.15,0.15),
            sh=random.uniform(0,1),ro=random.uniform(0,1),toe=random.uniform(0,1),dep=random.uniform(0,1),
            den=random.uniform(0,1),dens=random.uniform(0,1),sub=random.uniform(0,1),
-           rich=random.uniform(0,1),sep=random.uniform(0,1))
+           rich=random.uniform(0,1),sep=random.uniform(0,1),
+           hr=random.uniform(-1,1),ho=random.uniform(-1,1),hy=random.uniform(-1,1),
+           hg=random.uniform(-1,1),hc=random.uniform(-1,1),hb=random.uniform(-1,1),
+           hm=random.uniform(-1,1),whi=random.uniform(-1,1),clo=random.uniform(-1,1),
+           sbal=random.uniform(-1,1),bl=random.uniform(0,1),blmix=random.uniform(0,1))
     rgb = random.choice(hostile) if random.random()<0.15 else [random.uniform(-0.3,1.4) for _ in range(3)]
     enc = random.choice([0,1])
     if enc==1 and rgb not in hostile: rgb=[random.uniform(-0.1,80.0) for _ in range(3)]
@@ -251,7 +317,11 @@ for _ in range(40000):
            bp=random.uniform(-0.05,0.05),wp=random.uniform(-0.15,0.15),
            sh=random.uniform(0,1),ro=random.uniform(0,1),toe=random.uniform(0,1),dep=random.uniform(0,1),
            den=random.uniform(0,1),dens=random.uniform(0,1),sub=random.uniform(0,1),
-           rich=random.uniform(0,1),sep=random.uniform(0,1))
+           rich=random.uniform(0,1),sep=random.uniform(0,1),
+           hr=random.uniform(-1,1),ho=random.uniform(-1,1),hy=random.uniform(-1,1),
+           hg=random.uniform(-1,1),hc=random.uniform(-1,1),hb=random.uniform(-1,1),
+           hm=random.uniform(-1,1),whi=random.uniform(-1,1),clo=random.uniform(-1,1),
+           sbal=random.uniform(-1,1),bl=random.uniform(0,1),blmix=random.uniform(0,1))
     rgb=[random.uniform(-0.2,1.3) for _ in range(3)]
     o=transform(rgb,P,0); lo=min(lo,min(o)); hi=max(hi,max(o))
 check("T5 DI output stays inside soft limits [-1.5, 3.0]", lo>=-1.5 and hi<=3.0, f"range [{lo:.4f}, {hi:.4f}]")
@@ -264,7 +334,11 @@ for _ in range(4000):
            bp=random.uniform(-0.05,0.05),wp=random.uniform(-0.15,0.15),
            sh=random.uniform(0,1),ro=random.uniform(0,1),toe=random.uniform(0,1),dep=random.uniform(0,1),
            den=random.uniform(0,1),dens=random.uniform(0,1),sub=random.uniform(0,1),
-           rich=random.uniform(0,1),sep=random.uniform(0,1))
+           rich=random.uniform(0,1),sep=random.uniform(0,1),
+           hr=random.uniform(-1,1),ho=random.uniform(-1,1),hy=random.uniform(-1,1),
+           hg=random.uniform(-1,1),hc=random.uniform(-1,1),hb=random.uniform(-1,1),
+           hm=random.uniform(-1,1),whi=random.uniform(-1,1),clo=random.uniform(-1,1),
+           sbal=random.uniform(-1,1),bl=random.uniform(0,1),blmix=random.uniform(0,1))
     prev=None
     for i in range(400):
         g=-0.02+i*(1.12+0.02)/399.0
@@ -483,7 +557,11 @@ for _ in range(2000):
            sat=random.uniform(0,2),bp=random.uniform(-0.05,0.05),wp=random.uniform(-0.15,0.15),
            sh=random.uniform(0,1),ro=random.uniform(0,1),toe=random.uniform(0,1),dep=random.uniform(0,1),
            den=random.uniform(0,1),dens=random.uniform(0,1),sub=random.uniform(0,1),
-           rich=random.uniform(0,1),sep=random.uniform(0,1))
+           rich=random.uniform(0,1),sep=random.uniform(0,1),
+           hr=random.uniform(-1,1),ho=random.uniform(-1,1),hy=random.uniform(-1,1),
+           hg=random.uniform(-1,1),hc=random.uniform(-1,1),hb=random.uniform(-1,1),
+           hm=random.uniform(-1,1),whi=random.uniform(-1,1),clo=random.uniform(-1,1),
+           sbal=random.uniform(-1,1),bl=random.uniform(0,1),blmix=random.uniform(0,1))
     base=[0.5,0.3,0.2]; prev=None
     for i in range(200):
         sc=0.02*(2.0**(i*8.0/199.0-4.0))
@@ -492,5 +570,114 @@ for _ in range(2000):
         if prev is not None and y<prev-2e-3: nm+=1; break
         prev=y
 check("P2-8 constant-hue exposure ramp stays monotonic in luma", nm==0, f"{nm} cases")
+
+
+# ==================== PHASE 3 ====================
+print("\n--- Phase 3 ---")
+random.seed(41)
+
+# P3-1 every new control neutral at default
+worst=0.0
+for _ in range(20000):
+    rgb=[random.uniform(-0.05,1.15) for _ in range(3)]
+    o=transform(rgb,DEF,0)
+    worst=max(worst,max(abs(o[i]-rgb[i]) for i in range(3)))
+check("P3-1 Phase 3 controls are inert at their defaults", worst==0.0, f"{worst:.3e}")
+
+# P3-2 hue density is a pure density move: hue and chroma preserved exactly
+wd=0.0; wc=0.0
+for _ in range(20000):
+    v=[random.uniform(-0.1,1.1) for _ in range(3)]
+    p=[random.uniform(-1,1) for _ in range(7)]
+    o=hue_density(v,*p)
+    wd=max(wd,abs((v[1]-v[0])-(o[1]-o[0])),abs((v[2]-v[1])-(o[2]-o[1])))
+    wc=max(wc,abs(chroma(o)-chroma(v)))
+check("P3-2 hue density preserves channel differences exactly", wd<1e-12, f"{wd:.2e}")
+check("P3-2b hue density preserves chroma exactly", wc<1e-12, f"{wc:.2e}")
+
+# P3-3 hue density leaves neutrals untouched
+nd=0.0
+for g in [0.0,0.05,0.2,0.336,0.5138,0.8,1.05]:
+    o=hue_density([g,g,g],1,1,1,1,1,1,1)
+    nd=max(nd,max(abs(o[i]-g) for i in range(3)))
+check("P3-3 hue density never touches a neutral", nd<1e-12, f"{nd:.2e}")
+
+# P3-4 each band peaks at its own anchor
+ANCH={'Red':0.0,'Orange':0.5,'Yellow':1.0,'Green':2.0,'Cyan':3.0,'Blue':4.0,'Magenta':5.0}
+bad=[]
+for n,a in ANCH.items():
+    if abs(hue_band(a,a)-1.0)>1e-9: bad.append(n+" peak")
+    far=max(hue_band((a+3.0)%6.0,a),hue_band((a+2.0)%6.0,a))
+    if far>1e-9: bad.append(n+" leak")
+check("P3-4 each hue band peaks at its anchor and is zero across the wheel", not bad, "; ".join(bad))
+seam=max(abs(hue_band(6.0-e,0.0)-hue_band(0.0+e,0.0)) for e in [0.01,0.1,0.5,0.9])
+check("P3-4b hue bands wrap continuously across the 0/6 seam", seam<1e-9, f"{seam:.2e}")
+
+# P3-5 hue is stable near neutral because the weight vanishes with chroma
+mx=0.0
+for _ in range(20000):
+    base=random.uniform(0.05,0.9)
+    eps=random.uniform(0.0,0.004)
+    v=[base+random.uniform(-eps,eps) for _ in range(3)]
+    o=hue_density(v,1,-1,1,-1,1,-1,1)
+    mx=max(mx,max(abs(o[i]-v[i]) for i in range(3)))
+check("P3-5 near-neutral pixels barely move despite unstable hue", mx<0.002, f"{mx:.2e}")
+
+# P3-6 split toning preserves luminance exactly
+le=0.0
+for _ in range(20000):
+    v=[random.uniform(-0.1,1.1) for _ in range(3)]
+    o=split_tone(v,random.uniform(-1,1),random.uniform(-1,1),random.uniform(-1,1))
+    le=max(le,abs(luma(o)-luma(v)))
+check("P3-6 split toning preserves luminance exactly", le<1e-9, f"{le:.2e}")
+
+# P3-7 the two split ends are disjoint and meet cleanly at the crossover
+cr=DI_MID
+gap=max(abs(split_tone([cr,cr,cr],1.0,1.0,0.0)[i]-cr) for i in range(3))
+check("P3-7 midtones at the crossover are untouched", gap<1e-9, f"{gap:.2e}")
+warm_at_hi=split_tone([0.7,0.7,0.7],1.0,0.0,0.0)
+cool_at_lo=split_tone([0.1,0.1,0.1],0.0,1.0,0.0)
+check("P3-7b warm highlights push red up and blue down",
+      warm_at_hi[0]>0.7 and warm_at_hi[2]<0.7)
+check("P3-7c cool shadows push blue up and red down",
+      cool_at_lo[2]>0.1 and cool_at_lo[0]<0.1)
+
+# P3-8 bleach curve: monotonic, pinned at black and diffuse white
+nm=0; prev=None
+for i in range(4001):
+    x=-0.1+i*1.3/4000.0
+    y=bleach_curve(x,1.55)
+    if prev is not None and y<=prev-1e-12: nm+=1; break
+    prev=y
+check("P3-8 bleach curve is strictly increasing", nm==0, f"{nm}")
+check("P3-8b bleach curve pins black at exactly 0", abs(bleach_curve(0.0,1.55))<1e-12)
+check("P3-8c bleach curve pins diffuse white", abs(bleach_curve(DI_WHITE,1.55)-DI_WHITE)<1e-9)
+d1=(bleach_curve(DI_WHITE,1.55)-bleach_curve(DI_WHITE-1e-4,1.55))/1e-4
+d2=(bleach_curve(DI_WHITE+1e-4,1.55)-bleach_curve(DI_WHITE,1.55))/1e-4
+check("P3-8d bleach curve is C1 at diffuse white", abs(d1-d2)<1e-3, f"{abs(d1-d2):.2e}")
+
+# P3-9 bleach keeps neutrals neutral and darkens the mids
+nn=0.0
+for g in [0.05,0.2,0.336,0.45]:
+    o=bleach_bypass([g,g,g],1.0,1.0)
+    nn=max(nn,max(o)-min(o))
+check("P3-9 bleach bypass keeps neutrals neutral", nn<1e-12, f"{nn:.2e}")
+mid=bleach_bypass([DI_MID]*3,1.0,1.0)[0]
+check("P3-9b bleach bypass deepens the midtones", mid<DI_MID-0.01, f"{DI_MID:.4f} -> {mid:.4f}")
+sat_before=chroma([0.45,0.30,0.22]); sat_after=chroma(bleach_bypass([0.45,0.30,0.22],1.0,1.0))
+check("P3-9c bleach bypass reduces chroma", sat_after<sat_before*0.6,
+      f"{sat_before:.4f} -> {sat_after:.4f}")
+
+# P3-10 mix 0 is an exact pass-through, and strength-vs-mix differ
+pt=0.0
+for _ in range(5000):
+    v=[random.uniform(-0.1,1.1) for _ in range(3)]
+    o=bleach_bypass(v,random.uniform(0,1),0.0)
+    pt=max(pt,max(abs(o[i]-v[i]) for i in range(3)))
+check("P3-10 bleach mix 0 is a bit-exact pass-through", pt==0.0, f"{pt:.2e}")
+a=bleach_bypass([0.45,0.30,0.22],1.0,0.5); b=bleach_bypass([0.45,0.30,0.22],0.5,1.0)
+check("P3-10b strength and mix are genuinely different controls",
+      max(abs(a[i]-b[i]) for i in range(3))>0.005,
+      f"max delta {max(abs(a[i]-b[i]) for i in range(3)):.4f}")
 
 print("\n"+("ALL CHECKS PASSED" if not fails else f"{len(fails)} FAILURES:\n"+"\n".join(fails)))

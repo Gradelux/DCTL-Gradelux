@@ -3,13 +3,14 @@
 //  A modular grading and film-look engine for DaVinci Resolve
 //  ---------------------------------------------------------------------------
 //  Working space : DaVinci Wide Gamut / DaVinci Intermediate
-//  Build stage   : PHASE 2 + LUT film look
+//  Build stage   : PHASE 3 + LUT film look
 //                  Phase 1  input safety, exposure, white balance, tint,
 //                           contrast, pivot, highlight shoulder, shadow toe,
 //                           shadow depth, black point, white point,
 //                           saturation, output safety.
 //                  Phase 2  film density, subtractive saturation, richness,
 //                           color separation.
+//                  Phase 3  hue density shaping, split toning, bleach bypass.
 //                  Look     LUT-based film look selector with mix.
 //
 //  Later phases add hue densities, split toning, bleach bypass and the
@@ -89,6 +90,30 @@ DEFINE_UI_PARAMS(gDensityStrength, Density Strength, DCTLUI_SLIDER_FLOAT, 0.5f, 
 DEFINE_UI_PARAMS(gSubSaturation, Subtractive Saturation, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gRichness, Richness, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gColorSeparation, Color Separation, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
+
+// ---- Hue density ----------------------------------------------------------
+//  Positive adds density to that hue family - deeper, heavier. Negative opens
+//  it up. Bands overlap deliberately so hues blend rather than banding at the
+//  boundaries; Red, Orange and Yellow are anchored closer together than the
+//  rest because that is where discrimination matters most.
+DEFINE_UI_PARAMS(gRedDensity, Red Density, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gOrangeDensity, Orange Density, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gYellowDensity, Yellow Density, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gGreenDensity, Green Density, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gCyanDensity, Cyan Density, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gBlueDensity, Blue Density, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gMagentaDensity, Magenta Density, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
+
+// ---- Split toning ---------------------------------------------------------
+//  Positive moves each end in the direction its name states. Negative reverses
+//  it, so highlights can be cooled and shadows warmed from the same controls.
+DEFINE_UI_PARAMS(gWarmHighlights, Warm Highlights, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gCoolShadows, Cool Shadows, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gSplitBalance, Split Tone Balance, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
+
+// ---- Bleach bypass --------------------------------------------------------
+DEFINE_UI_PARAMS(gBleachBypass, Bleach Bypass, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gBleachMix, Bleach Bypass Mix, DCTLUI_SLIDER_FLOAT, 1.0f, 0.0f, 1.0f, 0.001f)
 
 // ---- Film look ------------------------------------------------------------
 DEFINE_UI_PARAMS(gLook, Film Look, DCTLUI_COMBO_BOX, 0, {CC_LOOK_NONE, CC_LOOK_REFERENCE, CC_LOOK_70S, CC_LOOK_ALPINE, CC_LOOK_CHROME, CC_LOOK_CLEAN, CC_LOOK_COAST, CC_LOOK_DAZE, CC_LOOK_DUSK, CC_LOOK_KODA, CC_LOOK_LAGUNA, CC_LOOK_LUCID, CC_LOOK_LUX, CC_LOOK_MIST, CC_LOOK_MONACO, CC_LOOK_NORDIC, CC_LOOK_OBSIDIAN, CC_LOOK_PALMA, CC_LOOK_SILVER, CC_LOOK_STERLING, CC_LOOK_VISTA}, {None, Reference Identity, 70s, Alpine, Chrome, Clean, Coast, Daze, Dusk, Koda, Laguna, Lucid, Lux, Mist, Monaco, Nordic, Obsidian, Palma, Silver, Sterling, Vista})
@@ -286,6 +311,23 @@ DEFINE_LUT(CC_LUT_VISTA, luts/Vista.cube)
 #define CC_RICH_HI          0.70f       // top of the midtone window
 #define CC_RICH_PROTECT     1.50f       // chroma brake on the expansion
 
+// --- hue density ---
+//  Hue is measured in 60 degree units, so the seven anchors are:
+//     Red 0.0   Orange 0.5   Yellow 1.0   Green 2.0
+//     Cyan 3.0  Blue 4.0     Magenta 5.0
+#define CC_HUE_BAND_WIDTH   1.0f        // band half-width, in 60 degree units
+#define CC_HUE_DENSITY_AMT  0.09f       // max log density per band at full chroma
+#define CC_HUE_DENSITY_EXP  1.0f        // chroma gate, linear so skin stays reachable
+
+// --- split toning ---
+#define CC_SPLIT_AMOUNT     0.030f      // max log offset along the warm / cool axis
+#define CC_SPLIT_WIDTH      0.18f       // transition width either side of the crossover
+#define CC_SPLIT_RANGE      0.12f       // how far Balance moves the crossover
+
+// --- bleach bypass ---
+#define CC_BLEACH_DESAT     0.65f       // desaturation towards luminance at full strength
+#define CC_BLEACH_GAMMA     0.55f       // added log gamma at full strength
+
 // --- color separation ---
 #define CC_SEP_MAX          0.60f       // max blend towards the hue contrast curve
 #define CC_SEP_EXP          2.0f        // chroma selectivity of the effect
@@ -371,6 +413,14 @@ __DEVICE__ float cc_log2(float x)
 __DEVICE__ float cc_sqrt(float x)
 {
     return _sqrtf(_fmaxf(x, 0.0f));
+}
+
+// Smoothstep on an already-normalized argument. Zero slope at both ends, so
+// anything it weights eases in and out rather than switching on.
+__DEVICE__ float cc_smooth01(float t)
+{
+    float x = _saturatef(t);
+    return x * x * (3.0f - 2.0f * x);
 }
 
 // pow() is undefined for a negative base and a fractional exponent. Every use
@@ -984,6 +1034,216 @@ __DEVICE__ float3 cc_richness(float3 v, float amount)
 //  changes one deliberately.
 // ============================================================================
 
+// --- Hue-specific density shaping -------------------------------------------
+// INTENDED BEHAVIOR: make one hue family heavier or more open without touching
+// the others, and without touching neutrals or skin unless that is the family
+// being addressed. Orange in particular is the skin handle: Phase 2's density
+// controls protect skin only statistically, through low chroma, and this is
+// what gives skin a deliberate, semantic control.
+//
+// APPROACH: exactly the film density operator from Section 7 - a uniform log
+// offset, which is an exposure pull on the pixel and so preserves hue and
+// chroma exactly - but scaled by a smooth weight on the pixel's hue as well as
+// on its chroma.
+//
+// Hue is measured without trigonometry. Sorting the channels gives the standard
+// sextant hue coordinate in 60 degree units:
+//
+//     max = R  ->  h = (G - B) / chroma            wrapping to 5..6 when negative
+//     max = G  ->  h = 2 + (B - R) / chroma
+//     max = B  ->  h = 4 + (R - G) / chroma
+//
+// so Red is 0, Yellow 1, Green 2, Cyan 3, Blue 4, Magenta 5, and Orange sits at
+// 0.5 between Red and Yellow. Each band is a smoothstep lobe around its anchor,
+// wrapping across the 0/6 seam, with zero slope at the edges so a hue crossing a
+// band boundary eases rather than steps.
+//
+// STABILITY: hue is ill-conditioned as chroma approaches zero - the numerator
+// and denominator both vanish. Two things make that harmless here. Pixels below
+// the chroma floor return untouched, and above it the effect is scaled by chroma
+// itself, so the weight goes to zero exactly as fast as the hue estimate becomes
+// unreliable. A noisy hue on a near-neutral pixel is multiplied by nearly zero.
+//
+// LIMITATIONS: the bands overlap by design, so Red, Orange and Yellow all reach
+// into each other and setting all three stacks their effects. That is intended -
+// non-overlapping bands would band visibly at the boundaries - but it does mean
+// the controls are not independent. The chroma gate here is linear rather than
+// the quadratic used by film density, because a hue control the user aimed at
+// skin should actually reach skin; that makes these bands less neutral-safe than
+// the Phase 2 operators, which is the correct trade for a targeted tool.
+//
+// WHY THIS APPROACH: an arc tangent hue angle would be ill-conditioned in
+// exactly the region where stability matters, and a saturation-style operator
+// per band would change chroma, which is what the surrounding density controls
+// are specifically built to avoid. A uniform log offset keeps every band purely
+// a density move.
+__DEVICE__ float cc_hue6(float3 v, float mx, float chroma)
+{
+    float h;
+    if (mx == v.x)      h = (v.y - v.z) / chroma;
+    else if (mx == v.y) h = 2.0f + (v.z - v.x) / chroma;
+    else                h = 4.0f + (v.x - v.y) / chroma;
+
+    return (h < 0.0f) ? h + 6.0f : h;      // only the red sextant can go negative
+}
+
+// Smooth lobe around one hue anchor, wrapping across the 0/6 seam.
+__DEVICE__ float cc_hue_band(float h, float anchor)
+{
+    float d = _fabs(h - anchor);
+    if (d > 3.0f) d = 6.0f - d;            // shorter way round the circle
+    return cc_smooth01(1.0f - d / CC_HUE_BAND_WIDTH);
+}
+
+__DEVICE__ float3 cc_hue_density(float3 v, float red, float orange, float yellow,
+                                 float green, float cyan, float blue, float magenta)
+{
+    if (red == 0.0f && orange == 0.0f && yellow == 0.0f && green == 0.0f &&
+        cyan == 0.0f && blue == 0.0f && magenta == 0.0f) return v;
+
+    float mx = cc_maxc(v);
+    float chroma = mx - cc_minc(v);
+    if (chroma < CC_CHROMA_FLOOR) return v;          // neutral: hue is meaningless
+
+    float h = cc_hue6(v, mx, chroma);
+
+    float a = red     * cc_hue_band(h, 0.0f)
+            + orange  * cc_hue_band(h, 0.5f)
+            + yellow  * cc_hue_band(h, 1.0f)
+            + green   * cc_hue_band(h, 2.0f)
+            + cyan    * cc_hue_band(h, 3.0f)
+            + blue    * cc_hue_band(h, 4.0f)
+            + magenta * cc_hue_band(h, 5.0f);
+
+    // Positive control means more density, which means darker, hence the sign.
+    float o = -a * CC_HUE_DENSITY_AMT * cc_chroma_weight(chroma, CC_HUE_DENSITY_EXP);
+
+    return make_float3(v.x + o, v.y + o, v.z + o);
+}
+
+// --- Split toning -----------------------------------------------------------
+// INTENDED BEHAVIOR: warm the highlights and cool the shadows, or any
+// combination of the two, while leaving the midtones and the overall exposure
+// alone. This is also what the project's processing order calls highlight color
+// shaping and shadow color shaping - it is one mechanism, not three, and is
+// implemented once rather than duplicated.
+//
+// APPROACH: a single warm / cool axis in log, applied with opposite tone
+// weights at the two ends. The axis is made LUMINANCE-NEUTRAL by subtracting
+// its own luminance before use, so the offset moves color without moving
+// brightness at all. That matters: a toning control that quietly changes
+// exposure is one of the easiest ways to make a grade drift.
+//
+// The two tone weights are smoothsteps that both reach exactly zero at the
+// crossover and never overlap, so the midtones at the crossover are untouched
+// and the two ends cannot fight each other. Split Tone Balance slides the
+// crossover up or down the tone range.
+//
+// LIMITATIONS: this deliberately tints neutrals - that is what toning is, and
+// it is the one place in CineCore where a neutral is intentionally moved. The
+// axis is a fixed warm / cool direction rather than a freely chosen hue, which
+// keeps the control count low at the cost of not being able to tone towards,
+// say, green shadows. Luminance neutrality is exact only under the Section 2.2
+// weighting, which is an approximation.
+//
+// WHY THIS APPROACH: offsetting in log is a print-style color shift and stays
+// gentle at both ends of the tone scale, where a multiplicative tint would
+// vanish in the shadows and overwhelm the highlights.
+__DEVICE__ float3 cc_warm_axis()
+{
+    // Warm means more red, slightly more green, less blue. Subtracting the
+    // triplet's own luminance makes the move exactly luminance-preserving, then
+    // it is normalized so the control range is predictable.
+    float3 d = make_float3(1.0f, 0.15f, -1.0f);
+    float y = cc_luma(d);
+    float3 n = make_float3(d.x - y, d.y - y, d.z - y);
+    float m = _fmaxf(_fabs(n.x), _fmaxf(_fabs(n.y), _fabs(n.z)));
+    float inv = cc_div(1.0f, m);
+    return make_float3(n.x * inv, n.y * inv, n.z * inv);
+}
+
+__DEVICE__ float3 cc_split_tone(float3 v, float warmHi, float coolLo, float balance)
+{
+    if (warmHi == 0.0f && coolLo == 0.0f) return v;
+
+    float cross = CC_DI_MID + _clampf(balance, -1.0f, 1.0f) * CC_SPLIT_RANGE;
+    float y = cc_luma(v);
+
+    // Disjoint by construction: both are exactly zero at the crossover.
+    float hi = cc_smooth01((y - cross) / CC_SPLIT_WIDTH);
+    float lo = cc_smooth01((cross - y) / CC_SPLIT_WIDTH);
+
+    float a = (warmHi * hi - coolLo * lo) * CC_SPLIT_AMOUNT;
+    float3 ax = cc_warm_axis();
+
+    return make_float3(v.x + ax.x * a, v.y + ax.y * a, v.z + ax.z * a);
+}
+
+// --- Bleach bypass ----------------------------------------------------------
+// INTENDED BEHAVIOR: the look of skipping the bleach step, so developed silver
+// is retained alongside the dye - dense blacks, raised contrast, muted color,
+// highlights largely intact.
+//
+// APPROACH: two coupled moves driven by one strength control, because in the
+// real process they are one thing.
+//
+//   1. Desaturation towards luminance. Retained silver is a neutral image
+//      sitting on top of the dye image, and heavy neutral density buries color.
+//      APPROXIMATION, and labelled as one: a literal density sum would be a
+//      uniform log offset, which leaves log chroma untouched and so would not
+//      look desaturated at all. The perceptual result of the silver overlay is
+//      reduced colorfulness, and that is what is modelled here.
+//
+//   2. A log gamma pinned at black and at diffuse white. Silver density is
+//      highest where the image is already dark, so shadows deepen while white
+//      holds - which is the whole character of the look. Pinning both ends
+//      means the effect cannot shift exposure or blow the highlights. Above
+//      diffuse white the curve continues linearly at the slope it had reached,
+//      so the two pieces meet with matching value and matching slope and there
+//      is no seam. Below zero it is mirrored, keeping it monotonic through
+//      black rather than folding.
+//
+// The two controls are genuinely different, not a strength and a copy of it.
+// Bleach Bypass sets how strong the effect itself is; Bleach Bypass Mix blends
+// that result against the untouched image. A strong effect at half mix is not
+// the same picture as a half-strength effect: the first keeps the deep blacks
+// and restores midtone color, the second scales everything down together.
+//
+// LIMITATIONS: this is the one Phase 3 operator that deliberately reduces
+// shadow separation. The curve is a smooth power function, not a clamp, so it
+// stays strictly increasing and every distinct input still maps to a distinct
+// output - but blocked-up blacks are the intended look and pushing it hard will
+// produce them.
+//
+// WHY THIS APPROACH: an overlay blend, the usual shortcut, is not invertible,
+// has no defined behavior outside 0..1 and would clip the wide-gamut negatives
+// that later stages need. A gamma pinned at both ends is bounded, monotonic and
+// exposure-safe by construction.
+__DEVICE__ float cc_bleach_curve(float x, float g)
+{
+    if (x >= CC_DI_WHITE) return CC_DI_WHITE + (x - CC_DI_WHITE) * g;
+
+    float t = x / CC_DI_WHITE;               // constant, non-zero denominator
+    float m = cc_pow_pos(_fabs(t), g);
+    return CC_DI_WHITE * _copysignf(m, t);
+}
+
+__DEVICE__ float3 cc_bleach_bypass(float3 v, float amount, float mix)
+{
+    if (amount <= 0.0f || mix <= 0.0f) return v;
+
+    float a = _saturatef(amount);
+    float y = cc_luma(v);
+    float d = a * CC_BLEACH_DESAT;
+
+    float3 s = make_float3(cc_lerp(v.x, y, d), cc_lerp(v.y, y, d), cc_lerp(v.z, y, d));
+
+    float g = 1.0f + a * CC_BLEACH_GAMMA;
+    s = make_float3(cc_bleach_curve(s.x, g), cc_bleach_curve(s.y, g), cc_bleach_curve(s.z, g));
+
+    return cc_lerp3(v, s, _saturatef(mix));
+}
+
 // --- Color separation -------------------------------------------------------
 // INTENDED BEHAVIOR: neighbouring hues become easier to tell apart, while skin
 // and neutrals stay where they are and the primaries do not swing around.
@@ -1240,14 +1500,25 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p
     // -- 15. Color separation ------------------------------------------------
     cv = cc_color_separation(cv, gColorSeparation);
 
-    //  Phase 3 inserts hue-specific density shaping at this point, before the
-    //  look, and split toning, bleach bypass and the highlight / shadow color
-    //  shaping after it, per the project's processing order.
+    // -- 15b. Hue-specific density shaping -----------------------------------
+    cv = cc_hue_density(cv, gRedDensity, gOrangeDensity, gYellowDensity,
+                        gGreenDensity, gCyanDensity, gBlueDensity, gMagentaDensity);
 
     // -- 16. Film look --------------------------------------------------------
     cv = cc_film_look(cv, gLook, gLookMix);
 
-    // -- 17. Output safety ---------------------------------------------------
+    // -- 17 / 19 / 20. Split toning ------------------------------------------
+    //  One mechanism covers split toning and the separate highlight and shadow
+    //  color shaping steps in the processing order; they describe the same
+    //  operation and are not duplicated.
+    cv = cc_split_tone(cv, gWarmHighlights, gCoolShadows, gSplitBalance);
+
+    // -- 18. Bleach bypass ---------------------------------------------------
+    cv = cc_bleach_bypass(cv, gBleachBypass, gBleachMix);
+
+    //  Fade and Soft Highlight Compression remain for a later phase.
+
+    // -- 21. Output safety ---------------------------------------------------
     cv = cc_out_limit3(cv);
 
     if (gInputEncoding == CC_ENC_LIN) cv = cc_di_to_lin3(cv);

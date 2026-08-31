@@ -1,7 +1,7 @@
 # CineCore — Development Notes
 
 Running record of color-science decisions, approximations and verification.
-Phases 1 and 2 are complete and internally consistent: no placeholder maths.
+Phases 1, 2 and 3 are complete and internally consistent: no placeholder maths.
 
 ---
 
@@ -477,6 +477,111 @@ the trilinear diagonal, which mixes in off-diagonal corners. Testing a numeric
 pipeline at the points it actually defines is the difference between measuring
 the pipeline and measuring the sampler.
 
+## 1.9 Phase 3 — hue density, split toning, bleach bypass
+
+### 1.9.1 Two spec items resolved rather than built twice
+
+The control list names **Warm Highlights / Cool Shadows** under Color Character
+and **Highlight Warmth / Shadow Coolness** under Effects, and the processing
+order lists *split toning* at 17 and *highlight / shadow color shaping* at
+19–20. These describe one operation. It is implemented **once**, as split
+toning, rather than shipped as two identical control pairs. Flagged rather than
+silently chosen: if the Effects pair was meant to be something different — a
+second, independent toning axis, say — it is a small addition.
+
+**Fade** and **Soft Highlight Compression** are in the Effects group but not in
+the Phase 3 list, so they are not built. Deferred.
+
+### 1.9.2 Hue-specific density shaping
+
+Exactly the Phase 2 film-density operator — a uniform log offset, so hue and
+chroma are preserved bit-exactly (verified) — scaled by a smooth weight on hue
+as well as chroma.
+
+Hue is measured without trigonometry, using the standard sextant coordinate in
+60° units from the sorted channels: Red 0, Yellow 1, Green 2, Cyan 3, Blue 4,
+Magenta 5, with Orange at 0.5. Each band is a smoothstep lobe wrapping across
+the 0/6 seam.
+
+**The stability argument that makes this safe.** Hue is ill-conditioned as
+chroma approaches zero — numerator and denominator both vanish. Two things
+neutralise that: pixels below the chroma floor return untouched, and above it
+the effect scales with chroma itself, so the weight vanishes exactly as fast as
+the hue estimate becomes unreliable. A noisy hue on a near-neutral pixel is
+multiplied by nearly nothing. Verified: near-neutral pixels move < 0.002 DI with
+all seven bands at full opposing deflection.
+
+**This closes the semantic skin gap left open in 1.7.5.** Measured, all three
+skin patches:
+
+| patch | hue | Orange band weight | +1 Orange | +1 Green | +1 Blue |
+|---|---|---|---|---|---|
+| shadow skin | 0.472 | 0.998 | −0.231 stop | 0.000 | 0.000 |
+| mid skin | 0.465 | 0.996 | −0.238 stop | 0.000 | 0.000 |
+| highlight skin | 0.465 | 0.996 | −0.195 stop | 0.000 | 0.000 |
+| saturated red | 0.187 | 0.767 | −0.617 stop | 0.000 | 0.000 |
+
+Skin sits dead centre of the Orange band, and the Green and Blue bands do not
+reach it at all.
+
+**Limitations.** The bands overlap by design — non-overlapping bands would band
+visibly at the boundaries — so Red, Orange and Yellow reach into each other and
+setting all three stacks. The chroma gate here is **linear**, not the quadratic
+used by film density, because a hue control aimed at skin has to actually reach
+skin. That makes these bands less neutral-safe than the Phase 2 operators, which
+is the right trade for a targeted tool.
+
+### 1.9.3 Split toning
+
+A single warm/cool axis in log, applied with opposite tone weights at the two
+ends. The axis is made **luminance-neutral by subtracting its own luminance**
+before use, so toning moves colour without moving brightness at all — verified
+exact. A toning control that quietly changes exposure is one of the easiest ways
+to make a grade drift.
+
+The two tone weights are smoothsteps that both reach exactly zero at the
+crossover and never overlap, so midtones at the crossover are untouched
+(verified) and the two ends cannot fight. Split Tone Balance slides the
+crossover.
+
+**Limitations.** This deliberately tints neutrals — that is what toning is, and
+it is the one place in CineCore where a neutral is intentionally moved. The axis
+is a fixed warm/cool direction rather than a free hue, keeping the control count
+low at the cost of not being able to tone towards, say, green shadows.
+Luminance neutrality is exact only under the Section 2.2 weighting.
+
+### 1.9.4 Bleach bypass
+
+Two coupled moves from one strength control, because in the real process they
+are one thing.
+
+1. **Desaturation towards luminance.** *Labelled approximation.* A literal
+   density sum would be a uniform log offset, which leaves log chroma untouched
+   and so would not look desaturated at all. What is modelled is the perceptual
+   result of a heavy neutral silver image sitting over the dye — reduced
+   colorfulness — not the arithmetic of density addition.
+2. **A log gamma pinned at black and at diffuse white.** Silver density is
+   highest where the image is already dark, so shadows deepen while white holds.
+   Pinning both ends means the effect cannot shift exposure or blow highlights.
+   Above diffuse white the curve continues linearly at the slope it had reached,
+   so the pieces meet with matching value *and* slope (verified C1). Below zero
+   it is mirrored, staying monotonic through black rather than folding.
+
+**The two controls are genuinely different, not a strength and a copy.** Bleach
+Bypass sets how strong the effect is; Bleach Bypass Mix blends that result
+against the untouched image. A strong effect at half mix keeps the deep blacks
+and restores midtone colour; a half-strength effect scales everything down
+together. Verified to differ.
+
+**Limitation.** This is the one Phase 3 operator that deliberately reduces
+shadow separation. The curve is a smooth power function, not a clamp, so it
+stays strictly increasing — but blocked-up blacks are the intended look and
+pushing it hard will produce them.
+
+**Why not an overlay blend**, the usual shortcut: it is not invertible, has no
+defined behaviour outside 0–1, and would clip the wide-gamut negatives later
+stages need.
+
 ## 2. Labelled approximations
 
 | Approximation | Nature | Why accepted |
@@ -485,6 +590,7 @@ the pipeline and measuring the sampler.
 | White balance as normalized channel gains | Not a chromatic adaptation transform | A true CAT needs a documented DWG matrix this project does not have. Gain model is the standard well-behaved substitute, exact in stops and exposure-preserving on neutrals |
 | Saturation in log rather than linear | Not chromaticity-preserving in a strict colorimetric sense | Log saturation is far gentler and reads as color rather than clipping; linear saturation drives channels negative almost immediately on saturated color. Extreme boosts drift slightly in hue |
 | 25% per-channel share in shoulder and toe | Introduces a small hue shift by construction | This *is* the film behaviour being modelled; at 25% it stays well short of a pure per-channel curve's hue skew |
+| Bleach bypass desaturation | Not a literal density sum, which would leave log chroma untouched | Models the perceptual result of a neutral silver image over the dye, which is what the look actually is |
 | BT.709 OETF assumed for the source LUTs' encoding | The files say "Rec.709" without settling OETF vs 2.4 power | Matches the label; re-bakeable with one flag if the looks land wrong |
 | Hue position `p` measured in log RGB | Not a perceptual hue space | No trigonometry, no ill-conditioning near neutral, and the six primaries are exact fixed points. A perceptual hue space would need a documented DWG matrix this project does not have |
 | Chroma as max − min channel spread | Not a colorimetric chroma | Exactly zero for neutrals, always non-negative, no square root or arc tangent, and stable to the last bit near grey — which is precisely where a hue-angle formulation fails |
@@ -534,7 +640,7 @@ Every division is guarded or has a non-zero compile-time constant denominator;
 |---|---|---|
 | 1 | Structure, UI, safety, exposure, WB/tint, contrast, pivot, saturation, shoulder, toe, depth, black/white point | **Complete** |
 | 2 | Film density, subtractive saturation, richness, color separation | **Complete** |
-| 3 | Hue densities, split toning, highlight warmth, shadow cooling, bleach bypass | Not started |
+| 3 | Hue densities, split toning, highlight warmth, shadow cooling, bleach bypass | **Complete** |
 | 4 | Film-look engine and profile architecture | Not started |
 | 5 | ~20 film looks on the shared engine | Not started |
 | — | LUT look selector, 19 looks, merged into `CineCore.dctl` Section 10 | **Route A adopted. Awaiting the re-bake** |
@@ -550,6 +656,7 @@ bleach bypass functions belong. No restructuring required.
 
 1. **Luminance weighting** — unchanged and still labelled an approximation.
    Swappable at any time in Section 2.2; Phase 2 added no new dependence on it.
-2. **Skin qualification** — Phase 2 protects skin only through chroma
-   selectivity. If semantic skin protection is wanted, the natural place is
-   Phase 3's hue density band for orange.
+2. **Skin qualification** — closed by Phase 3. Orange Density is the semantic
+   skin handle; see 1.9.2 for measurements.
+3. **The duplicated toning controls** — see 1.9.1. Split toning is implemented
+   once. Say if the Effects-group pair was meant to be a separate axis.

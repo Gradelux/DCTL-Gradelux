@@ -10,7 +10,7 @@ restructuring the transform.
 
 ## Status
 
-**Phases 1 and 2 of 6 — complete.**
+**Phases 1, 2 and 3 of 6 — complete.**
 
 | Group | Controls |
 |---|---|
@@ -18,7 +18,10 @@ restructuring the transform.
 | Primary grade | Exposure, Temperature, Tint, Contrast, Pivot, Saturation, Black Point, White Point |
 | Film response | Highlight Shoulder, Highlight Roll Off, Shadow Toe, Shadow Depth |
 | Film density and color | Film Density, Density Strength, Subtractive Saturation, Richness, Color Separation |
-| Film look | Film Look (19 LUT looks), Look Mix |
+| Hue density | Red, Orange, Yellow, Green, Cyan, Blue, Magenta Density |
+| Split toning | Warm Highlights, Cool Shadows, Split Tone Balance |
+| Bleach bypass | Bleach Bypass, Bleach Bypass Mix |
+| Film look | Film Look (19 LUT looks + Reference Identity), Look Mix |
 
 Film density, subtractive saturation, richness, color separation, hue
 densities, split toning, bleach bypass and the film-look engine arrive in
