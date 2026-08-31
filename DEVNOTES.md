@@ -582,6 +582,70 @@ pushing it hard will produce them.
 defined behaviour outside 0–1, and would clip the wide-gamut negatives later
 stages need.
 
+## 1.10 Inline LUT embedding — feasibility, measured
+
+Question put: is embedding all 20 33³ LUTs inline with `DEFINE_CUBE_LUT`
+practical, so CineCore ships self-contained?
+
+**Syntax caveat.** `DEFINE_CUBE_LUT`'s exact signature could not be verified in
+this project — no Resolve compiler, no DCTL documentation supplied. Nothing
+below depends on it.
+
+### Measured
+
+| | 33³ | 25³ | 17³ | 9³ |
+|---|---|---|---|---|
+| entries | 35,937 | 15,625 | 4,913 | 729 |
+| source, one LUT | 1.13 MB | 0.47 MB | 0.15 MB | 0.02 MB |
+| **source, 20 LUTs** | **23.7 MB** | 9.4 MB | 3.0 MB | 0.44 MB |
+| binary, one LUT | 421 KB | 183 KB | 58 KB | 9 KB |
+| binary, 20 LUTs | 8.6 MB | 3.8 MB | 1.2 MB | 0.2 MB |
+
+Compile cost, gcc -O2 as a proxy: one embedded LUT 0.74 s, four 1.50 s — so
+mostly fixed overhead, extrapolating to roughly 5 s for twenty. **Less bad than
+expected, and this had been overstated before measuring.** The caveat is that
+gcc is an AOT compiler on a warm CPU; Resolve's path is a GPU JIT at node-load
+time, typically far slower on large literal arrays, and that could not be
+measured here.
+
+**A hard limit worth naming:** CUDA's `__constant__` bank is 64 KB per module
+*in total*. A single 33³ LUT needs 421 KB — 6.6× the entire bank. Whether this
+bites depends on how Resolve implements inline LUT storage; if it uploads to a
+texture rather than constant memory it does not apply. Unknown here.
+
+### The decisive constraint is not technical
+
+Eleven of the nineteen looks are Dehancer-generated and licensed to an
+individual, with redistribution prohibited. **Embedding them in a product
+customers install is precisely the prohibited act, and more so than shipping
+loose files, because the data is then baked into the binary.** For a commercial
+CineCore these specific looks are unavailable regardless of whether the
+embedding compiles.
+
+### And compression to parameters does not preserve them
+
+Tested by fitting two compact models to the real baked data across all 19 looks:
+
+| model | parameters | RMS error |
+|---|---|---|
+| per-channel curves | 99 | 0.0696 DI = 0.95 stop |
+| per-channel curves + 3×3 mix + offset | 111 | 0.0620 DI = 0.85 stop |
+
+Against a 33³ grid step of 0.020 DI, that is three times the quantisation floor.
+These looks are genuinely three-dimensional — cross-channel behaviour a
+separable model cannot represent — so "parametric versions of these exact
+looks" is not achievable at useful fidelity even setting licensing aside.
+
+### Conclusion
+
+Embedding is rejected on licensing, and parametric emulation of these specific
+looks is rejected on fidelity. The route that satisfies the actual goal — one
+self-contained installable product — is the parametric film-profile engine
+already planned as Phases 4 and 5, with **original** looks designed from film
+response rather than copies of a licensed set. That is also what the project
+brief originally specified: *"build the architecture and create several example
+looks rather than trying to perfectly emulate copyrighted film stocks."*
+
 ## 2. Labelled approximations
 
 | Approximation | Nature | Why accepted |
