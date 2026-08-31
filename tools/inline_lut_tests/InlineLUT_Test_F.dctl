@@ -1,0 +1,35 @@
+// InlineLUT_Test_F.dctl
+//
+// Tests D and E established:
+//   D built  -> the transform signature is correct
+//   E built  -> DEFINE_CUBE_LUT with this exact brace style and data format is
+//               recognised and accepted, placed after the main function
+//
+// E differed from the failing test only in the transform body: E returned
+// make_float3(...), the failing one returned APPLY_LUT(...) directly. So the
+// parser does not accept APPLY_LUT as the returned expression - it checks that
+// the main function returns a float3 and does not recognise the macro as one.
+//
+// Here the result is assigned to a float3 first and that variable is returned.
+//
+// The LUT is a 2x2x2 IDENTITY, so a successful build must leave the image
+// completely unchanged.
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+    float3 result = APPLY_LUT(p_R, p_G, p_B, CC_TEST_LUT);
+
+    return result;
+}
+
+DEFINE_CUBE_LUT(CC_TEST_LUT) {
+LUT_3D_SIZE 2
+0.000000 0.000000 0.000000
+1.000000 0.000000 0.000000
+0.000000 1.000000 0.000000
+1.000000 1.000000 0.000000
+0.000000 0.000000 1.000000
+1.000000 0.000000 1.000000
+0.000000 1.000000 1.000000
+1.000000 1.000000 1.000000
+}

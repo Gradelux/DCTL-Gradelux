@@ -1,0 +1,28 @@
+// InlineLUT_Test_G.dctl   -   only if F fails.
+//
+// Identical to F, except the LUT is defined BEFORE the main function. The
+// documentation says "LUTs must be defined in the DCTL file before use", which
+// may bind more strictly when the LUT is actually used than when it is merely
+// present, as in test E.
+//
+// The LUT is a 2x2x2 IDENTITY: a successful build must leave the image
+// completely unchanged.
+
+DEFINE_CUBE_LUT(CC_TEST_LUT) {
+LUT_3D_SIZE 2
+0.000000 0.000000 0.000000
+1.000000 0.000000 0.000000
+0.000000 1.000000 0.000000
+1.000000 1.000000 0.000000
+0.000000 0.000000 1.000000
+1.000000 0.000000 1.000000
+0.000000 1.000000 1.000000
+1.000000 1.000000 1.000000
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+    float3 result = APPLY_LUT(p_R, p_G, p_B, CC_TEST_LUT);
+
+    return result;
+}
