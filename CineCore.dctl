@@ -94,6 +94,24 @@ DEFINE_UI_PARAMS(gSharpen, Sharpness, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.0
 DEFINE_UI_PARAMS(gSharpenRadius, Sharpen Radius, DCTLUI_SLIDER_FLOAT, 0.35f, 0.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gSharpenThresh, Sharpen Threshold, DCTLUI_SLIDER_FLOAT, 0.15f, 0.0f, 1.0f, 0.001f)
 
+// ---- Optical, sampled -------------------------------------------------------
+//  These read neighbouring pixels and so cost texture taps. Each is skipped
+//  entirely at zero, so an unused one costs nothing at all.
+DEFINE_UI_PARAMS(gChromAb, Chromatic Aberration, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gChromAbRadius, Chromatic Aberration Radius, DCTLUI_SLIDER_FLOAT, 0.4f, 0.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gChromAbFalloff, Chromatic Aberration Falloff, DCTLUI_SLIDER_FLOAT, 0.5f, 0.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gDiffusion, Diffusion, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gDiffusionRadius, Diffusion Radius, DCTLUI_SLIDER_FLOAT, 0.5f, 0.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gDiffusionThresh, Diffusion Threshold, DCTLUI_SLIDER_FLOAT, 0.30f, 0.0f, 0.8f, 0.001f)
+DEFINE_UI_PARAMS(gDiffusionHiBias, Diffusion Highlight Bias, DCTLUI_SLIDER_FLOAT, 0.5f, 0.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gFilmSoft, Film Softness, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gFilmSoftRadius, Film Softness Radius, DCTLUI_SLIDER_FLOAT, 0.4f, 0.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gFilmSoftHi, Film Softness Highlights, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gEdgeSoft, Edge Softness, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gEdgeSoftStart, Edge Softness Start, DCTLUI_SLIDER_FLOAT, 0.45f, 0.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gMicroContrast, Micro Contrast, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gMicroRadius, Micro Contrast Radius, DCTLUI_SLIDER_FLOAT, 0.5f, 0.0f, 1.0f, 0.001f)
+
 // ---- Film print ------------------------------------------------------------
 DEFINE_UI_PARAMS(gPrintContrast, Print Contrast, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gPrintPivot, Print Pivot, DCTLUI_SLIDER_FLOAT, 0.336f, 0.15f, 0.6f, 0.001f)
@@ -338,6 +356,19 @@ DEFINE_UI_PARAMS(gVignetteWarm, Vignette Color, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f
 #define CC_VIGNETTE_AMOUNT  0.22f       // max log falloff at the corners
 #define CC_MATTE_LIFT       0.055f      // max black lift
 #define CC_MATTE_COMPRESS   0.30f       // max highlight softening
+
+// --- sampled optics ---
+#define CC_CA_MIN           0.5f        // channel separation in pixels, at radius 0
+#define CC_CA_MAX           6.0f        //   and at radius 1
+#define CC_DIFF_RADIUS      0.075f      // diffusion radius, fraction of the short side
+#define CC_DIFF_AMOUNT      0.30f       // log gain added at full strength
+#define CC_SOFT_RADIUS_MIN  1.0f        // softness radius in PIXELS
+#define CC_SOFT_RADIUS_MAX  5.0f
+#define CC_SOFT_AMOUNT      0.90f       // share of local detail removable
+#define CC_EDGESOFT_AMOUNT  0.95f
+#define CC_MICRO_RADIUS_MIN 3.0f        // micro contrast radius in PIXELS - larger
+#define CC_MICRO_RADIUS_MAX 14.0f       //   than sharpening, this is structure
+#define CC_MICRO_AMOUNT     0.85f
 
 // --- film print curve ---
 #define CC_PRINT_GAIN       0.55f       // extra slope at full print contrast
@@ -1803,9 +1834,45 @@ __DEVICE__ float3 cc_out_limit3(float3 v)
 __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
 {
     // -- 1. Input handling and safety ---------------------------------------
-    float3 rgb = cc_safe3(make_float3(_tex2D(p_TexR, p_X, p_Y),
-                                      _tex2D(p_TexG, p_X, p_Y),
-                                      _tex2D(p_TexB, p_X, p_Y)));
+    //  Frame geometry, shared by chromatic aberration, edge softness and the
+    //  vignette. Pixel CENTRES: with pixels numbered 0..n-1 the centre is at
+    //  (n-1)/2, and using n/2 leaves everything half a pixel off axis.
+    float fcx = (float)(p_Width - 1) * 0.5f;
+    float fcy = (float)(p_Height - 1) * 0.5f;
+    float fdx = (float)p_X - fcx;
+    float fdy = (float)p_Y - fcy;
+    float fLen = cc_sqrt(fdx * fdx + fdy * fdy);
+    float fMax = _fmaxf(cc_sqrt(fcx * fcx + fcy * fcy), 1.0f);
+    float fRad = fLen / fMax;                       // 0 at centre, 1 at the corners
+
+    float3 rgb;
+
+    //  Chromatic aberration. A lens focuses the three wavelengths at slightly
+    //  different scales, so the channels are sampled at slightly different
+    //  RADIAL positions rather than being tinted: red outward, blue inward,
+    //  green fixed. Zero at the optical centre and growing outward, which is
+    //  where real lateral aberration lives - a uniform shift would read as a
+    //  registration error, not a lens.
+    if (gChromAb != 0.0f)
+    {
+        float nx = (fLen > CC_EPS) ? fdx / fLen : 0.0f;
+        float ny = (fLen > CC_EPS) ? fdy / fLen : 0.0f;
+
+        float fall = cc_pow_pos(fRad, cc_lerp(1.0f, 3.0f, _saturatef(gChromAbFalloff)));
+        float d = _clampf(gChromAb, -1.0f, 1.0f)
+                  * cc_lerp(CC_CA_MIN, CC_CA_MAX, _saturatef(gChromAbRadius)) * fall;
+
+        rgb = make_float3(cc_tap(p_TexR, p_Width, p_Height, (float)p_X + nx * d, (float)p_Y + ny * d),
+                          _tex2D(p_TexG, p_X, p_Y),
+                          cc_tap(p_TexB, p_Width, p_Height, (float)p_X - nx * d, (float)p_Y - ny * d));
+    }
+    else
+    {
+        rgb = make_float3(_tex2D(p_TexR, p_X, p_Y),
+                          _tex2D(p_TexG, p_X, p_Y),
+                          _tex2D(p_TexB, p_X, p_Y));
+    }
+    rgb = cc_safe3(rgb);
 
     if (gBypass) return rgb;
 
@@ -1828,7 +1895,9 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
         gChanDensR == 0.0f && gChanDensG == 0.0f && gChanDensB == 0.0f &&
         gBlackDensity == 0.0f && gHighlightDensity == 0.0f && gFilmFade == 0.0f &&
         gFilmBias == 0.0f && gMidBias == 0.0f &&
-        gHiHueShift == 0.0f && gLoHueShift == 0.0f && gVignetteWarm == 0.0f)
+        gHiHueShift == 0.0f && gLoHueShift == 0.0f && gVignetteWarm == 0.0f &&
+        gChromAb == 0.0f && gDiffusion == 0.0f && gFilmSoft == 0.0f &&
+        gEdgeSoft == 0.0f && gMicroContrast == 0.0f)
     {
         return rgb;
     }
@@ -1923,6 +1992,104 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
 
         float d = cc_sharpen_detail(cc_luma(rgb), blur, _saturatef(gSharpenThresh));
         float o = d * _saturatef(gSharpen) * CC_SHARP_AMOUNT;
+
+        rgb = make_float3(rgb.x + o, rgb.y + o, rgb.z + o);
+    }
+
+    //  Diffusion: a wider, softer, lower-threshold glow than bloom. Bloom is
+    //  veiling glare from a clean lens; this is what a diffusion filter does -
+    //  it spreads midtones as well as highlights, which is why its threshold
+    //  sits lower and its radius is larger. Highlight Bias weights the gather
+    //  towards the brightest areas, so at 1 it behaves like a wide bloom and at
+    //  0 it softens the whole image evenly.
+    float3 diff = make_float3(0.0f, 0.0f, 0.0f);
+    if (gDiffusion > 0.0f)
+    {
+        float R = CC_DIFF_RADIUS * shortSide * _fmaxf(_saturatef(gDiffusionRadius), 0.05f);
+        float bias = cc_lerp(1.0f, 3.0f, _saturatef(gDiffusionHiBias));
+        float wsum = 0.0f;
+        for (int ring = 1; ring <= 2; ++ring)
+        {
+            float rr = R * (float)ring / 2.0f;
+            float rw = 1.0f / (float)ring;
+            for (int k = 0; k < 8; ++k)
+            {
+                float sx = (float)p_X + dirX[k] * rr;
+                float sy = (float)p_Y + dirY[k] * rr;
+                float3 t = make_float3(cc_tap(p_TexR, p_Width, p_Height, sx, sy),
+                                       cc_tap(p_TexG, p_Width, p_Height, sx, sy),
+                                       cc_tap(p_TexB, p_Width, p_Height, sx, sy));
+                float e = _fmaxf(cc_maxc(t) - gDiffusionThresh, 0.0f);
+                e = cc_pow_pos(e, bias);
+                diff.x += e * rw; diff.y += e * rw; diff.z += e * rw;
+                wsum += rw;
+            }
+        }
+        float inv = cc_div(1.0f, wsum);
+        diff = make_float3(diff.x * inv, diff.y * inv, diff.z * inv);
+    }
+
+    //  Film softness, edge softness and micro contrast all work on the same
+    //  quantity: the difference between this pixel's luminance and the mean of
+    //  a ring around it. Softness SUBTRACTS that detail, micro contrast ADDS it
+    //  at a larger radius. Both are applied as uniform offsets, so neither can
+    //  introduce colour fringing.
+    if (gFilmSoft > 0.0f || gEdgeSoft > 0.0f)
+    {
+        float rad = cc_lerp(CC_SOFT_RADIUS_MIN, CC_SOFT_RADIUS_MAX, _saturatef(gFilmSoftRadius));
+        float blur = 0.0f;
+        for (int k = 0; k < 8; ++k)
+        {
+            float sx = (float)p_X + dirX[k] * rad;
+            float sy = (float)p_Y + dirY[k] * rad;
+            blur += cc_luma(make_float3(cc_tap(p_TexR, p_Width, p_Height, sx, sy),
+                                        cc_tap(p_TexG, p_Width, p_Height, sx, sy),
+                                        cc_tap(p_TexB, p_Width, p_Height, sx, sy)));
+        }
+        blur *= 0.125f;
+
+        float y = cc_luma(rgb);
+        float d = y - blur;
+
+        //  Film softness takes out harsh microcontrast rather than blurring:
+        //  only the high-frequency term is reduced, so edges keep their
+        //  position and the image does not go out of focus.
+        float k = _saturatef(gFilmSoft) * CC_SOFT_AMOUNT;
+
+        //  Highlights carry the harshest digital detail, so they can be
+        //  softened further without touching the rest.
+        k += _saturatef(gFilmSoftHi) * CC_SOFT_AMOUNT * 0.5f
+             * cc_smooth01((y - CC_DI_MID) / (CC_DI_WHITE - CC_DI_MID));
+
+        //  Edge softness: the same reduction, weighted towards the frame edges,
+        //  where a lens actually loses resolution.
+        k += _saturatef(gEdgeSoft) * CC_EDGESOFT_AMOUNT
+             * cc_smooth01((fRad - _saturatef(gEdgeSoftStart)) / 0.55f);
+
+        float o = -d * _fminf(k, 1.0f);
+        rgb = make_float3(rgb.x + o, rgb.y + o, rgb.z + o);
+    }
+
+    if (gMicroContrast != 0.0f)
+    {
+        float rad = cc_lerp(CC_MICRO_RADIUS_MIN, CC_MICRO_RADIUS_MAX, _saturatef(gMicroRadius));
+        float blur = 0.0f;
+        for (int k = 0; k < 8; ++k)
+        {
+            float sx = (float)p_X + dirX[k] * rad;
+            float sy = (float)p_Y + dirY[k] * rad;
+            blur += cc_luma(make_float3(cc_tap(p_TexR, p_Width, p_Height, sx, sy),
+                                        cc_tap(p_TexG, p_Width, p_Height, sx, sy),
+                                        cc_tap(p_TexB, p_Width, p_Height, sx, sy)));
+        }
+        blur *= 0.125f;
+
+        //  A larger radius than sharpening, and no threshold: this is tonal
+        //  structure rather than edge definition, and it reads as stock
+        //  character. Soft-limited so a hard edge cannot ring.
+        float d = cc_luma(rgb) - blur;
+        float lim = cc_soft_ceil(_fabs(d), CC_SHARP_LIMIT * 1.5f, CC_SHARP_LIMIT * 1.5f);
+        float o = _copysignf(lim, d) * _clampf(gMicroContrast, -1.0f, 1.0f) * CC_MICRO_AMOUNT;
 
         rgb = make_float3(rgb.x + o, rgb.y + o, rgb.z + o);
     }
@@ -2055,6 +2222,13 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
                          cv.z + bloom.z * a * (1.0f - b));
     }
 
+    // -- 20b. Diffusion ------------------------------------------------------
+    if (gDiffusion > 0.0f)
+    {
+        float a = _saturatef(gDiffusion) * CC_DIFF_AMOUNT;
+        cv = make_float3(cv.x + diff.x * a, cv.y + diff.y * a, cv.z + diff.z * a);
+    }
+
     // -- 21. Vignette --------------------------------------------------------
     cv = cc_vignette(cv, gVignette, gVignetteSize, gVignetteSoft,
                      p_Width, p_Height, p_X, p_Y);
@@ -2064,11 +2238,7 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     //  darkening further.
     if (gVignetteWarm != 0.0f)
     {
-        float cx = (float)(p_Width - 1) * 0.5f;
-        float cy = (float)(p_Height - 1) * 0.5f;
-        float dx = ((float)p_X - cx) / _fmaxf(cx, 1.0f);
-        float dy = ((float)p_Y - cy) / _fmaxf(cy, 1.0f);
-        float r = cc_sqrt(dx * dx + dy * dy) * 0.70710678f;
+        float r = fRad;
 
         float start = cc_lerp(0.15f, 0.85f, _saturatef(gVignetteSize));
         float width = _fmaxf(cc_lerp(0.10f, 0.90f, _saturatef(gVignetteSoft)), CC_EPS);

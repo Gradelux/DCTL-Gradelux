@@ -43,6 +43,10 @@ static float gChanDensR=0,gChanDensG=0,gChanDensB=0;
 static float gBlackDensity=0,gHighlightDensity=0,gFilmFade=0;
 static float gFilmBias=0,gMidBias=0,gHiHueShift=0,gLoHueShift=0;
 static float gHaloWarm=0,gHaloSat=1,gBloomWarm=0,gVignetteWarm=0;
+static float gChromAb=0,gChromAbRadius=0.4f,gChromAbFalloff=0.5f;
+static float gDiffusion=0,gDiffusionRadius=0.5f,gDiffusionThresh=0.30f,gDiffusionHiBias=0.5f;
+static float gFilmSoft=0,gFilmSoftRadius=0.4f,gFilmSoftHi=0,gEdgeSoft=0,gEdgeSoftStart=0.45f;
+static float gMicroContrast=0,gMicroRadius=0.5f;
 #include "CineCore.dctl"
 
 static int fails=0;
@@ -59,7 +63,10 @@ static void reset(void){ gExposure=0;gTemperature=0;gTint=0;gContrast=1;gPivot=0
   gHiDesat=0;gHiDesatStart=0.45f;gHiDesatRoll=0.5f;gLoDesat=0;gLoDesatStart=0.22f;
   gCrossR=0;gCrossG=0;gCrossB=0;gCrossAmount=0;gChanDensR=0;gChanDensG=0;gChanDensB=0;
   gBlackDensity=0;gHighlightDensity=0;gFilmFade=0;gFilmBias=0;gMidBias=0;
-  gHiHueShift=0;gLoHueShift=0;gHaloWarm=0;gHaloSat=1;gBloomWarm=0;gVignetteWarm=0; }
+  gHiHueShift=0;gLoHueShift=0;gHaloWarm=0;gHaloSat=1;gBloomWarm=0;gVignetteWarm=0;
+  gChromAb=0;gChromAbRadius=0.4f;gChromAbFalloff=0.5f;gDiffusion=0;gDiffusionRadius=0.5f;
+  gDiffusionThresh=0.30f;gDiffusionHiBias=0.5f;gFilmSoft=0;gFilmSoftRadius=0.4f;gFilmSoftHi=0;
+  gEdgeSoft=0;gEdgeSoftStart=0.45f;gMicroContrast=0;gMicroRadius=0.5f; }
 static float3 T(int x,int y){ return transform(W,H,x,y,&TR,&TG,&TB); }
 static float md(float3 a,float3 b){ return fmaxf(fmaxf(fabsf(a.x-b.x),fabsf(a.y-b.y)),fabsf(a.z-b.z)); }
 static float3 IN(int x,int y){ return make_float3(TR.p[y][x],TG.p[y][x],TB.p[y][x]); }
@@ -271,6 +278,100 @@ int main(void){
             md(h3,s0), md(h4,t0), ch0, cA);
     check("highlight hue shift moves highlights not shadows, chroma intact",
           md(h3,s0)>0.001f && md(h4,t0)<md(h3,s0)*0.3f && fabsf(cA-ch0)<1e-4f, buf);
+
+    printf("\n--- sampled optics ---\n");
+    /* Detail EVERYWHERE, including the corners: CA, softness and edge softness
+       all act on local detail, so probing them in a flat region measures
+       nothing. Top quarter left flat on purpose, for the flat-area test.
+       Bright disc at centre so the glows have a source. */
+    for(int y=0;y<H;y++) for(int x=0;x<W;x++){
+        float dx2=(x-W/2)/10.0f, dy2=(y-H/2)/10.0f;
+        float v;
+        if(dx2*dx2+dy2*dy2 < 1.0f)      v = 0.88f;
+        else if(y < H/4)                v = 0.40f;              /* flat band */
+        else                            v = ((x/2)%2) ? 0.50f : 0.28f;  /* fine stripes:
+                                    period 4 px, finer than the CA offset so the
+                                    three channels land on different stripes */
+        TR.p[y][x]=v; TG.p[y][x]=v; TB.p[y][x]=v; }
+
+    /* chromatic aberration: zero at centre, present at the edge, splits channels */
+    int cay=H*3/4;
+    reset(); float3 ca0c=T(W/2,H/2), ca0e=T(W-6,cay);   /* true optical centre */
+    reset(); gChromAb=1.0f;
+    float3 ca1c=T(W/2,H/2), ca1e=T(W-6,cay);
+    sprintf(buf,"centre %.2e, edge %.4f", md(ca1c,ca0c), md(ca1e,ca0e));
+    check("CA is zero at the optical centre and present at the edge",
+          md(ca1c,ca0c)<1e-6f && md(ca1e,ca0e)>0.002f, buf);
+    /* on a neutral input it must SEPARATE channels, i.e. produce colour */
+    int cax=W-10;
+    reset(); gChromAb=1.0f;
+    float3 sp=T(cax,cay);
+    sprintf(buf,"R-B separation %.4f", fabsf(sp.x-sp.z));
+    check("CA separates the channels rather than tinting uniformly", fabsf(sp.x-sp.z)>0.001f, buf);
+    reset(); gChromAb=-1.0f; float3 spn=T(cax,cay);
+    check("CA reverses direction with a negative amount",
+          (sp.x-sp.z)*(spn.x-spn.z) < 0.0f, "");
+
+    /* diffusion: glows near bright areas, additive, wider than bloom */
+    int dnear=W/2+16;
+    reset(); float3 df0=T(dnear,H/2), dffar=T(6,6);
+    reset(); gDiffusion=1.0f; float3 df1=T(dnear,H/2), dffar1=T(6,6);
+    sprintf(buf,"near %.4f, far %.4f", md(df1,df0), md(dffar1,dffar));
+    check("diffusion spreads light near bright areas", md(df1,df0)>0.003f, buf);
+    check("diffusion only adds light", df1.x>=df0.x && df1.y>=df0.y && df1.z>=df0.z, "");
+    reset(); gBloom=1.0f; float3 bl=T(dnear,H/2);
+    reset(); gDiffusion=1.0f; float3 dfw=T(dnear,H/2);
+    sprintf(buf,"diffusion %.4f vs bloom %.4f at the same distance", md(dfw,df0), md(bl,df0));
+    check("diffusion reaches further than bloom", md(dfw,df0) > md(bl,df0), buf);
+
+    /* film softness: reduces local detail, no colour fringing, edges keep position */
+    /* one pixel from a stripe boundary, so both radii reach across it */
+    int ex=W/2+1, ey=H*3/4;
+    reset(); float3 fs0=T(ex,ey), flat0=T(20,H/8);
+    reset(); gFilmSoft=1.0f; float3 fs1=T(ex,ey), flat1=T(20,H/8);
+    sprintf(buf,"edge %+.4f, flat %.2e", fs1.x-fs0.x, md(flat1,flat0));
+    check("film softness reduces edge detail and leaves flat areas alone",
+          fabsf(fs1.x-fs0.x)>0.002f && md(flat1,flat0)<1e-6f, buf);
+    sprintf(buf,"R %+.5f G %+.5f B %+.5f", fs1.x-fs0.x, fs1.y-fs0.y, fs1.z-fs0.z);
+    check("film softness produces no colour fringing",
+          fabsf((fs1.x-fs0.x)-(fs1.z-fs0.z))<1e-6f, buf);
+    /* softness and sharpening must oppose each other */
+    reset(); gSharpen=1.0f; float3 sh1=T(ex,ey);
+    sprintf(buf,"soften %+.4f vs sharpen %+.4f", fs1.x-fs0.x, sh1.x-fs0.x);
+    check("softness and sharpening move detail in opposite directions",
+          (fs1.x-fs0.x)*(sh1.x-fs0.x) < 0.0f, buf);
+
+    /* edge softness: nothing at centre, softening at the frame edge */
+    reset(); gEdgeSoft=1.0f;
+    float3 es_c=T(W/2+3,cay), es_e=T(W-4,H-4);
+    reset(); float3 es_c0=T(W/2+3,cay), es_e0=T(W-4,H-4);
+    sprintf(buf,"centre %.2e, corner %.4f", md(es_c,es_c0), md(es_e,es_e0));
+    check("edge softness acts at the frame edge, not the centre",
+          md(es_c,es_c0)<1e-6f && md(es_e,es_e0)>0.002f, buf);
+
+    /* micro contrast: adds structure, reverses sign, bounded */
+    reset(); float3 mc0=T(ex,ey);
+    reset(); gMicroContrast=1.0f; float3 mc1=T(ex,ey);
+    reset(); gMicroContrast=-1.0f; float3 mc2=T(ex,ey);
+    sprintf(buf,"positive %+.4f, negative %+.4f", mc1.x-mc0.x, mc2.x-mc0.x);
+    check("micro contrast reverses cleanly with sign", (mc1.x-mc0.x)*(mc2.x-mc0.x)<0.0f, buf);
+    sprintf(buf,"R %+.5f B %+.5f", mc1.x-mc0.x, mc1.z-mc0.z);
+    check("micro contrast produces no colour fringing",
+          fabsf((mc1.x-mc0.x)-(mc1.z-mc0.z))<1e-6f, buf);
+    reset(); gMicroContrast=1.0f; gMicroRadius=1.0f;
+    float mmax=0; for(int y=0;y<H;y+=2) for(int x=0;x<W;x+=2) mmax=fmaxf(mmax,fabsf(T(x,y).x-IN(x,y).x));
+    sprintf(buf,"largest excursion %.4f",mmax);
+    check("micro contrast is soft-limited", mmax<0.16f, buf);
+
+    /* everything on at once */
+    reset(); gChromAb=1;gDiffusion=1;gFilmSoft=1;gEdgeSoft=1;gMicroContrast=1;
+    gHalation=1;gBloom=1;gSharpen=1;gVignette=1;gMatte=1;gPrintContrast=1;gFilmFade=1;
+    gHiDesat=1;gLoDesat=1;gCrossAmount=1;gCrossR=1;gBlackDensity=1;gHighlightDensity=1;
+    int bad2=0;
+    for(int y=0;y<H;y+=2) for(int x=0;x<W;x+=2){ float3 o=T(x,y);
+        if(o.x!=o.x||o.y!=o.y||o.z!=o.z||isinf(o.x)||isinf(o.y)||isinf(o.z)) bad2++; }
+    sprintf(buf,"%d non-finite",bad2);
+    check("no NaN or Inf with every effect in the file at maximum", bad2==0, buf);
 
     printf("\n%s\n", fails?"FAILURES PRESENT":"ALL CHECKS PASSED");
     return fails?1:0; }
