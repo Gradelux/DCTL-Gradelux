@@ -318,8 +318,11 @@ a look.
 Resolving this inside the DCTL requires a DaVinci WG/Intermediate -> Rec.709
 conversion, which collides with three standing project rules: no Rec.709
 transform baked in, no output CST unless requested, keep the pipeline
-scene-referred. **Not resolved unilaterally — awaiting a decision.** The three
-viable routes, in the order they are recommended:
+scene-referred.
+
+**DECIDED: route A.** The LUTs are re-baked offline into DI-native looks, so no
+conversion happens inside the DCTL and every project rule is preserved. The
+procedure is `BAKING.md`. The three routes as costed:
 
 | Route | What it needs | Consequence |
 |---|---|---|
@@ -327,9 +330,36 @@ viable routes, in the order they are recommended:
 | **B. Keep the look stage on a separate node after a CST** | Nothing — works today | Zero risk, standard Resolve practice, no rule changes. Costs the single-node integration |
 | **C. Add a DWG->Rec.709 conversion inside the DCTL** | Lifting the three rules, plus an official DWG matrix | Single node, full integration. But the matrix is not in the documentation available here and must not be derived, so this route is blocked on a documented matrix being supplied |
 
-`CineCoreLook.dctl` implements route B today and is written so that routes A and
-C need no change to its logic — only to what the LUTs contain, or to what feeds
-the node.
+`CineCoreLook.dctl` now implements route A: it expects DaVinci Intermediate and
+applies no conversion whatsoever. Its logic was already conversion-free, so the
+switch from route B was a change of contract and documentation only.
+
+### 1.8.1a Highlights above diffuse white — a correction
+
+An earlier note implied the above-white clipping was a cost of route A. **It is
+not.** A display-referred LUT has a 0..1 domain; diffuse white is DI 0.5138, so
+everything brighter saturates during the lookup no matter how the conversion is
+arranged. Route B clips in exactly the same place, because the LUT node clamps
+to its own domain either way.
+
+| DI code | linear | Rec.709 encoded | in domain? |
+|---|---|---|---|
+| 0.3360 | 0.18 | 0.4894 | yes, mid grey |
+| 0.5138 | 1.00 | 0.9999 | yes, diffuse white |
+| 0.6000 | 2.27 | 1.4067 | no |
+| 0.8000 | 15.08 | 3.0973 | no |
+
+The mitigation is CineCore's Highlight Shoulder, which exists for this: roll
+speculars below diffuse white before the look stage and nothing is lost. This
+is also how the real process works — highlights are graded into range before a
+print emulation, not after.
+
+### 1.8.1b Why the bake must have tone and gamut mapping disabled
+
+Neither is invertible. With either enabled on the CSTs, the round trip is not a
+clean conversion and every baked LUT silently inherits the error. `BAKING.md`
+includes a ten-second self-check for this: disabling the LUT node must leave the
+image completely unchanged, since the two CSTs should cancel exactly.
 
 ### 1.8.2 Licensing
 
@@ -419,7 +449,7 @@ Every division is guarded or has a non-zero compile-time constant denominator;
 | 3 | Hue densities, split toning, highlight warmth, shadow cooling, bleach bypass | Not started |
 | 4 | Film-look engine and profile architecture | Not started |
 | 5 | ~20 film looks on the shared engine | Not started |
-| — | `CineCoreLook.dctl`, LUT look selector, 19 looks | **Usable, pending the 1.8.1 decision** |
+| — | `CineCoreLook.dctl`, LUT look selector, 19 looks | **Route A adopted. Awaiting the re-bake, then merge into CineCore** |
 | 6 | GPU, cleanliness, stability, Resolve compatibility | Not started |
 
 Phase 3 inserts at the marked point in `SECTION 11`, after color separation.

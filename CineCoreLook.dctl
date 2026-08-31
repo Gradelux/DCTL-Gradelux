@@ -2,33 +2,47 @@
 //  CineCore Look
 //  LUT-based film look selector for DaVinci Resolve
 //  ---------------------------------------------------------------------------
-//  Companion to CineCore.dctl. Kept as a separate DCTL for now for two
-//  reasons, both documented in DEVNOTES.md:
-//
-//    1. COLOR SPACE. Every LUT this selector loads is a display-referred
-//       Rec.709 LUT with a 0..1 domain. CineCore.dctl works in DaVinci Wide
-//       Gamut / DaVinci Intermediate. Those two are not interchangeable, and
-//       merging this stage into CineCore would require a color space
-//       conversion inside the DCTL, which the project rules currently forbid.
-//
-//    2. LUT AVAILABILITY. A DCTL that references a LUT file fails to compile
-//       if that file is missing. Keeping the LUT stage separate means
-//       CineCore.dctl still builds for anyone without this LUT set.
+//  Companion to CineCore.dctl.
 //
 //  ---------------------------------------------------------------------------
 //  INPUT CONTRACT  -- READ THIS BEFORE USE
 //  ---------------------------------------------------------------------------
-//  This DCTL applies its LUT to whatever values arrive, with NO color space
-//  conversion of any kind. The LUTs expect Rec.709 display-referred input,
-//  so this node must sit somewhere in the chain where the image is already
-//  Rec.709. In a DaVinci Wide Gamut timeline that means:
+//  This DCTL expects DAVINCI INTERMEDIATE input and performs NO color space
+//  conversion of any kind. It requires LUTs that have been re-baked for DI
+//  input, per BAKING.md. It runs directly after CineCore with nothing between:
 //
-//      [ CineCore.dctl ]  ->  [ CST: DaVinci WG/Intermediate -> Rec.709 ]
-//                         ->  [ CineCoreLook.dctl ]
+//      [ CineCore.dctl ]  ->  [ CineCoreLook.dctl ]
 //
-//  Placing this node directly on DaVinci Intermediate data will produce a
-//  badly wrong image, not a subtly wrong one. That is a property of the LUTs,
-//  not a defect in this file.
+//  The supplied looks were originally Rec.709 LUTs. Applying a Rec.709 LUT to
+//  DI data gives a badly wrong image, not a subtly wrong one, because DI mid
+//  grey is code value 0.336 and DI 1.0 is linear 100. If a look appears wildly
+//  dark or crushed, its LUT has not been re-baked yet.
+//
+//  ---------------------------------------------------------------------------
+//  HIGHLIGHTS ABOVE DIFFUSE WHITE
+//  ---------------------------------------------------------------------------
+//  A re-baked look is FLAT above DI 0.5138, which is linear 1.0, diffuse white.
+//  A display-referred LUT has a 0..1 domain, so everything brighter than white
+//  saturated during the bake and now maps to a single output value.
+//
+//  This is not a baking artefact: applying these LUTs through a live color
+//  space transform clips in exactly the same place, because the LUT node clamps
+//  to its own domain either way. It is what happens when a display-referred
+//  look meets scene-referred data.
+//
+//  Use CineCore's Highlight Shoulder to roll speculars down below diffuse white
+//  before this stage and nothing is lost. Grading highlights into range before
+//  a print emulation is also how the real process works.
+//
+//  ---------------------------------------------------------------------------
+//  WHY THIS IS A SEPARATE FILE
+//  ---------------------------------------------------------------------------
+//  A DCTL that references a missing LUT file fails to compile. Keeping the look
+//  stage separate means CineCore.dctl still builds on a machine without this
+//  LUT set. Once the bake is done and this file is confirmed working, the stage
+//  can be merged into CineCore.dctl as a single node at the cost of making the
+//  luts folder a hard requirement.
+//
 //  ---------------------------------------------------------------------------
 //  LUT FILES
 //  ---------------------------------------------------------------------------
@@ -85,10 +99,16 @@ __DEVICE__ float cc_safe(float x)
     return 0.0f;      // NaN fails every ordered comparison and lands here
 }
 
-// A .cube LUT is only defined across its declared domain, which for every LUT
-// in this set is 0..1. This is one of the few places where a hard clamp is
-// technically necessary rather than stylistic: outside the domain there is no
-// data to interpolate and the sampler's behavior is not something to rely on.
+// A .cube LUT is only defined across its declared domain, 0..1 for every LUT in
+// this set. This is one of the few places where a hard clamp is technically
+// necessary rather than stylistic: outside the domain there is no data to
+// interpolate and the sampler's behavior is not something to rely on.
+//
+// In DaVinci Intermediate the domain covers linear 0 to linear 100, so the
+// clamp only engages on code values above 1.0, which the baked LUT has already
+// flattened, and on the small negatives that wide-gamut color can produce.
+// Nothing in normal range is touched.
+//
 // The clamp applies ONLY to the value handed to the sampler. The unclamped
 // original is what the mix blends against, so a mix of 0 is an exact
 // pass-through even for out-of-domain pixels.
