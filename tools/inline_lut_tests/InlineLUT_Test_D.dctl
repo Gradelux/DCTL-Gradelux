@@ -1,0 +1,12 @@
+// InlineLUT_Test_D.dctl   -   CONTROL TEST, no LUT of any kind.
+//
+// Nothing here but the main entry function. It brightens slightly so you can
+// see it is doing something.
+//
+// If this FAILS: the problem is my transform signature.
+// If this BUILDS: the signature is fine, and the LUT block is the fault.
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+    return make_float3(p_R * 1.1f, p_G * 1.1f, p_B * 1.1f);
+}

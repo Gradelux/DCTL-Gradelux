@@ -1,0 +1,28 @@
+// InlineLUT_Test_E.dctl   -   IS THE MACRO RECOGNISED AT ALL?
+//
+// A DEFINE_CUBE_LUT block is present but NEVER USED. The transform does not
+// call APPLY_LUT, so nothing depends on the LUT existing.
+//
+// If this BUILDS: Resolve recognises DEFINE_CUBE_LUT and strips the block.
+//                 The macro works, and the fault is in APPLY_LUT or the data.
+// If this FAILS with the same float3 error: Resolve does NOT recognise
+//                 DEFINE_CUBE_LUT on this build. It is parsing the block as a
+//                 function. That is the whole answer, and inline LUTs are not
+//                 available by this route.
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+    return make_float3(p_R * 1.1f, p_G * 1.1f, p_B * 1.1f);
+}
+
+DEFINE_CUBE_LUT(CC_TEST_LUT) {
+LUT_3D_SIZE 2
+0.000000 0.000000 0.000000
+1.000000 0.000000 0.000000
+0.000000 1.000000 0.000000
+1.000000 1.000000 0.000000
+0.000000 0.000000 1.000000
+1.000000 0.000000 1.000000
+0.000000 1.000000 1.000000
+1.000000 1.000000 1.000000
+}
