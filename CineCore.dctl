@@ -1396,10 +1396,42 @@ __DEVICE__ float3 cc_color_separation(float3 v, float amount)
 // return undefined data and put a bright rim along the edges.
 __DEVICE__ float cc_tap(__TEXTURE__ t, int w, int h, float x, float y)
 {
-    int xi = (int)_fmaxf(0.0f, _fminf((float)(w - 1), x));
-    int yi = (int)_fmaxf(0.0f, _fminf((float)(h - 1), y));
+    //  Rounded, not truncated. Truncation biases every sample towards the
+    //  origin by up to a whole pixel, which skews a ring gather inward.
+    int xi = (int)(_fmaxf(0.0f, _fminf((float)(w - 1), x)) + 0.5f);
+    int yi = (int)(_fmaxf(0.0f, _fminf((float)(h - 1), y)) + 0.5f);
 
     return _tex2D(t, xi, yi);
+}
+
+// Sub-pixel sampling: bilinear between the four surrounding pixels.
+//
+// This exists because whole-pixel sampling QUANTISES any effect whose offset is
+// a fraction of a pixel. Chromatic aberration is exactly that case: its
+// displacement is well under one pixel across most of the frame, so a
+// nearest-pixel read discards it entirely and then jumps a whole pixel at once.
+// The control appears to do nothing, then change once, and never respond
+// smoothly - which is precisely what it did.
+//
+// Four reads instead of one, so it is used only where sub-pixel accuracy
+// matters. The ring gathers work at radii of several pixels and do not need it.
+__DEVICE__ float cc_tap_lin(__TEXTURE__ t, int w, int h, float x, float y)
+{
+    float cx = _fmaxf(0.0f, _fminf((float)(w - 1), x));
+    float cy = _fmaxf(0.0f, _fminf((float)(h - 1), y));
+
+    int x0 = (int)cx;
+    int y0 = (int)cy;
+    int x1 = (x0 + 1 < w) ? (x0 + 1) : x0;
+    int y1 = (y0 + 1 < h) ? (y0 + 1) : y0;
+
+    float fx = cx - (float)x0;
+    float fy = cy - (float)y0;
+
+    float top = cc_lerp(_tex2D(t, x0, y0), _tex2D(t, x1, y0), fx);
+    float bot = cc_lerp(_tex2D(t, x0, y1), _tex2D(t, x1, y1), fx);
+
+    return cc_lerp(top, bot, fy);
 }
 
 // --- Matte ------------------------------------------------------------------
@@ -1762,9 +1794,11 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
                                  _tex2D(p_TexG, p_X, p_Y),
                                  _tex2D(p_TexB, p_X, p_Y));
 
-        float3 ab = make_float3(cc_tap(p_TexR, p_Width, p_Height, (float)p_X + nx * d, (float)p_Y + ny * d),
+        //  Sub-pixel sampling is essential here: the displacement is a fraction
+        //  of a pixel over most of the frame.
+        float3 ab = make_float3(cc_tap_lin(p_TexR, p_Width, p_Height, (float)p_X + nx * d, (float)p_Y + ny * d),
                                 ctr.y,
-                                cc_tap(p_TexB, p_Width, p_Height, (float)p_X - nx * d, (float)p_Y - ny * d));
+                                cc_tap_lin(p_TexB, p_Width, p_Height, (float)p_X - nx * d, (float)p_Y - ny * d));
 
         //  Displacing red and blue by equal and opposite amounts does NOT leave
         //  brightness alone, because their luminance weights are not equal:

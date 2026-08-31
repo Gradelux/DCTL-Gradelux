@@ -332,6 +332,37 @@ int main(void){
     sprintf(buf,"R %+.5f  B %+.5f", cg.x-cb.x, cg.z-cb.z);
     check("CA still separates red and blue oppositely", (cg.x-cb.x)*(cg.z-cb.z)<0.0f, buf);
 
+    printf("\n--- CA slider response ---\n");
+    /* fine detail so any displacement shows */
+    for(int y=0;y<H;y++) for(int x=0;x<W;x++){
+        float v=((x/2)%2)?0.52f:0.28f; TR.p[y][x]=v;TG.p[y][x]=v;TB.p[y][x]=v; }
+    int rx=W-14, ry=H/2;
+    reset(); float3 r0=T(rx,ry);
+    float prevSep=0, biggestJump=0, moved=0; int steps=0;
+    for(int i=0;i<=100;i++){
+        reset(); gChromAb=i/100.0f;
+        float3 o=T(rx,ry);
+        float sep=(o.x-o.z)-(r0.x-r0.z);
+        if(i>0){ float j=fabsf(sep-prevSep); if(j>biggestJump) biggestJump=j;
+                 if(j>1e-6f) steps++; }
+        prevSep=sep; moved=fabsf(sep); }
+    sprintf(buf,"%d of 100 slider steps changed the image, largest single jump %.5f",steps,biggestJump);
+    check("the CA slider responds continuously, not in one step", steps>90, buf);
+    sprintf(buf,"total separation at full %.5f",moved);
+    check("CA reaches a useful amount at full", moved>0.01f, buf);
+    /* Monotonicity has to be measured on a SMOOTH gradient. On the stripe
+       pattern above, sweeping the offset past the stripe period makes the
+       samples cross stripes, so separation rises and falls - correct behaviour
+       for a periodic subject, and the wrong thing to assert monotonicity on. */
+    for(int y=0;y<H;y++) for(int x=0;x<W;x++){
+        float v=0.20f+0.45f*((float)x/(W-1)); TR.p[y][x]=v;TG.p[y][x]=v;TB.p[y][x]=v; }
+    int nonmono=0; float pv2=-1e9f;
+    for(int i=0;i<=50;i++){ reset(); gChromAb=i/50.0f;
+        float3 o=T(rx,ry); float sep=fabsf(o.x-o.z);
+        if(sep<pv2-1e-5f) nonmono++; pv2=sep; }
+    sprintf(buf,"%d reversals over 50 steps",nonmono);
+    check("CA increases monotonically with the slider", nonmono==0, buf);
+
     printf("\n--- colour separation ---\n");
     /* Two neighbouring hues that should DIVERGE. Hue is measured as the sextant
        position, in degrees, so the question is whether their separation grows. */
