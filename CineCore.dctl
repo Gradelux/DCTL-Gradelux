@@ -2,7 +2,10 @@
 //  CineCore
 //  A modular grading and film-look engine for DaVinci Resolve
 //  ---------------------------------------------------------------------------
-//  Working space : DaVinci Wide Gamut / DaVinci Intermediate
+//  Working space : DaVinci Wide Gamut / DaVinci Intermediate, required.
+//                  There is no input encoding option: every threshold, knee and
+//                  pivot in this file is anchored to DI code values, so feeding
+//                  it anything else puts all of them in the wrong place.
 //  Build stage   : PHASE 3 + OPTICAL EFFECTS
 //                  Phase 1  input safety, exposure, white balance, tint,
 //                           contrast, pivot, highlight shoulder, shadow toe,
@@ -26,8 +29,23 @@
 // ============================================================================
 
 // ---- Setup ----------------------------------------------------------------
-DEFINE_UI_PARAMS(gInputEncoding, Input Encoding, DCTLUI_COMBO_BOX, 0, {CC_ENC_DI, CC_ENC_LIN}, {DaVinci Intermediate, DaVinci Linear})
 DEFINE_UI_PARAMS(gBypass, Bypass, DCTLUI_CHECK_BOX, 0)
+
+//  Quality halves the ANGULAR sampling density of the seven effects that read
+//  neighbouring pixels: 8 directions per ring or 4. Ring radii are untouched,
+//  so an effect's reach and shape are identical in both modes and only the
+//  smoothness of the glow changes. Dropping rings instead was tried and
+//  rejected: it shortens the reach, which makes the effect look wrong rather
+//  than cheaper.
+//
+//     Full   84 taps per pixel with every sampled effect enabled
+//     Fast   44
+//
+//  It changes NOTHING when those effects are off - their gathers are skipped
+//  entirely at zero strength. Fast interleaves directions between rings so
+//  coverage stays even instead of collapsing into a cross, but a small isolated
+//  highlight can still show slight angular structure.
+DEFINE_UI_PARAMS(gQuality, Quality, DCTLUI_COMBO_BOX, 0, {CC_Q_FULL, CC_Q_FAST}, {Full, Fast})
 
 // ---- Primary grade --------------------------------------------------------
 DEFINE_UI_PARAMS(gExposure, Exposure, DCTLUI_SLIDER_FLOAT, 0.0f, -5.0f, 5.0f, 0.01f)
@@ -106,7 +124,6 @@ DEFINE_UI_PARAMS(gDiffusionThresh, Diffusion Threshold, DCTLUI_SLIDER_FLOAT, 0.3
 DEFINE_UI_PARAMS(gDiffusionHiBias, Diffusion Highlight Bias, DCTLUI_SLIDER_FLOAT, 0.5f, 0.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gFilmSoft, Film Softness, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gFilmSoftRadius, Film Softness Radius, DCTLUI_SLIDER_FLOAT, 0.4f, 0.0f, 1.0f, 0.001f)
-DEFINE_UI_PARAMS(gFilmSoftHi, Film Softness Highlights, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gEdgeSoft, Edge Softness, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gEdgeSoftStart, Edge Softness Start, DCTLUI_SLIDER_FLOAT, 0.45f, 0.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gMicroContrast, Micro Contrast, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
@@ -115,14 +132,10 @@ DEFINE_UI_PARAMS(gMicroRadius, Micro Contrast Radius, DCTLUI_SLIDER_FLOAT, 0.5f,
 // ---- Film print ------------------------------------------------------------
 DEFINE_UI_PARAMS(gPrintContrast, Print Contrast, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gPrintPivot, Print Pivot, DCTLUI_SLIDER_FLOAT, 0.336f, 0.15f, 0.6f, 0.001f)
-DEFINE_UI_PARAMS(gPrintShoulder, Print Shoulder, DCTLUI_SLIDER_FLOAT, 0.5f, 0.0f, 1.0f, 0.001f)
-DEFINE_UI_PARAMS(gPrintToe, Print Toe, DCTLUI_SLIDER_FLOAT, 0.5f, 0.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gNegPrint, Negative to Print, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
 
 // ---- Chroma response -------------------------------------------------------
 DEFINE_UI_PARAMS(gHiDesat, Highlight Desaturation, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
-DEFINE_UI_PARAMS(gHiDesatStart, Highlight Desat Start, DCTLUI_SLIDER_FLOAT, 0.45f, 0.2f, 0.9f, 0.001f)
-DEFINE_UI_PARAMS(gHiDesatRoll, Highlight Desat Roll Off, DCTLUI_SLIDER_FLOAT, 0.5f, 0.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gLoDesat, Shadow Desaturation, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gLoDesatStart, Shadow Desat Start, DCTLUI_SLIDER_FLOAT, 0.22f, 0.05f, 0.5f, 0.001f)
 
@@ -372,11 +385,17 @@ DEFINE_UI_PARAMS(gVignetteWarm, Vignette Color, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f
 
 // --- film print curve ---
 #define CC_PRINT_GAIN       0.55f       // extra slope at full print contrast
-#define CC_PRINT_SH_RANGE   0.50f       // shoulder range, as a share of headroom
-#define CC_PRINT_TOE_RANGE  0.62f       // toe range, as a share of the knee
+//  Shoulder and toe hardness were controls; both are now fixed at the middle of
+//  the range they used to expose. Tunable here, not exposed.
+#define CC_PRINT_SH_RANGE   0.675f      // shoulder range, as a share of headroom
+#define CC_PRINT_TOE_RANGE  1.116f      // toe range, as a share of the knee
 #define CC_NEGPRINT_GAIN    0.30f       // contrast swing of the negative/print slider
 
 // --- chroma response ---
+//  Start and roll-off were controls; they are now fixed at the values that were
+//  their defaults. Both are still tunable here, they simply are not exposed.
+#define CC_HIDESAT_START    0.45f       // luminance at which highlights start to lose chroma
+#define CC_HIDESAT_ROLL     0.205f      // width of that transition
 #define CC_HIDESAT_MAX      0.85f       // most chroma removable from highlights
 #define CC_LODESAT_MAX      0.75f       // most chroma removable from shadows
 
@@ -1545,8 +1564,7 @@ __DEVICE__ float3 cc_matte(float3 v, float amount)
 // The slope and the two compressions are applied in that order, which is what
 // keeps the pivot fixed: extra slope moves everything away from the pivot, then
 // the shoulder and toe pull the extremes back without touching the middle.
-__DEVICE__ float3 cc_print_contrast(float3 v, float amount, float pivot,
-                                    float shoulder, float toe)
+__DEVICE__ float3 cc_print_contrast(float3 v, float amount, float pivot)
 {
     if (amount <= 0.0f) return v;
 
@@ -1561,13 +1579,8 @@ __DEVICE__ float3 cc_print_contrast(float3 v, float amount, float pivot,
     // knee, not fixed. A fixed range is the trap here: the signal above the
     // shoulder knee runs to well past 1.0 once the slope has been applied, so a
     // range of a tenth turns the shoulder into a hard clip instead of a curve.
-    // Higher Shoulder / Toe values mean a tighter, harder compression.
-    float shR = _fmaxf((CC_DI_HEADROOM - shK) * cc_lerp(CC_PRINT_SH_RANGE * 2.0f,
-                                                       CC_PRINT_SH_RANGE * 0.7f,
-                                                       _saturatef(shoulder)), CC_EPS);
-    float toR = _fmaxf(toK * cc_lerp(CC_PRINT_TOE_RANGE * 2.6f,
-                                     CC_PRINT_TOE_RANGE * 1.0f,
-                                     _saturatef(toe)), CC_EPS);
+    float shR = _fmaxf((CC_DI_HEADROOM - shK) * CC_PRINT_SH_RANGE, CC_EPS);
+    float toR = _fmaxf(toK * CC_PRINT_TOE_RANGE, CC_EPS);
 
     float3 o = make_float3((v.x - p) * g + p, (v.y - p) * g + p, (v.z - p) * g + p);
 
@@ -1603,8 +1616,7 @@ __DEVICE__ float3 cc_neg_print(float3 v, float amount, float pivot)
 // Chroma is scaled towards the pixel's own luminance, so luminance is preserved
 // exactly and only colourfulness moves. The weight is a smoothstep, so the
 // effect eases in rather than switching on at a threshold.
-__DEVICE__ float3 cc_tonal_desat(float3 v, float hiAmt, float hiStart, float hiRoll,
-                                 float loAmt, float loStart)
+__DEVICE__ float3 cc_tonal_desat(float3 v, float hiAmt, float loAmt, float loStart)
 {
     if (hiAmt <= 0.0f && loAmt <= 0.0f) return v;
 
@@ -1613,8 +1625,8 @@ __DEVICE__ float3 cc_tonal_desat(float3 v, float hiAmt, float hiStart, float hiR
 
     if (hiAmt > 0.0f)
     {
-        float w = _fmaxf(cc_lerp(0.35f, 0.06f, _saturatef(hiRoll)), CC_EPS);
-        k -= _saturatef(hiAmt) * CC_HIDESAT_MAX * cc_smooth01((y - hiStart) / w);
+        k -= _saturatef(hiAmt) * CC_HIDESAT_MAX
+             * cc_smooth01((y - CC_HIDESAT_START) / CC_HIDESAT_ROLL);
     }
     if (loAmt > 0.0f)
     {
@@ -1862,9 +1874,27 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
         float d = _clampf(gChromAb, -1.0f, 1.0f)
                   * cc_lerp(CC_CA_MIN, CC_CA_MAX, _saturatef(gChromAbRadius)) * fall;
 
-        rgb = make_float3(cc_tap(p_TexR, p_Width, p_Height, (float)p_X + nx * d, (float)p_Y + ny * d),
-                          _tex2D(p_TexG, p_X, p_Y),
-                          cc_tap(p_TexB, p_Width, p_Height, (float)p_X - nx * d, (float)p_Y - ny * d));
+        float3 ctr = make_float3(_tex2D(p_TexR, p_X, p_Y),
+                                 _tex2D(p_TexG, p_X, p_Y),
+                                 _tex2D(p_TexB, p_X, p_Y));
+
+        float3 ab = make_float3(cc_tap(p_TexR, p_Width, p_Height, (float)p_X + nx * d, (float)p_Y + ny * d),
+                                ctr.y,
+                                cc_tap(p_TexB, p_Width, p_Height, (float)p_X - nx * d, (float)p_Y - ny * d));
+
+        //  Displacing red and blue by equal and opposite amounts does NOT leave
+        //  brightness alone, because their luminance weights are not equal:
+        //  0.2126 against 0.0722. On an image that falls off towards the edges,
+        //  red moves into the darker side and blue into the brighter one, and
+        //  the imbalance leaves a net darkening that grows with radius - which
+        //  reads exactly like an unwanted vignette.
+        //
+        //  Lateral aberration displaces COLOUR; it does not dim the frame. The
+        //  luminance the displacement introduced is measured against the
+        //  undisplaced pixel and removed, leaving only the colour separation.
+        float dL = cc_luma(ab) - cc_luma(ctr);
+
+        rgb = make_float3(ab.x - dL, ab.y - dL, ab.z - dL);
     }
     else
     {
@@ -1920,6 +1950,10 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
 
     float shortSide = (float)((p_Width < p_Height) ? p_Width : p_Height);
 
+    //  Sampling density. A uniform branch: every pixel takes the same path, so
+    //  this costs nothing beyond the taps it saves.
+    int kStep = (gQuality == CC_Q_FULL) ? 1 : 2;
+
     float3 halo  = make_float3(0.0f, 0.0f, 0.0f);
     float3 bloom = make_float3(0.0f, 0.0f, 0.0f);
 
@@ -1931,7 +1965,7 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
         {
             float rr = R * (float)ring / 3.0f;
             float rw = 1.0f / (float)ring;              // inner rings weigh more
-            for (int k = 0; k < 8; ++k)
+            for (int k = (ring & 1); k < 8; k += kStep)
             {
                 float sx = (float)p_X + dirX[k] * rr;
                 float sy = (float)p_Y + dirY[k] * rr;
@@ -1954,9 +1988,9 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
         float wsum = 0.0f;
         for (int ring = 1; ring <= 2; ++ring)
         {
-            float rr = R * (float)ring / 2.0f;
+            float rr = R * (float)ring * 0.5f;
             float rw = 1.0f / (float)ring;
-            for (int k = 0; k < 8; ++k)
+            for (int k = (ring & 1); k < 8; k += kStep)
             {
                 float sx = (float)p_X + dirX[k] * rr;
                 float sy = (float)p_Y + dirY[k] * rr;
@@ -1980,15 +2014,17 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
         float rad = cc_lerp(CC_SHARP_RADIUS_MIN, CC_SHARP_RADIUS_MAX, _saturatef(gSharpenRadius));
 
         float blur = 0.0f;
-        for (int k = 0; k < 8; ++k)
+        float bn = 0.0f;
+        for (int k = 0; k < 8; k += kStep)
         {
             float sx = (float)p_X + dirX[k] * rad;
             float sy = (float)p_Y + dirY[k] * rad;
             blur += cc_luma(make_float3(cc_tap(p_TexR, p_Width, p_Height, sx, sy),
                                         cc_tap(p_TexG, p_Width, p_Height, sx, sy),
                                         cc_tap(p_TexB, p_Width, p_Height, sx, sy)));
+            bn += 1.0f;
         }
-        blur *= 0.125f;
+        blur *= cc_div(1.0f, bn);
 
         float d = cc_sharpen_detail(cc_luma(rgb), blur, _saturatef(gSharpenThresh));
         float o = d * _saturatef(gSharpen) * CC_SHARP_AMOUNT;
@@ -2010,9 +2046,9 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
         float wsum = 0.0f;
         for (int ring = 1; ring <= 2; ++ring)
         {
-            float rr = R * (float)ring / 2.0f;
+            float rr = R * (float)ring * 0.5f;
             float rw = 1.0f / (float)ring;
-            for (int k = 0; k < 8; ++k)
+            for (int k = (ring & 1); k < 8; k += kStep)
             {
                 float sx = (float)p_X + dirX[k] * rr;
                 float sy = (float)p_Y + dirY[k] * rr;
@@ -2038,15 +2074,17 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     {
         float rad = cc_lerp(CC_SOFT_RADIUS_MIN, CC_SOFT_RADIUS_MAX, _saturatef(gFilmSoftRadius));
         float blur = 0.0f;
-        for (int k = 0; k < 8; ++k)
+        float bn = 0.0f;
+        for (int k = 0; k < 8; k += kStep)
         {
             float sx = (float)p_X + dirX[k] * rad;
             float sy = (float)p_Y + dirY[k] * rad;
             blur += cc_luma(make_float3(cc_tap(p_TexR, p_Width, p_Height, sx, sy),
                                         cc_tap(p_TexG, p_Width, p_Height, sx, sy),
                                         cc_tap(p_TexB, p_Width, p_Height, sx, sy)));
+            bn += 1.0f;
         }
-        blur *= 0.125f;
+        blur *= cc_div(1.0f, bn);
 
         float y = cc_luma(rgb);
         float d = y - blur;
@@ -2055,11 +2093,6 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
         //  only the high-frequency term is reduced, so edges keep their
         //  position and the image does not go out of focus.
         float k = _saturatef(gFilmSoft) * CC_SOFT_AMOUNT;
-
-        //  Highlights carry the harshest digital detail, so they can be
-        //  softened further without touching the rest.
-        k += _saturatef(gFilmSoftHi) * CC_SOFT_AMOUNT * 0.5f
-             * cc_smooth01((y - CC_DI_MID) / (CC_DI_WHITE - CC_DI_MID));
 
         //  Edge softness: the same reduction, weighted towards the frame edges,
         //  where a lens actually loses resolution.
@@ -2074,15 +2107,17 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     {
         float rad = cc_lerp(CC_MICRO_RADIUS_MIN, CC_MICRO_RADIUS_MAX, _saturatef(gMicroRadius));
         float blur = 0.0f;
-        for (int k = 0; k < 8; ++k)
+        float bn = 0.0f;
+        for (int k = 0; k < 8; k += kStep)
         {
             float sx = (float)p_X + dirX[k] * rad;
             float sy = (float)p_Y + dirY[k] * rad;
             blur += cc_luma(make_float3(cc_tap(p_TexR, p_Width, p_Height, sx, sy),
                                         cc_tap(p_TexG, p_Width, p_Height, sx, sy),
                                         cc_tap(p_TexB, p_Width, p_Height, sx, sy)));
+            bn += 1.0f;
         }
-        blur *= 0.125f;
+        blur *= cc_div(1.0f, bn);
 
         //  A larger radius than sharpening, and no threshold: this is tonal
         //  structure rather than edge definition, and it reads as stock
@@ -2101,7 +2136,7 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     // exact pass-through rather than a round-trip approximation.
     if (gExposure != 0.0f || gTemperature != 0.0f || gTint != 0.0f)
     {
-        float3 lin = (gInputEncoding == CC_ENC_LIN) ? rgb : cc_di_to_lin3(rgb);
+        float3 lin = cc_di_to_lin3(rgb);
 
         // -- 2. Exposure ----------------------------------------------------
         lin = cc_exposure(lin, gExposure);
@@ -2113,7 +2148,7 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     }
     else
     {
-        cv = (gInputEncoding == CC_ENC_LIN) ? cc_lin_to_di3(rgb) : rgb;
+        cv = rgb;
     }
 
     // -- 5 / 6. Contrast about the pivot ------------------------------------
@@ -2132,7 +2167,7 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     // -- 10b. Film print curve and negative/print character ------------------
     //  After the primary tone controls and before the colour block, which is
     //  where a print sits in the real chain.
-    cv = cc_print_contrast(cv, gPrintContrast, gPrintPivot, gPrintShoulder, gPrintToe);
+    cv = cc_print_contrast(cv, gPrintContrast, gPrintPivot);
     cv = cc_neg_print(cv, gNegPrint, gPrintPivot);
 
     // -- 11. Saturation ------------------------------------------------------
@@ -2159,7 +2194,7 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     cv = cc_channel_density(cv, gChanDensR, gChanDensG, gChanDensB);
 
     // -- 15d. Tonal chroma response -------------------------------------------
-    cv = cc_tonal_desat(cv, gHiDesat, gHiDesatStart, gHiDesatRoll, gLoDesat, gLoDesatStart);
+    cv = cc_tonal_desat(cv, gHiDesat, gLoDesat, gLoDesatStart);
 
     // -- 15e. Tonal density ---------------------------------------------------
     cv = cc_tonal_density(cv, gBlackDensity, gHighlightDensity);
@@ -2254,8 +2289,6 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
 
     // -- 23. Output safety ---------------------------------------------------
     cv = cc_out_limit3(cv);
-
-    if (gInputEncoding == CC_ENC_LIN) cv = cc_di_to_lin3(cv);
 
     return cc_safe3(cv);
 }
