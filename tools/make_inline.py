@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from bake_luts import load_cube
 
 BAKED = sys.argv[1]
-SIZE  = int(sys.argv[2]) if len(sys.argv) > 2 else 33
+SIZE  = int(sys.argv[2]) if len(sys.argv) > 2 else 0   # 0 = verbatim
 
 LOOKS = [('CC_LUT_70S', '70s'),
          ('CC_LUT_ALPINE','Alpine'), ('CC_LUT_CHROME','Chrome'), ('CC_LUT_CLEAN','Clean'),
@@ -75,8 +75,17 @@ blocks = [block('CC_LUT_REFERENCE', 2, ident)]
 # Every look is embedded EXACTLY as supplied: original values, original grid
 # size, no colour space conversion and no resampling of any kind.
 for macro, fn in LOOKS:
-    s, rows = raw_cube(os.path.join(BAKED, fn + '.cube'))
-    blocks.append(block(macro, s, rows))
+    if SIZE == 0:
+        # verbatim: original grid, original characters, nothing touched
+        s, rows = raw_cube(os.path.join(BAKED, fn + '.cube'))
+        blocks.append(block(macro, s, rows))
+    else:
+        # resampled to a common grid. Six decimals is well below the error the
+        # resample itself introduces, so it costs nothing extra.
+        s, d = load_cube(os.path.join(BAKED, fn + '.cube'))
+        rs = d if s == SIZE else resample(s, d, SIZE)
+        blocks.append(block(macro, SIZE,
+                            [f"{c[0]:.6f} {c[1]:.6f} {c[2]:.6f}" for c in rs]))
 
 header = ("// ---- Inline LUT data ------------------------------------------------------\n"
           "//  All look data is embedded here. This DCTL has NO external file dependency\n"
@@ -113,7 +122,8 @@ for m in re.finditer(r'^DEFINE_CUBE_LUT\((\w+)\) \{$', out, re.M):
 for n in set(re.findall(r'APPLY_LUT\([^)]*,\s*(\w+)\)', out)):
     assert f'DEFINE_CUBE_LUT({n}) {{' in out, f"{n} applied but not defined"
 
+OUT = os.environ.get('CC_OUT', 'CineCore_Inline.dctl')
 open('CineCore.dctl.new', 'w', encoding='utf-8').write(out)
-os.replace('CineCore.dctl.new', 'CineCore_Inline.dctl')
-print(f"CineCore_Inline.dctl  {len(out)/1e6:.2f} MB  {len(out.splitlines()):,} lines")
+os.replace('CineCore.dctl.new', OUT)
+print(f"{OUT}  {len(out)/1048576:.2f} MB  {len(out.splitlines()):,} lines")
 print(f"  {len(LOOKS)} inline LUTs at {SIZE}^3, all before the code that uses them")
