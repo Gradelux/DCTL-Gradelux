@@ -95,7 +95,7 @@ DEFINE_UI_PARAMS(gBleachBypass, Bleach Bypass, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 
 DEFINE_UI_PARAMS(gBleachMix, Bleach Bypass Mix, DCTLUI_SLIDER_FLOAT, 1.0f, 0.0f, 1.0f, 0.001f)
 
 // ---- Optical ---------------------------------------------------------------
-//  Halation and Bloom read neighbouring pixels, which is why this DCTL uses the
+//  These read neighbouring pixels, which is why this DCTL uses the
 //  texture form of the main entry function. Both are skipped entirely at zero,
 //  so they cost nothing when unused.
 DEFINE_UI_PARAMS(gVignette, Vignette, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
