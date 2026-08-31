@@ -364,6 +364,37 @@ speculars below diffuse white before the look stage and nothing is lost. This
 is also how the real process works — highlights are graded into range before a
 print emulation, not after.
 
+### 1.8.1c Resolve's Generate 3D LUT did not capture the Color Space Transform
+
+The first re-bake of all 19 looks came back **functionally identical to the
+originals**. Verified two ways:
+
+- **Neutral axis prediction.** On the neutral axis a white-point-preserving
+  gamut matrix cancels, so a correct bake is fully predictable from the DI
+  transfer function and the Rec.709 curve alone. Six hypotheses were tested
+  against the delivered files. "No colour space conversion at all" matched at
+  RMS 0.0001 DI; every hypothesis involving a real conversion was off by
+  0.16–0.20 DI, roughly two stops.
+- **Full-volume comparison.** Sampling each original at every grid point of its
+  re-baked counterpart, including fully saturated corners where a gamut
+  conversion would be unmissable, the worst difference anywhere in any of the
+  19 cubes was 0.00006 — against a 33³ neighbour-to-neighbour step of 0.02,
+  which is 300x below the quantisation floor.
+
+Cause: Color Space Transform is a ResolveFX plugin, and the generated LUT
+appears to capture only the primary grade and LUT nodes. The viewer showed the
+conversion working the whole time, which is why this is invisible by eye.
+
+**This also exposed a flaw in the original BAKING.md verification.** The
+"disable the LUT node and check the image is unchanged" test validates the
+*viewer*, and passes just as happily when the CSTs are being dropped from LUT
+generation entirely. It has been replaced with a decisive test: generate a LUT
+from a single CST node and check whether the file is an identity ramp.
+
+The reliable route is to bake in software from the documented DWG matrix,
+which removes Resolve's LUT generator from the path entirely. Blocked on that
+matrix being supplied from documentation — it must not be derived.
+
 ### 1.8.1b Why the bake must have tone and gamut mapping disabled
 
 Neither is invertible. With either enabled on the CSTs, the round trip is not a

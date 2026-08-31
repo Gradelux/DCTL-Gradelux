@@ -86,19 +86,47 @@ node 3 on the same choice.
 
 ---
 
-## 4. Verify the round trip before baking anything
+## 4. Verify — two checks, and the second one is the important one
 
-This check costs ten seconds and catches every settings mistake:
+### 4a. Are the CSTs inverse-matched?
 
-**Disable node 2** (the LUT) with its number key. The image should now look
-**completely unchanged** from the source — node 1 and node 3 should cancel
-exactly.
+**Disable node 2** (the LUT) with its number key. The image should look
+**completely unchanged** from the source — node 1 and node 3 should cancel.
 
-If the image shifts at all, the two CSTs are not inverse-matched. Check that
-tone mapping and gamut mapping are None on both, and that the gamma choice
-matches. Do not bake until this check passes.
+If it shifts, the two CSTs are not inverse-matched: check that tone mapping and
+gamut mapping are None on both and that the gamma choice matches.
 
-Re-enable node 2 when it does.
+Re-enable node 2 when it passes.
+
+### 4b. Does Generate 3D LUT actually capture the CSTs?
+
+**This is the check that matters, and 4a does not cover it.** 4a validates what
+the *viewer* shows. LUT generation is a separate mechanism, and Color Space
+Transform is a ResolveFX plugin — a generated LUT may capture only the primary
+grade and LUT nodes and silently omit it. When that happens the viewer looks
+perfect and the exported LUT is unconverted, which is indistinguishable by eye
+because the file only misbehaves later, in the DCTL.
+
+**The decisive test.** Put a clip with **only node 1** on it — the single CST,
+DaVinci Wide Gamut / DaVinci Intermediate to Rec.709, nothing else. Generate a
+33-point 3D LUT from it and open the file in a text editor.
+
+- The first few data lines should read as a **curve**, e.g. values climbing
+  steeply from black. That means the CST was captured. Proceed.
+- If they read as a plain linear ramp — `0 0 0`, then small even steps, ending
+  at `1 1 1` — the CST was **not** captured. That LUT is an identity, every
+  look you bake will come out unconverted, and this route cannot work on this
+  Resolve version.
+
+If the CST is not captured, do not bake. Use one of the fallbacks in section 8.
+
+### 4c. Confirm a finished LUT before trusting it
+
+Compare a baked LUT against its original: they must **differ substantially**.
+If a baked file is numerically the same as the file it came from, the
+conversion did not happen. A quick way to tell without tooling: open both in a
+text editor and compare the first data line. Identical numbers mean an
+unconverted file.
 
 ---
 
@@ -156,3 +184,36 @@ the DI-native LUT simply replaces the Rec.709 one.
 
 Keep the originals somewhere outside `luts/`. If the gamma choice in step 3
 turns out to be wrong, you will want to re-bake from them.
+
+---
+
+## 8. If Generate 3D LUT will not capture the CSTs
+
+Two fallbacks, in order of preference.
+
+### 8a. Bake in software from the documented matrix
+
+The whole conversion is arithmetic and can be done offline, exactly and
+reproducibly, with no dependence on Resolve's LUT generator. It needs one
+input this project does not have: the **documented DaVinci Wide Gamut to XYZ
+matrix, or the DWG primaries and white point**, from the same Blackmagic
+document that supplied the DaVinci Intermediate constants.
+
+Everything else is already known — the DI transfer function is in Section 2.1
+of the DCTL, the Rec.709 curve is standard, and the LUT data is in the files.
+
+That matrix must come from the documentation, not be derived or inferred.
+
+### 8b. Do not bake — use a live Color Space Transform node
+
+The CST works correctly as a live node; only LUT *generation* drops it. So the
+original Rec.709 LUTs can still be used as they are:
+
+```
+[ CineCore, Film Look = None ] -> [ CST: DWG/DI -> Rec.709 ] -> [ LUT node ]
+```
+
+This is correct today and needs no baking. The cost is that the look is no
+longer inside CineCore's node, and CineCore's own `Film Look` control must stay
+on `None`, since it would be applying a Rec.709 LUT to DaVinci Intermediate
+data.
