@@ -1,13 +1,10 @@
 // InlineLUT_Test_B.dctl
-// Same as InlineLUT_Test.dctl but with the optional standard .cube header
-// fields present, in case the parser requires a complete header.
+// Only if InlineLUT_Test.dctl fails.
+// Identical, except the LUT is placed BEFORE the main entry function. This
+// isolates whether placement is what matters.
 
-DEFINE_CUBE_LUT(CC_TEST_LUT)
-{
-TITLE "identity"
+DEFINE_CUBE_LUT(CC_TEST_LUT) {
 LUT_3D_SIZE 2
-DOMAIN_MIN 0.0 0.0 0.0
-DOMAIN_MAX 1.0 1.0 1.0
 0.000000 0.000000 0.000000
 1.000000 0.000000 0.000000
 0.000000 1.000000 0.000000

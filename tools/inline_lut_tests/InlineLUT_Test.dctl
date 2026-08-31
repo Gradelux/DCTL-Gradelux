@@ -1,9 +1,19 @@
 // InlineLUT_Test.dctl
-// Minimal test of inline DEFINE_CUBE_LUT. 2x2x2 identity.
-// If this compiles, the image must be unchanged.
+// Minimal inline DEFINE_CUBE_LUT test. 2x2x2 identity: if this builds, the
+// image must be unchanged.
+//
+// The LUT is placed AFTER the main entry function, which the DCTL
+// documentation explicitly permits: "Multiple CUBE LUTs can be defined in a
+// DCTL file and can be placed before or after the DCTL's Main Entry function."
+// The opening brace is on the same line as the macro, matching the documented
+// form DEFINE_CUBE_LUT([lutName]) { [LUT_Content] }.
 
-DEFINE_CUBE_LUT(CC_TEST_LUT)
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
 {
+    return APPLY_LUT(p_R, p_G, p_B, CC_TEST_LUT);
+}
+
+DEFINE_CUBE_LUT(CC_TEST_LUT) {
 LUT_3D_SIZE 2
 0.000000 0.000000 0.000000
 1.000000 0.000000 0.000000
@@ -13,9 +23,4 @@ LUT_3D_SIZE 2
 1.000000 0.000000 1.000000
 0.000000 1.000000 1.000000
 1.000000 1.000000 1.000000
-}
-
-__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
-{
-    return APPLY_LUT(p_R, p_G, p_B, CC_TEST_LUT);
 }
