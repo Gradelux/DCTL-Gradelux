@@ -3,7 +3,7 @@
 //  A modular grading and film-look engine for DaVinci Resolve
 //  ---------------------------------------------------------------------------
 //  Working space : DaVinci Wide Gamut / DaVinci Intermediate
-//  Build stage   : PHASE 3 + LUT film look
+//  Build stage   : PHASE 3 + PARAMETRIC FILM LOOK ENGINE
 //                  Phase 1  input safety, exposure, white balance, tint,
 //                           contrast, pivot, highlight shoulder, shadow toe,
 //                           shadow depth, black point, white point,
@@ -11,50 +11,12 @@
 //                  Phase 2  film density, subtractive saturation, richness,
 //                           color separation.
 //                  Phase 3  hue density shaping, split toning, bleach bypass.
-//                  Look     LUT-based film look selector with mix.
+//                  Look     parametric film look engine, 19 original looks.
 //
 //  Later phases add hue densities, split toning, bleach bypass and the
 //  parametric look engine. The pipeline is staged so those drop in without
 //  restructuring.
 //
-//  ---------------------------------------------------------------------------
-//  REQUIRES A LUT FOLDER
-//  ---------------------------------------------------------------------------
-//  This DCTL declares LUT files in Section 1 and WILL NOT COMPILE if any of
-//  them is missing. A "luts" folder must sit beside this file containing every
-//   cube file listed there, named exactly.
-//
-//  Those LUTs must be baked for DaVinci Intermediate input. See BAKING.md.
-//
-//  "Reference Identity" is a diagnostic look, not a creative one. It was baked
-//  through the identical pipeline with the creative stage replaced by an
-//  identity, so selecting it should leave the image visibly UNCHANGED below
-//  diffuse white. If it changes the image, the LUT set is wrong or the node is
-//  not receiving DaVinci Intermediate. It is the fastest way to tell a bad LUT
-//  set apart from a bad look.
-//  A Rec.709 LUT applied to DI data gives a badly wrong image, not a subtly
-//  wrong one, because DI mid grey is code value 0.336 and DI 1.0 is linear 100.
-//  If a look looks wildly dark or crushed, that LUT has not been re-baked.
-//
-//  PIPELINE DESIGN
-//  ---------------------------------------------------------------------------
-//  Scene-referred operations (exposure, white balance, tint) run in LINEAR
-//  DaVinci Wide Gamut, because scaling light is only physically meaningful in
-//  linear. Applying a gain to log code values bends the transfer curve instead
-//  of changing exposure, and that is a large part of why naive log-domain
-//  grades look brittle.
-//
-//  Tone shaping and all color character work runs in
-//  DAVINCI INTERMEDIATE LOG, because log is close to perceptually uniform: a
-//  straight slope through a pivot is exactly the classic film gamma, and the
-//  shoulder and toe knees land where the eye expects them.
-//
-//  The transform therefore performs at most one linear <-> log round trip, and
-//  skips it entirely when exposure and white balance are at their defaults, so
-//  a neutral setting is an exact pass-through.
-//
-//  No output color-space transform is applied. Input and output are both in
-//  the timeline encoding.
 // ============================================================================
 
 
@@ -116,37 +78,9 @@ DEFINE_UI_PARAMS(gBleachBypass, Bleach Bypass, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 
 DEFINE_UI_PARAMS(gBleachMix, Bleach Bypass Mix, DCTLUI_SLIDER_FLOAT, 1.0f, 0.0f, 1.0f, 0.001f)
 
 // ---- Film look ------------------------------------------------------------
-DEFINE_UI_PARAMS(gLook, Film Look, DCTLUI_COMBO_BOX, 0, {CC_LOOK_NONE, CC_LOOK_REFERENCE, CC_LOOK_70S, CC_LOOK_ALPINE, CC_LOOK_CHROME, CC_LOOK_CLEAN, CC_LOOK_COAST, CC_LOOK_DAZE, CC_LOOK_DUSK, CC_LOOK_KODA, CC_LOOK_LAGUNA, CC_LOOK_LUCID, CC_LOOK_LUX, CC_LOOK_MIST, CC_LOOK_MONACO, CC_LOOK_NORDIC, CC_LOOK_OBSIDIAN, CC_LOOK_PALMA, CC_LOOK_SILVER, CC_LOOK_STERLING, CC_LOOK_VISTA}, {None, Reference Identity, 70s, Alpine, Chrome, Clean, Coast, Daze, Dusk, Koda, Laguna, Lucid, Lux, Mist, Monaco, Nordic, Obsidian, Palma, Silver, Sterling, Vista})
+DEFINE_UI_PARAMS(gLook, Film Look, DCTLUI_COMBO_BOX, 0, {CC_LOOK_REFERENCE, CC_LOOK_MERIDIAN, CC_LOOK_EMBER, CC_LOOK_HALIDE, CC_LOOK_VERDANCE, CC_LOOK_CINDER, CC_LOOK_SOLSTICE, CC_LOOK_TUNDRA, CC_LOOK_BASALT, CC_LOOK_AURIC, CC_LOOK_NOCTURNE, CC_LOOK_LUMEN, CC_LOOK_PRALINE, CC_LOOK_COBALT, CC_LOOK_SABLE, CC_LOOK_MARIGOLD, CC_LOOK_SLATE, CC_LOOK_VERMILLION, CC_LOOK_DRIFTWOOD, CC_LOOK_APERTURE}, {Reference Identity, Meridian, Ember, Halide, Verdance, Cinder, Solstice, Tundra, Basalt, Auric, Nocturne, Lumen, Praline, Cobalt, Sable, Marigold, Slate, Vermillion, Driftwood, Aperture})
 DEFINE_UI_PARAMS(gLookMix, Look Mix, DCTLUI_SLIDER_FLOAT, 1.0f, 0.0f, 1.0f, 0.001f)
 
-// ---- LUT declarations -----------------------------------------------------
-//  Paths are relative to this DCTL file. EVERY FILE LISTED HERE MUST EXIST or
-//  the DCTL will not compile - that is the cost of having the look stage on
-//  the same node as the grade. To drop a look, delete its line here, its entry
-//  in the combo box above, and its line in cc_lookup in Section 10.
-//
-//  The  cube file files are not distributed with this project; several are licensed
-//  to an individual owner and may not be redistributed. See luts/README.md.
-DEFINE_LUT(CC_LUT_REFERENCE, luts/_Reference_Identity cube file)
-DEFINE_LUT(CC_LUT_70S, luts/70s cube file)
-DEFINE_LUT(CC_LUT_ALPINE, luts/Alpine cube file)
-DEFINE_LUT(CC_LUT_CHROME, luts/Chrome cube file)
-DEFINE_LUT(CC_LUT_CLEAN, luts/Clean cube file)
-DEFINE_LUT(CC_LUT_COAST, luts/Coast cube file)
-DEFINE_LUT(CC_LUT_DAZE, luts/Daze cube file)
-DEFINE_LUT(CC_LUT_DUSK, luts/Dusk cube file)
-DEFINE_LUT(CC_LUT_KODA, luts/Koda cube file)
-DEFINE_LUT(CC_LUT_LAGUNA, luts/Laguna cube file)
-DEFINE_LUT(CC_LUT_LUCID, luts/Lucid cube file)
-DEFINE_LUT(CC_LUT_LUX, luts/Lux cube file)
-DEFINE_LUT(CC_LUT_MIST, luts/Mist cube file)
-DEFINE_LUT(CC_LUT_MONACO, luts/Monaco cube file)
-DEFINE_LUT(CC_LUT_NORDIC, luts/Nordic cube file)
-DEFINE_LUT(CC_LUT_OBSIDIAN, luts/Obsidian cube file)
-DEFINE_LUT(CC_LUT_PALMA, luts/Palma cube file)
-DEFINE_LUT(CC_LUT_SILVER, luts/Silver cube file)
-DEFINE_LUT(CC_LUT_STERLING, luts/Sterling cube file)
-DEFINE_LUT(CC_LUT_VISTA, luts/Vista cube file)
 
 
 // ============================================================================
@@ -1244,6 +1178,43 @@ __DEVICE__ float3 cc_bleach_bypass(float3 v, float amount, float mix)
     return cc_lerp3(v, s, _saturatef(mix));
 }
 
+// --- Channel response -------------------------------------------------------
+// INTENDED BEHAVIOR: the difference in how a stock's three dye layers respond -
+// one film's reds carry further than its blues, another's the reverse. It is
+// what separates one stock from another once tone and density are matched.
+//
+// APPROACH: a per-channel gain applied to each channel's deviation from the
+// pixel's own luminance, then the luminance that gain introduced is subtracted
+// back out. Two properties fall out of that, and both were requirements:
+//
+//   * A NEUTRAL IS EXACTLY UNTOUCHED. A neutral pixel has zero deviation, so
+//     every gain multiplies zero and the pixel returns bit-identical. Neutrals
+//     cannot drift, band or take on a cast no matter how the gains are set.
+//   * BRIGHTNESS IS UNTOUCHED. Removing the introduced luminance means the
+//     stage changes colour only, so it cannot shift exposure.
+//
+// At gains of 1,1,1 the maths reduces to an exact identity with no branch
+// needed, so the default is neutral by construction rather than by early exit.
+//
+// LIMITATION: this deliberately does NOT reproduce neutral crossover - the
+// slight cast a real stock puts into greys at different exposures. Crossover
+// needs per-channel contrast, which necessarily tints neutrals and is exactly
+// the RGB separation artefact this stage is required to avoid. Character comes
+// from how coloured content responds instead.
+__DEVICE__ float3 cc_channel_response(float3 v, float gr, float gg, float gb)
+{
+    float y = cc_luma(v);
+
+    float dr = (v.x - y) * gr;
+    float dg = (v.y - y) * gg;
+    float db = (v.z - y) * gb;
+
+    // Luminance the per-channel gains introduced, removed so only colour moves.
+    float dy = dr * CC_LUMA_R + dg * CC_LUMA_G + db * CC_LUMA_B;
+
+    return make_float3(y + dr - dy, y + dg - dy, y + db - dy);
+}
+
 // --- Color separation -------------------------------------------------------
 // INTENDED BEHAVIOR: neighbouring hues become easier to tell apart, while skin
 // and neutrals stay where they are and the primaries do not swing around.
@@ -1332,75 +1303,81 @@ __DEVICE__ float3 cc_color_separation(float3 v, float amount)
 
 // ============================================================================
 //  SECTION 10 :: FILM LOOK ENGINE
-//  LUT-driven looks. The parametric look engine arrives in Phase 4 and will
-//  sit alongside this, not replace it: a parametric look is adjustable and
-//  distributable, a LUT look is fixed and carries its own licence terms.
+//  ---------------------------------------------------------------------------
+//  A look is a set of parameters for the engine built in Sections 6 to 9, not
+//  a lookup table and not a separate code path. Selecting one changes the
+//  numbers fed to the existing stages and nothing else, which is what keeps
+//  every control live underneath it and the file small.
+//
+//  Reference Identity is the neutral profile: contrast and the three channel
+//  gains at 1, everything else 0. Combined with default controls the main
+//  transform takes a true bypass and returns the input untouched.
+//
+//  Look Mix is applied where each field is used rather than by blending whole
+//  profiles, so a mix of 0 is exactly the neutral profile and 0.4 is 40% of
+//  each parameter. Values are kept moderate on purpose: a look should leave
+//  the user room to push a control further, not consume its whole range.
 // ============================================================================
 
-// A cube LUT is only defined across its declared domain, 0..1 for every LUT
-// in this set. This is one of the few places where a hard clamp is technically
-// necessary rather than stylistic: outside the domain there is no data to
-// interpolate and the sampler's behavior is not something to rely on.
-//
-// In DaVinci Intermediate that domain covers linear 0 to linear 100, so the
-// clamp only engages on code values above 1.0 and on the small negatives that
-// wide-gamut color can produce. Nothing in normal range is touched.
-__DEVICE__ float3 cc_lut_domain(float3 v)
+typedef struct
 {
-    return make_float3(_saturatef(v.x), _saturatef(v.y), _saturatef(v.z));
-}
+    float contrast, pivotShift, shoulder, rolloff, toe, shadowDepth, blackLift;
+    float density, densityStr, subSat, richness, separation;
+    float hueR, hueO, hueY, hueG, hueC, hueB, hueM;
+    float warmHi, coolLo, splitBal, bleach;
+    float gammaR, gammaG, gammaB;
+} FilmProfile;
 
-// The selector is a uniform branch: every pixel in the frame takes the same
-// path, so there is no warp divergence and the cost is a single LUT fetch
-// however many looks are declared. Declaring more looks costs GPU memory and
-// compile time, not per-pixel speed.
-__DEVICE__ float3 cc_lookup(float3 v, int look)
+// Field order, one look per line. To retune a look, change one number.
+//   contrast pivotShift shoulder rolloff toe shadowDepth blackLift
+//   density densityStr subSat richness separation
+//   hueR hueO hueY hueG hueC hueB hueM
+//   warmHi coolLo splitBal bleach   gammaR gammaG gammaB
+__DEVICE__ FilmProfile cc_profile(int look)
 {
-    if (look == CC_LOOK_REFERENCE) return APPLY_LUT(v.x, v.y, v.z, CC_LUT_REFERENCE);
-    if (look == CC_LOOK_70S)       return APPLY_LUT(v.x, v.y, v.z, CC_LUT_70S);
-    if (look == CC_LOOK_ALPINE)    return APPLY_LUT(v.x, v.y, v.z, CC_LUT_ALPINE);
-    if (look == CC_LOOK_CHROME)    return APPLY_LUT(v.x, v.y, v.z, CC_LUT_CHROME);
-    if (look == CC_LOOK_CLEAN)     return APPLY_LUT(v.x, v.y, v.z, CC_LUT_CLEAN);
-    if (look == CC_LOOK_COAST)     return APPLY_LUT(v.x, v.y, v.z, CC_LUT_COAST);
-    if (look == CC_LOOK_DAZE)      return APPLY_LUT(v.x, v.y, v.z, CC_LUT_DAZE);
-    if (look == CC_LOOK_DUSK)      return APPLY_LUT(v.x, v.y, v.z, CC_LUT_DUSK);
-    if (look == CC_LOOK_KODA)      return APPLY_LUT(v.x, v.y, v.z, CC_LUT_KODA);
-    if (look == CC_LOOK_LAGUNA)    return APPLY_LUT(v.x, v.y, v.z, CC_LUT_LAGUNA);
-    if (look == CC_LOOK_LUCID)     return APPLY_LUT(v.x, v.y, v.z, CC_LUT_LUCID);
-    if (look == CC_LOOK_LUX)       return APPLY_LUT(v.x, v.y, v.z, CC_LUT_LUX);
-    if (look == CC_LOOK_MIST)      return APPLY_LUT(v.x, v.y, v.z, CC_LUT_MIST);
-    if (look == CC_LOOK_MONACO)    return APPLY_LUT(v.x, v.y, v.z, CC_LUT_MONACO);
-    if (look == CC_LOOK_NORDIC)    return APPLY_LUT(v.x, v.y, v.z, CC_LUT_NORDIC);
-    if (look == CC_LOOK_OBSIDIAN)  return APPLY_LUT(v.x, v.y, v.z, CC_LUT_OBSIDIAN);
-    if (look == CC_LOOK_PALMA)     return APPLY_LUT(v.x, v.y, v.z, CC_LUT_PALMA);
-    if (look == CC_LOOK_SILVER)    return APPLY_LUT(v.x, v.y, v.z, CC_LUT_SILVER);
-    if (look == CC_LOOK_STERLING)  return APPLY_LUT(v.x, v.y, v.z, CC_LUT_STERLING);
-    if (look == CC_LOOK_VISTA)     return APPLY_LUT(v.x, v.y, v.z, CC_LUT_VISTA);
-    return v;
+    FilmProfile n = {1.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 1.000f, 1.000f, 1.000f};   // Reference Identity
+
+    // Meridian - clean and restrained, the mildest look here
+    if (look == CC_LOOK_MERIDIAN) { FilmProfile p = {1.050f, 0.000f, 0.200f, 0.100f, 0.100f, 0.000f, 0.000f, 0.150f, 0.000f, 0.000f, 0.100f, 0.100f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.050f, 0.000f, 0.000f, 0.000f, 1.000f, 1.000f, 1.000f}; return p; }
+    // Ember - warm, dense and contrasty
+    if (look == CC_LOOK_EMBER) { FilmProfile p = {1.180f, 0.000f, 0.350f, 0.150f, 0.300f, 0.250f, 0.000f, 0.450f, 0.200f, 0.300f, 0.200f, 0.150f, 0.200f, 0.150f, 0.050f, 0.000f, 0.000f, -0.100f, 0.050f, 0.450f, 0.100f, 0.050f, 0.000f, 1.060f, 1.000f, 0.950f}; return p; }
+    // Halide - cool silver, bleach-led
+    if (look == CC_LOOK_HALIDE) { FilmProfile p = {1.220f, 0.000f, 0.250f, -0.100f, 0.200f, 0.150f, 0.000f, 0.200f, 0.100f, 0.100f, 0.050f, 0.050f, 0.000f, 0.000f, 0.000f, 0.000f, 0.100f, 0.150f, 0.000f, -0.100f, 0.350f, -0.050f, 0.450f, 0.970f, 1.000f, 1.040f}; return p; }
+    // Verdance - green-biased, open and soft
+    if (look == CC_LOOK_VERDANCE) { FilmProfile p = {0.940f, 0.000f, 0.300f, 0.300f, 0.050f, 0.000f, 0.010f, 0.100f, 0.000f, 0.000f, 0.150f, 0.100f, 0.000f, 0.000f, 0.100f, 0.250f, 0.100f, 0.000f, 0.000f, 0.050f, 0.050f, 0.000f, 0.000f, 0.980f, 1.050f, 0.990f}; return p; }
+    // Cinder - dark, heavy, stylised
+    if (look == CC_LOOK_CINDER) { FilmProfile p = {1.280f, -0.010f, 0.200f, 0.000f, 0.450f, 0.450f, 0.000f, 0.500f, 0.250f, 0.350f, 0.100f, 0.200f, 0.100f, 0.000f, 0.000f, 0.000f, 0.000f, 0.100f, 0.000f, 0.050f, 0.200f, -0.100f, 0.200f, 1.030f, 0.990f, 0.980f}; return p; }
+    // Solstice - warm highlights over open shadows
+    if (look == CC_LOOK_SOLSTICE) { FilmProfile p = {0.960f, 0.010f, 0.400f, 0.350f, 0.050f, 0.000f, 0.008f, 0.150f, 0.000f, 0.000f, 0.200f, 0.100f, 0.000f, 0.150f, 0.100f, 0.000f, 0.000f, 0.000f, 0.000f, 0.500f, 0.000f, 0.150f, 0.000f, 1.040f, 1.010f, 0.970f}; return p; }
+    // Tundra - cool and clean, very low density
+    if (look == CC_LOOK_TUNDRA) { FilmProfile p = {1.020f, 0.000f, 0.250f, 0.100f, 0.100f, 0.050f, 0.000f, 0.050f, 0.000f, 0.000f, 0.050f, 0.150f, 0.000f, -0.050f, 0.000f, 0.000f, 0.200f, 0.150f, 0.000f, -0.150f, 0.400f, 0.000f, 0.000f, 0.970f, 1.000f, 1.050f}; return p; }
+    // Basalt - high contrast, deep shadows, neutral colour
+    if (look == CC_LOOK_BASALT) { FilmProfile p = {1.300f, 0.000f, 0.300f, 0.100f, 0.400f, 0.350f, 0.000f, 0.300f, 0.150f, 0.150f, 0.100f, 0.100f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.050f, 0.000f, 0.050f, 1.000f, 1.000f, 1.000f}; return p; }
+    // Auric - golden, rich midtones
+    if (look == CC_LOOK_AURIC) { FilmProfile p = {1.100f, 0.000f, 0.300f, 0.200f, 0.150f, 0.100f, 0.000f, 0.350f, 0.150f, 0.200f, 0.400f, 0.200f, 0.100f, 0.250f, 0.200f, 0.000f, 0.000f, -0.100f, 0.000f, 0.400f, 0.000f, 0.100f, 0.000f, 1.050f, 1.020f, 0.950f}; return p; }
+    // Nocturne - cool, deep and moody
+    if (look == CC_LOOK_NOCTURNE) { FilmProfile p = {1.160f, -0.010f, 0.200f, 0.050f, 0.350f, 0.400f, 0.000f, 0.350f, 0.200f, 0.250f, 0.100f, 0.150f, 0.000f, -0.100f, 0.000f, 0.000f, 0.150f, 0.250f, 0.050f, -0.050f, 0.500f, -0.200f, 0.050f, 0.970f, 0.990f, 1.060f}; return p; }
+    // Lumen - bright, soft, low contrast
+    if (look == CC_LOOK_LUMEN) { FilmProfile p = {0.900f, 0.010f, 0.450f, 0.450f, 0.050f, 0.000f, 0.012f, 0.050f, 0.000f, 0.000f, 0.150f, 0.050f, 0.000f, 0.050f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.100f, 0.000f, 0.050f, 0.000f, 1.010f, 1.000f, 1.000f}; return p; }
+    // Praline - warm-neutral, gentle on skin
+    if (look == CC_LOOK_PRALINE) { FilmProfile p = {1.040f, 0.000f, 0.300f, 0.250f, 0.150f, 0.050f, 0.000f, 0.200f, 0.100f, 0.050f, 0.250f, 0.050f, -0.050f, 0.200f, 0.050f, 0.000f, 0.000f, 0.000f, 0.000f, 0.250f, 0.050f, 0.050f, 0.000f, 1.020f, 1.000f, 0.980f}; return p; }
+    // Cobalt - strongly cool, stylised
+    if (look == CC_LOOK_COBALT) { FilmProfile p = {1.200f, 0.000f, 0.250f, 0.050f, 0.300f, 0.300f, 0.000f, 0.300f, 0.200f, 0.300f, 0.150f, 0.300f, 0.000f, -0.150f, 0.000f, 0.000f, 0.250f, 0.350f, 0.100f, -0.200f, 0.550f, -0.100f, 0.050f, 0.940f, 0.990f, 1.080f}; return p; }
+    // Sable - near-monochrome, heavy density
+    if (look == CC_LOOK_SABLE) { FilmProfile p = {1.240f, 0.000f, 0.250f, 0.050f, 0.350f, 0.300f, 0.000f, 0.550f, 0.300f, 0.150f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.100f, 0.000f, 0.650f, 1.000f, 1.000f, 1.000f}; return p; }
+    // Marigold - warm yellow, vivid and open
+    if (look == CC_LOOK_MARIGOLD) { FilmProfile p = {1.080f, 0.000f, 0.350f, 0.300f, 0.100f, 0.000f, 0.005f, 0.250f, 0.100f, 0.100f, 0.350f, 0.250f, 0.050f, 0.200f, 0.300f, 0.100f, 0.000f, -0.050f, 0.000f, 0.350f, 0.000f, 0.100f, 0.000f, 1.030f, 1.040f, 0.940f}; return p; }
+    // Slate - desaturated and restrained
+    if (look == CC_LOOK_SLATE) { FilmProfile p = {0.980f, 0.000f, 0.250f, 0.150f, 0.200f, 0.150f, 0.006f, 0.150f, 0.050f, 0.000f, 0.000f, 0.050f, 0.000f, 0.000f, 0.000f, 0.000f, 0.050f, 0.050f, 0.000f, -0.050f, 0.200f, 0.000f, 0.300f, 0.980f, 1.000f, 1.020f}; return p; }
+    // Vermillion - red-forward and punchy
+    if (look == CC_LOOK_VERMILLION) { FilmProfile p = {1.150f, 0.000f, 0.300f, 0.150f, 0.250f, 0.150f, 0.000f, 0.400f, 0.200f, 0.350f, 0.300f, 0.300f, 0.350f, 0.200f, 0.050f, 0.000f, 0.000f, 0.000f, 0.100f, 0.300f, 0.000f, 0.050f, 0.000f, 1.080f, 0.980f, 0.960f}; return p; }
+    // Driftwood - faded, lifted, muted
+    if (look == CC_LOOK_DRIFTWOOD) { FilmProfile p = {0.920f, 0.010f, 0.350f, 0.400f, 0.050f, 0.000f, 0.022f, 0.100f, 0.000f, 0.000f, 0.050f, 0.050f, 0.000f, 0.100f, 0.000f, 0.000f, 0.050f, 0.050f, 0.000f, 0.200f, 0.250f, 0.100f, 0.250f, 1.010f, 1.000f, 1.020f}; return p; }
+    // Aperture - clean and modern, close to reference
+    if (look == CC_LOOK_APERTURE) { FilmProfile p = {1.020f, 0.000f, 0.150f, 0.150f, 0.080f, 0.000f, 0.000f, 0.100f, 0.000f, 0.000f, 0.080f, 0.080f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 0.000f, 1.000f, 1.000f, 1.000f}; return p; }
+
+    return n;
 }
-
-// PURPOSE: apply a baked film look, blendable against the ungraded-by-the-look
-// image so it can be dialled back rather than only switched on.
-//
-// The mix blends against the UNCLAMPED original, not the domain-clamped value
-// handed to the sampler, so a mix of 0 is a bit-exact pass-through even for
-// pixels outside the LUT domain.
-//
-// LIMITATION: a baked look is flat above DI 0.5138, which is linear 1.0,
-// diffuse white. A display-referred LUT has a 0..1 domain, so everything
-// brighter saturated when the look was baked. This is not a baking artefact -
-// applying the same LUT through a live color space transform clips in exactly
-// the same place, because the LUT node clamps to its own domain either way.
-// Use the Highlight Shoulder to roll speculars below diffuse white before this
-// stage and nothing is lost. Grading highlights into range before a print
-// emulation is also how the real process works.
-__DEVICE__ float3 cc_film_look(float3 v, int look, float mix)
-{
-    if (look == CC_LOOK_NONE || mix <= 0.0f) return v;
-
-    return cc_lerp3(v, cc_lookup(cc_lut_domain(v), look), _saturatef(mix));
-}
-
 
 // ============================================================================
 //  SECTION 11 :: OUTPUT SAFETY
@@ -1447,6 +1424,52 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p
 
     if (gBypass) return rgb;
 
+    // -- Film profile --------------------------------------------------------
+    // The look supplies a base; the controls offset from it, so every control
+    // stays live under every look. Look Mix scales each field at the point of
+    // use, which makes 0 exactly the neutral profile and 0.5 exactly half of
+    // each parameter.
+    FilmProfile fp = cc_profile(gLook);
+    float lm = _saturatef(gLookMix);
+
+    float eContrast   = gContrast * (1.0f + (fp.contrast - 1.0f) * lm);
+    float ePivot      = gPivot + fp.pivotShift * lm;
+    float eShoulder   = _saturatef(gHighlightShoulder + fp.shoulder * lm);
+    float eRollOff    = _saturatef(gHighlightRollOff + fp.rolloff * lm);
+    float eToe        = _saturatef(gShadowToe + fp.toe * lm);
+    float eDepth      = _saturatef(gShadowDepth + fp.shadowDepth * lm);
+    float eBlack      = gBlackPoint + fp.blackLift * lm;
+    float eDensity    = _saturatef(gFilmDensity + fp.density * lm);
+    float eDensityStr = _saturatef(gDensityStrength + fp.densityStr * lm);
+    float eSubSat     = _saturatef(gSubSaturation + fp.subSat * lm);
+    float eRichness   = _saturatef(gRichness + fp.richness * lm);
+    float eSeparation = _saturatef(gColorSeparation + fp.separation * lm);
+    float eWarmHi     = _clampf(gWarmHighlights + fp.warmHi * lm, -1.0f, 1.0f);
+    float eCoolLo     = _clampf(gCoolShadows + fp.coolLo * lm, -1.0f, 1.0f);
+    float eSplitBal   = _clampf(gSplitBalance + fp.splitBal * lm, -1.0f, 1.0f);
+    float eBleach     = _saturatef(gBleachBypass + fp.bleach * lm);
+    float eGammaR     = 1.0f + (fp.gammaR - 1.0f) * lm;
+    float eGammaG     = 1.0f + (fp.gammaG - 1.0f) * lm;
+    float eGammaB     = 1.0f + (fp.gammaB - 1.0f) * lm;
+
+    // True bypass. With the neutral profile and every control at its default
+    // there is nothing to compute, so the transform returns the input rather
+    // than resolving to an identity through twenty stages.
+    if ((gLook == CC_LOOK_REFERENCE || lm <= 0.0f) &&
+        gExposure == 0.0f && gTemperature == 0.0f && gTint == 0.0f &&
+        gContrast == 1.0f && gSaturation == 1.0f &&
+        gBlackPoint == 0.0f && gWhitePoint == 0.0f &&
+        gHighlightShoulder == 0.0f && gShadowToe == 0.0f && gShadowDepth == 0.0f &&
+        gFilmDensity == 0.0f && gSubSaturation == 0.0f && gRichness == 0.0f &&
+        gColorSeparation == 0.0f && gBleachBypass == 0.0f &&
+        gRedDensity == 0.0f && gOrangeDensity == 0.0f && gYellowDensity == 0.0f &&
+        gGreenDensity == 0.0f && gCyanDensity == 0.0f && gBlueDensity == 0.0f &&
+        gMagentaDensity == 0.0f &&
+        gWarmHighlights == 0.0f && gCoolShadows == 0.0f)
+    {
+        return rgb;
+    }
+
     float3 cv;  // code value, DaVinci Intermediate log
 
     // Scene-referred stages. The linear round trip is skipped entirely when
@@ -1470,17 +1493,17 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p
     }
 
     // -- 5 / 6. Contrast about the pivot ------------------------------------
-    cv = cc_contrast(cv, gContrast, gPivot);
+    cv = cc_contrast(cv, eContrast, ePivot);
 
     // -- 7. Highlight shoulder ----------------------------------------------
-    cv = cc_highlight_shoulder(cv, gHighlightShoulder, gHighlightRollOff);
+    cv = cc_highlight_shoulder(cv, eShoulder, eRollOff);
 
     // -- 8. Shadow toe, then shadow depth -----------------------------------
-    cv = cc_shadow_toe(cv, gShadowToe);
-    cv = cc_shadow_depth(cv, gShadowDepth, gPivot);
+    cv = cc_shadow_toe(cv, eToe);
+    cv = cc_shadow_depth(cv, eDepth, ePivot);
 
     // -- 9 / 10. Black point and white point --------------------------------
-    cv = cc_black_white_point(cv, gBlackPoint, gWhitePoint);
+    cv = cc_black_white_point(cv, eBlack, gWhitePoint);
 
     // -- 11. Saturation ------------------------------------------------------
     //  The neutral primary saturation runs BEFORE the film character block, so
@@ -1489,34 +1512,36 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p
     cv = cc_saturation(cv, gSaturation);
 
     // -- 12. Film density ----------------------------------------------------
-    cv = cc_film_density(cv, gFilmDensity, gDensityStrength);
+    cv = cc_film_density(cv, eDensity, eDensityStr);
 
     // -- 13. Subtractive saturation ------------------------------------------
-    cv = cc_subtractive_saturation(cv, gSubSaturation);
+    cv = cc_subtractive_saturation(cv, eSubSat);
 
     // -- 14. Richness --------------------------------------------------------
-    cv = cc_richness(cv, gRichness);
+    cv = cc_richness(cv, eRichness);
 
     // -- 15. Color separation ------------------------------------------------
-    cv = cc_color_separation(cv, gColorSeparation);
+    cv = cc_color_separation(cv, eSeparation);
 
-    // -- 15b. Hue-specific density shaping -----------------------------------
-    cv = cc_hue_density(cv, gRedDensity, gOrangeDensity, gYellowDensity,
-                        gGreenDensity, gCyanDensity, gBlueDensity, gMagentaDensity);
+    // -- 15b. Channel response -----------------------------------------------
+    //  Broad per-channel shaping before the targeted hue work below.
+    cv = cc_channel_response(cv, eGammaR, eGammaG, eGammaB);
 
-    // -- 16. Film look --------------------------------------------------------
-    cv = cc_film_look(cv, gLook, gLookMix);
+    // -- 15c. Hue-specific density shaping -----------------------------------
+    cv = cc_hue_density(cv,
+                        _clampf(gRedDensity     + fp.hueR * lm, -1.0f, 1.0f),
+                        _clampf(gOrangeDensity  + fp.hueO * lm, -1.0f, 1.0f),
+                        _clampf(gYellowDensity  + fp.hueY * lm, -1.0f, 1.0f),
+                        _clampf(gGreenDensity   + fp.hueG * lm, -1.0f, 1.0f),
+                        _clampf(gCyanDensity    + fp.hueC * lm, -1.0f, 1.0f),
+                        _clampf(gBlueDensity    + fp.hueB * lm, -1.0f, 1.0f),
+                        _clampf(gMagentaDensity + fp.hueM * lm, -1.0f, 1.0f));
 
     // -- 17 / 19 / 20. Split toning ------------------------------------------
-    //  One mechanism covers split toning and the separate highlight and shadow
-    //  color shaping steps in the processing order; they describe the same
-    //  operation and are not duplicated.
-    cv = cc_split_tone(cv, gWarmHighlights, gCoolShadows, gSplitBalance);
+    cv = cc_split_tone(cv, eWarmHi, eCoolLo, eSplitBal);
 
     // -- 18. Bleach bypass ---------------------------------------------------
-    cv = cc_bleach_bypass(cv, gBleachBypass, gBleachMix);
-
-    //  Fade and Soft Highlight Compression remain for a later phase.
+    cv = cc_bleach_bypass(cv, eBleach, gBleachMix);
 
     // -- 21. Output safety ---------------------------------------------------
     cv = cc_out_limit3(cv);
