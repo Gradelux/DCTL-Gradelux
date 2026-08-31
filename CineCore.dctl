@@ -8,7 +8,7 @@
 //                  pivot, highlight shoulder, shadow toe, shadow depth,
 //                  black point, white point, saturation, output safety.
 //
-//  Later phases add film density, subtractive saturation, richness, colour
+//  Later phases add film density, subtractive saturation, richness, color
 //  separation, hue densities, split toning, bleach bypass and the film-look
 //  engine. The pipeline is staged so those drop in without restructuring.
 //
@@ -29,7 +29,7 @@
 //  skips it entirely when exposure and white balance are at their defaults, so
 //  a neutral setting is an exact pass-through.
 //
-//  No output colour-space transform is applied. Input and output are both in
+//  No output color-space transform is applied. Input and output are both in
 //  the timeline encoding.
 // ============================================================================
 
@@ -60,24 +60,32 @@ DEFINE_UI_PARAMS(gHighlightRollOff, Highlight Roll Off, DCTLUI_SLIDER_FLOAT, 0.5
 DEFINE_UI_PARAMS(gShadowToe, Shadow Toe, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gShadowDepth, Shadow Depth, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
 
+// ---- Film density and color -----------------------------------------------
+DEFINE_UI_PARAMS(gFilmDensity, Film Density, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gDensityStrength, Density Strength, DCTLUI_SLIDER_FLOAT, 0.5f, 0.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gSubSaturation, Subtractive Saturation, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gRichness, Richness, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
+DEFINE_UI_PARAMS(gColorSeparation, Color Separation, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
+
 
 // ============================================================================
 //  SECTION 2 :: COLOUR SCIENCE ASSUMPTIONS
 //  ---------------------------------------------------------------------------
-//  SINGLE POINT OF TRUTH. Every colour-space assumption CineCore makes lives
-//  in this section. Nothing outside it hard-codes a colour-space number, so
+//  SINGLE POINT OF TRUTH. Every color-space assumption CineCore makes lives
+//  in this section. Nothing outside it hard-codes a color-space number, so
 //  the assumptions below can be revised without touching any algorithm.
 // ============================================================================
 
 // ---------------------------------------------------------------------------
 //  2.1  DAVINCI INTERMEDIATE TRANSFER FUNCTION
 // ---------------------------------------------------------------------------
-//  These are the published DaVinci Intermediate constants, not values fitted
-//  or derived here. They are self-checking: they place linear 0.18 at code
+//  CONFIRMED against Blackmagic Design's official DaVinci Wide Gamut /
+//  DaVinci Intermediate documentation. DO NOT MODIFY THESE VALUES.
+//
+//  They are also self-checking: they place linear 0.18 at code
 //  value 0.336043 and linear 100.0 at code value 1.0, which are the documented
 //  landmarks of the encoding, and the two segments meet continuously at the
-//  cut point. If your documentation states different constants, replace them
-//  here and nothing else in the file needs to change.
+//  cut point.
 //
 //  Landmarks, code value <- linear:
 //      0.000000 <- 0.00     black
@@ -97,7 +105,15 @@ DEFINE_UI_PARAMS(gShadowDepth, Shadow Depth, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.
 #define CC_DI_WHITE         0.513837f   // code value of linear 1.00
 
 // ---------------------------------------------------------------------------
-//  2.2  LUMINANCE METHOD          ** IMPLEMENTATION CHOICE, NOT A DERIVATION **
+//  2.2  LUMINANCE METHOD
+//
+//       ***********************************************************
+//       **  THIS IS AN APPROXIMATION.                            **
+//       **  These are NOT DaVinci Wide Gamut luminance           **
+//       **  coefficients and must not be treated as though they  **
+//       **  were a DWG specification. They are an explicitly      **
+//       **  chosen stand-in, documented here, replaceable here.   **
+//       ***********************************************************
 // ---------------------------------------------------------------------------
 //  Several operations need a scalar "how bright is this pixel" value, which
 //  requires a weighting of R, G and B. The honest position on that weighting:
@@ -106,19 +122,26 @@ DEFINE_UI_PARAMS(gShadowDepth, Shadow Depth, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.
 //     in the documentation available to this project. None are asserted here.
 //     No DWG-specific coefficient in this file is derived, fitted or guessed.
 //
-//   * CineCore instead uses the ITU-R BT.709 luma coefficients as an explicit
-//     positive weighting applied directly to the working RGB values. This is
-//     an APPROXIMATION and is labelled as one throughout.
+//   * CineCore instead borrows the ITU-R BT.709 luma coefficients purely as a
+//     numeric weighting applied to the working RGB values. Borrowing them says
+//     nothing about the working gamut and confers no Rec.709 property on it.
 //
-//  This is NOT a Rec.709 colour transform. No matrix is applied, no primaries
-//  are converted, no gamma is imposed and no gamut is changed. The three
-//  numbers are used only as weights for luminance-dependent maths, which is
-//  what Resolve's own luminance mixer does by default irrespective of the
-//  working space.
+//  This is NOT a Rec.709 color transform, and no Rec.709 assumption exists
+//  anywhere else in this file. No matrix is applied, no primaries are
+//  converted, no gamma is imposed and no gamut is changed. The three numbers
+//  are used only as weights for luminance-dependent maths, which is what
+//  Resolve's own luminance mixer does by default irrespective of the working
+//  space. These three defines are the ONLY place in CineCore where a
+//  coefficient from another color space appears; every other stage is built
+//  from the working RGB values alone.
+//
+//  Phase 2 deliberately added no further dependence on them: film density,
+//  subtractive saturation, richness and color separation are all built from
+//  channel maxima, minima and medians, and use no luminance weighting at all.
 //
 //  Why this weighting was chosen:
 //   * All three weights are positive and sum to exactly 1. A neutral therefore
-//     maps to itself exactly, and no colour can carry negative luminance.
+//     maps to itself exactly, and no color can carry negative luminance.
 //     This matters: a wide-gamut space whose blue primary sits at a negative y
 //     has a negative blue term in its true colorimetric luminance row, and any
 //     luma-preserving operation built on such a row INVERTS for strongly
@@ -128,8 +151,8 @@ DEFINE_UI_PARAMS(gShadowDepth, Shadow Depth, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.
 //     documented rather than tuned by eye.
 //
 //  What it affects: nothing on neutrals, ever. It only sets how much saturated
-//  colour appears to darken under luma-preserving operations, and where the
-//  shoulder and toe knees fall for strongly coloured pixels. It is a character
+//  color appears to darken under luma-preserving operations, and where the
+//  shoulder and toe knees fall for strongly colored pixels. It is a character
 //  choice, not a correctness one.
 //
 //  To change the weighting, edit only these three defines. An equal-weight
@@ -144,7 +167,7 @@ DEFINE_UI_PARAMS(gShadowDepth, Shadow Depth, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.
 // ============================================================================
 //  SECTION 3 :: TUNING CONSTANTS
 //  Behavioural constants for the algorithms below. These are look decisions,
-//  not colour-space facts, and are safe to taste-tune.
+//  not color-space facts, and are safe to taste-tune.
 // ============================================================================
 
 // --- numerical guards ---
@@ -185,6 +208,32 @@ DEFINE_UI_PARAMS(gShadowDepth, Shadow Depth, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.
 // --- saturation ---
 #define CC_SAT_PROTECT      2.2f        // chroma-dependent brake on boosts
 
+// --- chroma weighting, shared by film density and color separation ---
+//  Chroma is measured as the spread between the largest and smallest channel
+//  in log, which is exactly zero for a neutral and needs no luminance
+//  weighting, no square root and no arc tangent to compute.
+#define CC_CHROMA_NORM      0.40f       // log spread treated as fully saturated
+#define CC_CHROMA_FLOOR     0.002f      // below this a pixel is treated as neutral
+
+// --- film density ---
+#define CC_DENSITY_AMOUNT   0.055f      // max log density at full chroma, ~0.75 stop
+#define CC_DENSITY_EXP_LO   3.0f        // strength 0 : only the purest colors gain
+#define CC_DENSITY_EXP_HI   1.2f        // strength 1 : reaches down into mid chroma
+
+// --- subtractive saturation ---
+#define CC_SUBSAT_GAIN      0.60f       // max expansion of the channel gaps
+#define CC_SUBSAT_LIMIT     0.90f       // gap ceiling the expansion approaches
+
+// --- richness ---
+#define CC_RICH_GAIN        0.35f       // max expansion about the median channel
+#define CC_RICH_LO          0.12f       // bottom of the midtone window
+#define CC_RICH_HI          0.70f       // top of the midtone window
+#define CC_RICH_PROTECT     1.50f       // chroma brake on the expansion
+
+// --- color separation ---
+#define CC_SEP_MAX          0.60f       // max blend towards the hue contrast curve
+#define CC_SEP_EXP          2.0f        // chroma selectivity of the effect
+
 // --- output safety net ---
 //  A VALIDITY net, not a range limiter. The knees sit far outside anything a
 //  real image can reach: code value 1.0 is already linear 100, so a knee at
@@ -206,7 +255,7 @@ DEFINE_UI_PARAMS(gShadowDepth, Shadow Depth, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.
 
 // Traps NaN and Inf. A NaN fails every ordered comparison, so it falls through
 // to the final return; +/-Inf fails the range test but passes the sign test.
-// This is a validity guard, not a colour clamp: CC_SAFE_MAX is far outside any
+// This is a validity guard, not a color clamp: CC_SAFE_MAX is far outside any
 // meaningful code value, so real signal, negatives included, is untouched.
 __DEVICE__ float cc_safe(float x)
 {
@@ -266,6 +315,22 @@ __DEVICE__ float cc_log2(float x)
 __DEVICE__ float cc_sqrt(float x)
 {
     return _sqrtf(_fmaxf(x, 0.0f));
+}
+
+// pow() is undefined for a negative base and a fractional exponent. Every use
+// in CineCore raises an already-normalized 0..1 weight to a positive exponent,
+// so flooring the base at zero makes the call total: 0^e is exactly 0 for the
+// positive exponents used here, and no branch is needed.
+__DEVICE__ float cc_pow_pos(float base, float e)
+{
+    return _powf(_fmaxf(base, 0.0f), e);
+}
+
+// Median of three, branch-light. Used as the anchor for richness and to locate
+// the hue position for color separation.
+__DEVICE__ float cc_median3(float a, float b, float c)
+{
+    return _fmaxf(_fminf(a, b), _fminf(_fmaxf(a, b), c));
 }
 
 // Exponential soft clip, used for both the highlight shoulder and the shadow
@@ -337,6 +402,28 @@ __DEVICE__ float cc_maxc(float3 v)
 __DEVICE__ float cc_minc(float3 v)
 {
     return _fminf(v.x, _fminf(v.y, v.z));
+}
+
+// Chroma measured as the log spread between the largest and smallest channel.
+// Exactly zero for a neutral, always non-negative, and needs no luminance
+// weighting, no square root and no arc tangent. Every Phase 2 stage keys off
+// this rather than off a hue angle, which is what keeps near-neutral pixels
+// stable: there is no angle to become ill-conditioned as chroma approaches 0.
+__DEVICE__ float cc_chroma(float3 v)
+{
+    return cc_maxc(v) - cc_minc(v);
+}
+
+// Selectivity curve shared by film density and color separation. Normalized
+// chroma raised to an exponent above 1, so the response is flat at zero: an
+// almost-neutral pixel receives almost none of the effect, and the effect eases
+// in rather than switching on. This is the mechanism that keeps skin stable
+// without any hue detection: skin's log spread is roughly a quarter of a
+// saturated primary's, and squaring that ratio leaves it at a few percent of
+// the full effect.
+__DEVICE__ float cc_chroma_weight(float chroma, float exponent)
+{
+    return cc_pow_pos(_saturatef(chroma / CC_CHROMA_NORM), exponent);
 }
 
 // Tone norm driving the highlight shoulder. Biasing towards the max channel
@@ -414,7 +501,7 @@ __DEVICE__ float3 cc_white_balance(float3 lin, float temp, float tint)
 // --- Contrast about a pivot -------------------------------------------------
 // PURPOSE: the primary tonal control. A straight slope through a pivot in log
 // is the classic film gamma, and it is applied per channel, which is what
-// makes colour contrast rise together with tonal contrast the way a print
+// makes color contrast rise together with tonal contrast the way a print
 // stock behaves rather than looking flat and video-like.
 //
 // LIMITATION: a straight slope is unbounded, so high contrast pushes extreme
@@ -433,7 +520,7 @@ __DEVICE__ float3 cc_contrast(float3 v, float contrast, float pivot)
 
 // --- Highlight shoulder -----------------------------------------------------
 // PURPOSE: gradually compress bright values into a soft roll-off instead of
-// letting them run into a hard clip, and keep the colour of a highlight
+// letting them run into a hard clip, and keep the color of a highlight
 // recognisable while it happens.
 //
 // Strength lowers the knee, so more of the highlight range is affected.
@@ -460,7 +547,7 @@ __DEVICE__ float cc_shoulder_curve(float x, float strength, float rolloff)
 //     the channels compress by different amounts.
 //
 // CineCore mixes them, weighted heavily towards the hue-preserving path, which
-// keeps highlight colour intact while retaining a little of the natural
+// keeps highlight color intact while retaining a little of the natural
 // bleach towards white. The mix ratio is a single constant so the film-look
 // engine can drive it per look in a later phase.
 //
@@ -487,7 +574,7 @@ __DEVICE__ float3 cc_highlight_shoulder(float3 v, float strength, float rolloff)
 // reducing contrast as they approach black, WITHOUT crushing them and without
 // lifting black off zero.
 //
-// METHOD: a cubic reshaping of the toe region, normalised to the knee. The
+// METHOD: a cubic reshaping of the toe region, normalized to the knee. The
 // cubic is fully determined by four conditions, which is why it was chosen
 // over an exponential or a gamma:
 //     f(0) = 0        black stays exactly black, no milky lift
@@ -602,10 +689,63 @@ __DEVICE__ float3 cc_black_white_point(float3 v, float bp, float wp)
 
 
 // ============================================================================
-//  SECTION 7 :: SATURATION FUNCTIONS
-//  Phase 1 ships the neutral, luminance-preserving saturation only. The
-//  subtractive saturation, density and richness models arrive in Phase 2 as
-//  siblings of this function, not replacements for it.
+//  SECTION 7 :: DENSITY FUNCTIONS
+// ============================================================================
+
+// --- Film density -----------------------------------------------------------
+// INTENDED BEHAVIOR: strong colors become deeper and richer, the way a dense
+// patch of dye in a print does. Explicitly NOT saturation: nothing is made more
+// colorful, colored light is made to carry more weight. Neutrals, near-neutrals
+// and skin are meant to be left where they are.
+//
+// APPROACH: photographic density is defined as the negative logarithm of
+// transmittance, so adding density is literally a subtraction in a log domain,
+// which is where this stage already runs. The amount subtracted is scaled by a
+// selectivity curve on chroma, and the SAME amount is subtracted from all three
+// channels. That uniform log offset is an exact exposure pull on the pixel, so
+// the ratios between the channels survive untouched and neither hue nor the
+// chroma measure itself is changed: the color darkens without turning.
+//
+// Two controls, because amount and selectivity are genuinely different needs:
+//   Film Density    - how much density is added at full chroma
+//   Density Strength- how far down the chroma scale the effect reaches. Low
+//                     values are a cube law, so only the purest colors gain
+//                     density at all; high values approach linear, so mid-chroma
+//                     colors join in.
+//
+// LIMITATIONS: it darkens only, so it cannot recover a color that is already
+// too dark, and pushed hard on an already-dark saturated area it will close
+// that area up. Skin protection is statistical rather than semantic: it works
+// because skin has low chroma, so an unusually saturated skin tone under strong
+// colored light will be treated as a saturated color and gain density. There is
+// no hue detection here by design.
+//
+// WHY THIS APPROACH: a saturation-style operator was rejected because it scales
+// chroma, which is the thing the control is specifically not supposed to do,
+// and because scaling chroma is what produces clipping. Subtracting a uniform
+// log offset cannot clip: it only ever moves values downwards, it cannot
+// introduce a channel crossing, and it is exactly the physical definition of
+// density rather than an analogy to it.
+__DEVICE__ float3 cc_film_density(float3 v, float amount, float strength)
+{
+    if (amount <= 0.0f) return v;
+
+    float e = cc_lerp(CC_DENSITY_EXP_LO, CC_DENSITY_EXP_HI, _saturatef(strength));
+    float w = cc_chroma_weight(cc_chroma(v), e);
+    float o = -_saturatef(amount) * CC_DENSITY_AMOUNT * w;
+
+    return make_float3(v.x + o, v.y + o, v.z + o);
+}
+
+
+// ============================================================================
+//  SECTION 8 :: SATURATION FUNCTIONS
+//  Three operators that all change color strength, kept separate because they
+//  do it in three genuinely different ways:
+//     Saturation             expands about LUMINANCE  - brightness preserved
+//     Subtractive Saturation contracts towards the MAX - image darkens
+//     Richness               expands about the MEDIAN  - channels spread apart
+//  Only the first uses the luminance weighting of Section 2.2 at all.
 // ============================================================================
 
 // PURPOSE: a predictable, neutral saturation control with no character of its
@@ -613,7 +753,7 @@ __DEVICE__ float3 cc_black_white_point(float3 v, float bp, float wp)
 //
 // METHOD: scale the deviation of each channel from the pixel's luminance, in
 // the log domain. All three channels are scaled by the SAME factor, so the
-// direction of the colour vector is unchanged and no hue rotation is
+// direction of the color vector is unchanged and no hue rotation is
 // introduced by the operation. Luminance is added back unmodified, so the
 // pixel's brightness is preserved exactly and this control cannot act as an
 // accidental exposure control. A neutral pixel has zero deviation and is
@@ -623,19 +763,19 @@ __DEVICE__ float3 cc_black_white_point(float3 v, float bp, float wp)
 // The denominator is a sum of non-negative terms plus one, so it is always at
 // least 1: the brake is bounded in (0, 1], can never divide by zero, and can
 // only ever reduce a boost, never invert or amplify it. The practical effect
-// is that already-saturated colour gains less than near-neutral colour does,
+// is that already-saturated color gains less than near-neutral color does,
 // which is what stops strong primaries from tearing apart at high settings.
 // Desaturation is unconditionally stable and is deliberately left unbraked so
 // that saturation 0 produces an exact monochrome.
 //
 // APPROXIMATION / LIMITATION: operating in log rather than linear is a
 // deliberate choice. Log-domain saturation is far gentler and is what makes
-// boosts look like colour rather than like clipping, but it is not
+// boosts look like color rather than like clipping, but it is not
 // chromaticity-preserving in a strict colorimetric sense, so extreme boosts
 // drift slightly in hue. Linear-domain saturation is colorimetrically cleaner
-// but drives channels negative almost immediately on saturated colour and
+// but drives channels negative almost immediately on saturated color and
 // looks harsh. The log version is the better trade for a grading tool, and is
-// labelled here as an approximation rather than a colour appearance model.
+// labelled here as an approximation rather than a color appearance model.
 __DEVICE__ float3 cc_saturation(float3 v, float sat)
 {
     if (sat == 1.0f) return v;
@@ -655,21 +795,239 @@ __DEVICE__ float3 cc_saturation(float3 v, float sat)
     return make_float3(y + dr * scale, y + dg * scale, y + db * scale);
 }
 
+// --- Subtractive saturation -------------------------------------------------
+// INTENDED BEHAVIOR: increasing saturation should make colors feel denser and
+// darker rather than brighter and more electric, the way adding dye to a print
+// does. A red should deepen towards crimson, not glow.
+//
+// APPROACH: additive saturation expands color about luminance, which pushes the
+// brightest channel UP and is what makes digital saturation clip and glow.
+// Subtractive color works the other way round: adding dye removes light from
+// the channels that are not the color, and leaves the channel that is the color
+// alone. So this operator anchors on the MAXIMUM channel and widens each
+// channel's gap below it:
+//
+//     gap  = max - channel        ( always >= 0 )
+//     gap' = gap * gain           ( widened )
+//     out  = max - gap'
+//
+// The brightest channel has zero gap and therefore never moves, which is why
+// this cannot introduce highlight clipping no matter how far it is pushed. The
+// other channels fall, so the color both saturates and darkens in one move,
+// which is the whole point. A neutral has three zero gaps and is mathematically
+// untouched. All gaps are scaled by the same factor, so the direction of the
+// color is preserved and the operator introduces no hue rotation of its own.
+//
+// PROTECTION: the gap is not widened and then clipped. What is bounded is the
+// INCREASE itself, which is fitted asymptotically into the headroom remaining
+// between the current gap and a ceiling:
+//
+//     increase' = headroom * ( 1 - exp( -increase / headroom ) )
+//
+// This is deliberately not a soft ceiling applied to the widened gap. Bounding
+// the widened value can return something SMALLER than the original gap once the
+// gap is large, which would make a saturation control quietly desaturate the
+// most saturated colors in the frame. Bounding the increase instead makes the
+// increase non-negative by construction, so the gap can never shrink, while the
+// result still approaches the ceiling asymptotically and never reaches it. For
+// small gaps the exponential is linear to first order, so ordinary colors get
+// exactly the scaling the control advertises.
+//
+// LIMITATIONS: because the image darkens as it saturates, this control does
+// interact with exposure, which is inherent to subtractive behavior rather than
+// a defect. Large gaps receive proportionally less increase than small ones, so
+// very saturated colors take on a small hue shift near the ceiling; that is the
+// price of the stability guard.
+//
+// WHY THIS APPROACH: anchoring at the maximum is what distinguishes subtractive
+// from additive behavior, and it is also what makes the operator structurally
+// incapable of clipping, so no output clamp is needed to keep it safe.
+__DEVICE__ float cc_subsat_gap(float gap, float boost)
+{
+    float head = CC_SUBSAT_LIMIT - gap;
+    if (head <= CC_EPS) return gap;          // already past the ceiling, leave it
+    return gap + head * (1.0f - cc_exp(-(gap * boost) / head));
+}
+
+__DEVICE__ float3 cc_subtractive_saturation(float3 v, float amount)
+{
+    if (amount <= 0.0f) return v;
+
+    // The boost carries the control amount, so amount 0 gives a zero increase
+    // and an exact identity with no blend needed.
+    float b  = _saturatef(amount) * CC_SUBSAT_GAIN;
+    float mx = cc_maxc(v);
+
+    return make_float3(mx - cc_subsat_gap(mx - v.x, b),
+                       mx - cc_subsat_gap(mx - v.y, b),
+                       mx - cc_subsat_gap(mx - v.z, b));
+}
+
+// --- Richness ---------------------------------------------------------------
+// INTENDED BEHAVIOR: more perceived depth and separation between colors,
+// concentrated in the midtones, without reading as a saturation boost. Where
+// saturation makes color louder, richness should make it feel more layered.
+//
+// APPROACH: expand the channels about the MEDIAN channel rather than about
+// luminance or the maximum. That is a symmetric move: the top channel rises a
+// little, the bottom channel falls a little, and the middle stays put. Widening
+// the spread between the three channels is literally increasing channel
+// separation, which is what reads as depth, and because the move is symmetric
+// the pixel's overall brightness barely shifts, so it does not behave like the
+// saturation control sitting next to it.
+//
+// The effect is weighted by a smooth bump on the median channel, zero and flat
+// at both ends of the window, so shadows and highlights are excluded and the
+// midtones carry the effect. Using the median as the tone estimate is
+// deliberate: it is already computed for the anchor, it is exact for neutrals,
+// and it needs no luminance coefficients, so this stage introduces no
+// dependence on the approximation in Section 2.2.
+//
+// PROTECTION: the expansion is braked by 1 / (1 + k * chroma * boost). The
+// denominator is a sum of non-negative terms plus one, so the brake is bounded
+// in (0,1], cannot divide by zero, and can only ever reduce the expansion.
+// Already-saturated midtones therefore gain less than muted ones do.
+//
+// LIMITATIONS: unlike the two operators above, this one does raise the top
+// channel, so it can in principle brighten a channel. It is bounded by the
+// midtone window, the gain ceiling and the chroma brake, and highlights are
+// excluded by the weighting, but it is the one Phase 2 stage that is not
+// structurally incapable of pushing a channel up.
+//
+// WHY THIS APPROACH: anchoring at the median is the only one of the three
+// anchor choices that is symmetric, which is what makes richness feel different
+// from saturation rather than like a weaker copy of it. Restricting it to the
+// midtones is what keeps it from competing with the shoulder and toe.
+__DEVICE__ float3 cc_richness(float3 v, float amount)
+{
+    if (amount <= 0.0f) return v;
+
+    float a  = _saturatef(amount);
+    float md = cc_median3(v.x, v.y, v.z);
+
+    // Midtone bump: zero and flat at both ends of the window. The window is a
+    // pair of constants, so the normalization denominator can never be zero.
+    float u = _saturatef((md - CC_RICH_LO) / (CC_RICH_HI - CC_RICH_LO));
+    float b = u * (1.0f - u);
+    float w = 16.0f * b * b;
+
+    float boost = a * CC_RICH_GAIN * w;
+    float brake = 1.0f / (1.0f + CC_RICH_PROTECT * cc_chroma(v) * boost);
+    float gain  = 1.0f + boost * brake;
+
+    return make_float3(md + (v.x - md) * gain,
+                       md + (v.y - md) * gain,
+                       md + (v.z - md) * gain);
+}
+
 
 // ============================================================================
-//  SECTION 8 :: OUTPUT SAFETY
+//  SECTION 9 :: COLOR CHARACTER FUNCTIONS
+//  Hue-shaping stages. These are kept strictly separate from the luminance and
+//  density stages above: nothing here reads a luminance value, and nothing here
+//  changes one deliberately.
+// ============================================================================
+
+// --- Color separation -------------------------------------------------------
+// INTENDED BEHAVIOR: neighbouring hues become easier to tell apart, while skin
+// and neutrals stay where they are and the primaries do not swing around.
+//
+// APPROACH: separation is a change in how fast hue varies, not a rotation, so
+// this is built as a contrast curve on hue position rather than as an offset.
+//
+// Sort the channels into min, median and max. The max and min identify which
+// 60-degree sector of the hue circle the pixel is in; the median's position
+// inside that sector,
+//
+//     p = (median - min) / (max - min)        in 0..1
+//
+// is where the hue sits within the sector. Applying a smoothstep to p is a
+// contrast curve on hue: p = 0 and p = 1 are exact fixed points, so the six
+// pure hue axes cannot move at all, while hues in the middle of a sector are
+// pushed apart from each other at up to 1.5x the original rate. That is
+// separation between neighbouring hues with no rotation of the primaries.
+//
+// Only the median channel is moved. Min and max are preserved exactly, so the
+// chroma measure is unchanged to the last bit and this stage cannot alter
+// saturation, brightness or density. It is a pure hue operation.
+//
+// STABILITY: pixels below the chroma floor return untouched, because hue is
+// meaningless for a neutral and p would be ill-conditioned. Above the floor the
+// effect is scaled by the same chroma selectivity curve used by film density,
+// so low-chroma colors barely move: skin sits at roughly a quarter of a
+// saturated primary's spread, and the squared weight leaves it at a few percent
+// of the effect. The blend is capped at CC_SEP_MAX so the mapping's slope stays
+// strictly positive across the whole sector, which means hue order is preserved
+// and hues near a primary compress towards it without ever collapsing onto it.
+//
+// LIMITATIONS: hue position here is defined in log RGB, not in a perceptual hue
+// space, so equal changes in p are not perceptually equal across the circle.
+// This is an APPROXIMATION of hue and is labelled as one. Also, since the
+// average slope of any fixed-endpoint mapping is 1, extra separation in the
+// middle of a sector is necessarily paid for with mild compression near the
+// sector ends. That trade is deliberate: it is what gives cleaner primaries.
+//
+// WHY THIS APPROACH: an arc tangent hue angle followed by a rotation was
+// rejected on two grounds. It is ill-conditioned near neutral, exactly where
+// stability matters most, and a rotation moves colors bodily around the wheel,
+// which is the aggressive hue shifting this control is supposed to avoid. The
+// sector-position formulation has no trigonometry, no ill-conditioning, and
+// pins the six primaries by construction.
+
+// Rebuilds a pixel after the median channel has been moved. Written as a
+// monotone piecewise-linear remap pinned at min, median and max rather than as
+// an offset applied to whichever channel is the median, because that handles
+// ties between equal channels without double-counting them. Both denominators
+// are tested before use.
+__DEVICE__ float cc_remap_mid(float c, float mn, float md, float mx, float mdOut)
+{
+    if (c <= md)
+    {
+        float d = md - mn;
+        return (d > CC_EPS) ? (mn + (c - mn) * (mdOut - mn) / d) : mdOut;
+    }
+    float d = mx - md;
+    return (d > CC_EPS) ? (mdOut + (c - md) * (mx - mdOut) / d) : mdOut;
+}
+
+__DEVICE__ float3 cc_color_separation(float3 v, float amount)
+{
+    if (amount <= 0.0f) return v;
+
+    float mx = cc_maxc(v);
+    float mn = cc_minc(v);
+    float range = mx - mn;
+
+    // Near-neutral: hue carries no information and p is ill-conditioned.
+    if (range < CC_CHROMA_FLOOR) return v;
+
+    float md = cc_median3(v.x, v.y, v.z);
+    float p  = _saturatef((md - mn) / range);          // guarded by the floor
+
+    float k  = _saturatef(amount) * CC_SEP_MAX * cc_chroma_weight(range, CC_SEP_EXP);
+    float sp = p * p * (3.0f - 2.0f * p);              // fixed at p = 0 and p = 1
+    float mdOut = mn + (p + k * (sp - p)) * range;
+
+    return make_float3(cc_remap_mid(v.x, mn, md, mx, mdOut),
+                       cc_remap_mid(v.y, mn, md, mx, mdOut),
+                       cc_remap_mid(v.z, mn, md, mx, mdOut));
+}
+
+
+// ============================================================================
+//  SECTION 10 :: OUTPUT SAFETY
 // ============================================================================
 
 // PURPOSE: a containment net, not a look. Both limiters are asymptotic and
 // their knees sit outside the useful signal range: the ceiling knee is at code
 // value 1.0, which is already linear 100, and the floor knee is at 0.0. Real
-// imagery, including legitimate small negatives from wide-gamut colour, passes
+// imagery, including legitimate small negatives from wide-gamut color, passes
 // through essentially untouched, while a runaway value from an extreme grade
 // is contained smoothly instead of producing a hard edge or an infinity.
 //
 // Deliberately NOT a clamp to [0,1]: clamping would destroy highlight roll-off
 // and remove the out-of-gamut negatives that later stages need in order to
-// recover colour properly.
+// recover color properly.
 __DEVICE__ float cc_out_limit(float x)
 {
     float y = cc_soft_ceil(x, CC_OUT_CEIL_KNEE, CC_OUT_CEIL_RANGE);
@@ -683,7 +1041,7 @@ __DEVICE__ float3 cc_out_limit3(float3 v)
 
 
 // ============================================================================
-//  SECTION 9 :: MAIN TRANSFORM
+//  SECTION 11 :: MAIN TRANSFORM
 // ============================================================================
 
 __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y,
@@ -691,7 +1049,7 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y,
 {
     // -- 1. Input handling and safety ---------------------------------------
     // Sanitised once here and once on the way out. Intermediate stages are
-    // deliberately left unsanitised: every function above is total, so a
+    // deliberately left unsanitized: every function above is total, so a
     // finite input cannot produce a non-finite output, and re-clamping between
     // stages would quietly damage highlights and wide-gamut negatives.
     float3 rgb = cc_safe3(make_float3(p_R, p_G, p_B));
@@ -734,11 +1092,27 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y,
     cv = cc_black_white_point(cv, gBlackPoint, gWhitePoint);
 
     // -- 11. Saturation ------------------------------------------------------
-    //  Phases 2-5 insert film density, subtractive saturation, richness,
-    //  colour separation, hue densities and the look engine at this point.
+    //  The neutral primary saturation runs BEFORE the film character block, so
+    //  the density and richness stages act on a corrected image rather than
+    //  fighting a correction applied after them.
     cv = cc_saturation(cv, gSaturation);
 
-    // -- 12. Output safety ---------------------------------------------------
+    // -- 12. Film density ----------------------------------------------------
+    cv = cc_film_density(cv, gFilmDensity, gDensityStrength);
+
+    // -- 13. Subtractive saturation ------------------------------------------
+    cv = cc_subtractive_saturation(cv, gSubSaturation);
+
+    // -- 14. Richness --------------------------------------------------------
+    cv = cc_richness(cv, gRichness);
+
+    // -- 15. Color separation ------------------------------------------------
+    cv = cc_color_separation(cv, gColorSeparation);
+
+    //  Phases 3-5 insert hue densities, split toning, bleach bypass and the
+    //  film look engine at this point.
+
+    // -- 16. Output safety ---------------------------------------------------
     cv = cc_out_limit3(cv);
 
     if (gInputEncoding == CC_ENC_LIN) cv = cc_di_to_lin3(cv);

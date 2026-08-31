@@ -3,22 +3,23 @@
 **CineCore** is a DaVinci Resolve DCTL grading and film-look system, currently
 in development.
 
-It is built as a modular colour pipeline rather than a LUT replacement: a set
+It is built as a modular color pipeline rather than a LUT replacement: a set
 of reusable, independently replaceable functions with a documented processing
 order, designed so film looks and grading tools can be added without
 restructuring the transform.
 
 ## Status
 
-**Phase 1 of 6 — complete.**
+**Phases 1 and 2 of 6 — complete.**
 
 | Group | Controls |
 |---|---|
 | Setup | Input Encoding, Bypass |
 | Primary grade | Exposure, Temperature, Tint, Contrast, Pivot, Saturation, Black Point, White Point |
 | Film response | Highlight Shoulder, Highlight Roll Off, Shadow Toe, Shadow Depth |
+| Film density and color | Film Density, Density Strength, Subtractive Saturation, Richness, Color Separation |
 
-Film density, subtractive saturation, richness, colour separation, hue
+Film density, subtractive saturation, richness, color separation, hue
 densities, split toning, bleach bypass and the film-look engine arrive in
 phases 2–5.
 
@@ -27,7 +28,7 @@ phases 2–5.
 Designed for **DaVinci Wide Gamut / DaVinci Intermediate**.
 
 Scene-referred operations (exposure, white balance, tint) run in linear DWG;
-tone shaping runs in DI log. No output colour-space transform is applied —
+tone shaping runs in DI log. No output color-space transform is applied —
 input and output are both in the timeline encoding.
 
 Set `Input Encoding` to `DaVinci Linear` if the node is fed linear instead.
@@ -46,5 +47,5 @@ returns its input unchanged.
 
 ## Notes
 
-Colour-science decisions, labelled approximations and verification results are
+Color-science decisions, labelled approximations and verification results are
 recorded in [DEVNOTES.md](DEVNOTES.md).

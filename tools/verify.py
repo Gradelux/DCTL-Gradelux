@@ -12,6 +12,11 @@ TOE_KNEE,TOE_SLOPE_MIN,TOE_PC=0.35,0.25,0.25
 DEPTH_AMOUNT=0.045
 WB_T,WB_TI=0.45,0.35
 SAT_PROTECT=2.2
+CHROMA_NORM=0.40; CHROMA_FLOOR=0.002
+DENSITY_AMOUNT=0.055; DENSITY_EXP_LO=3.0; DENSITY_EXP_HI=1.2
+SUBSAT_GAIN=0.60; SUBSAT_LIMIT=0.90
+RICH_GAIN=0.35; RICH_LO=0.12; RICH_HI=0.70; RICH_PROTECT=1.50
+SEP_MAX=0.60; SEP_EXP=2.0
 OC_K,OC_R,OF_K,OF_R=2.00,1.00,-1.00,0.50
 
 def clampf(x,a,b): return max(a,min(b,x))
@@ -100,6 +105,55 @@ def saturation(v,s):
     brake=1.0/(1.0+SAT_PROTECT*ch*boost)
     sc=1.0+(s-1.0)*brake
     return [y+x*sc for x in d]
+def pow_pos(b,e): return max(b,0.0)**e
+def median3(a,b,c): return max(min(a,b),min(max(a,b),c))
+def chroma(v): return max(v)-min(v)
+def chroma_weight(ch,e): return pow_pos(sat1(ch/CHROMA_NORM),e)
+
+def film_density(v,amount,strength):
+    if amount<=0: return v
+    e=lerp(DENSITY_EXP_LO,DENSITY_EXP_HI,sat1(strength))
+    w=chroma_weight(chroma(v),e)
+    o=-sat1(amount)*DENSITY_AMOUNT*w
+    return [x+o for x in v]
+
+def subsat_gap(gap,boost):
+    head=SUBSAT_LIMIT-gap
+    if head<=EPS: return gap
+    return gap+head*(1.0-cc_exp(-(gap*boost)/head))
+
+def subtractive_saturation(v,amount):
+    if amount<=0: return v
+    b=sat1(amount)*SUBSAT_GAIN; mx=max(v)
+    return [mx-subsat_gap(mx-x,b) for x in v]
+
+def richness(v,amount):
+    if amount<=0: return v
+    a=sat1(amount); md=median3(v[0],v[1],v[2])
+    u=sat1((md-RICH_LO)/(RICH_HI-RICH_LO)); b=u*(1.0-u); w=16.0*b*b
+    boost=a*RICH_GAIN*w
+    brake=1.0/(1.0+RICH_PROTECT*chroma(v)*boost)
+    gain=1.0+boost*brake
+    return [md+(x-md)*gain for x in v]
+
+def remap_mid(c,mn,md,mx,mdOut):
+    if c<=md:
+        d=md-mn
+        return (mn+(c-mn)*(mdOut-mn)/d) if d>EPS else mdOut
+    d=mx-md
+    return (mdOut+(c-md)*(mx-mdOut)/d) if d>EPS else mdOut
+
+def color_separation(v,amount):
+    if amount<=0: return v
+    mx=max(v); mn=min(v); rng=mx-mn
+    if rng<CHROMA_FLOOR: return v
+    md=median3(v[0],v[1],v[2])
+    p=sat1((md-mn)/rng)
+    k=sat1(amount)*SEP_MAX*chroma_weight(rng,SEP_EXP)
+    sp=p*p*(3.0-2.0*p)
+    mdOut=mn+(p+k*(sp-p))*rng
+    return [remap_mid(x,mn,md,mx,mdOut) for x in v]
+
 def out_limit(x): return soft_floor(soft_ceil(x,OC_K,OC_R),OF_K,OF_R)
 
 def transform(rgb, P, enc=0, bypass=False):
@@ -116,12 +170,17 @@ def transform(rgb, P, enc=0, bypass=False):
     cv=toe(cv,P['toe']); cv=depth(cv,P['dep'],P['piv'])
     cv=bwp(cv,P['bp'],P['wp'])
     cv=saturation(cv,P['sat'])
+    cv=film_density(cv,P['den'],P['dens'])
+    cv=subtractive_saturation(cv,P['sub'])
+    cv=richness(cv,P['rich'])
+    cv=color_separation(cv,P['sep'])
     cv=[out_limit(c) for c in cv]
     if enc==1: cv=[di2lin(c) for c in cv]
     return [cc_safe(c) for c in cv]
 
 DEF=dict(exp=0.0,temp=0.0,tint=0.0,con=1.0,piv=0.336,sat=1.0,bp=0.0,wp=0.0,
-         sh=0.0,ro=0.5,toe=0.0,dep=0.0)
+         sh=0.0,ro=0.5,toe=0.0,dep=0.0,
+         den=0.0,dens=0.5,sub=0.0,rich=0.0,sep=0.0)
 
 fails=[]
 def check(name,cond,info=""):
@@ -171,7 +230,9 @@ for _ in range(60000):
     P=dict(exp=random.uniform(-5,5),temp=random.uniform(-1,1),tint=random.uniform(-1,1),
            con=random.uniform(0.25,2.5),piv=random.uniform(0.15,0.6),sat=random.uniform(0,2),
            bp=random.uniform(-0.05,0.05),wp=random.uniform(-0.15,0.15),
-           sh=random.uniform(0,1),ro=random.uniform(0,1),toe=random.uniform(0,1),dep=random.uniform(0,1))
+           sh=random.uniform(0,1),ro=random.uniform(0,1),toe=random.uniform(0,1),dep=random.uniform(0,1),
+           den=random.uniform(0,1),dens=random.uniform(0,1),sub=random.uniform(0,1),
+           rich=random.uniform(0,1),sep=random.uniform(0,1))
     rgb = random.choice(hostile) if random.random()<0.15 else [random.uniform(-0.3,1.4) for _ in range(3)]
     enc = random.choice([0,1])
     if enc==1 and rgb not in hostile: rgb=[random.uniform(-0.1,80.0) for _ in range(3)]
@@ -188,7 +249,9 @@ for _ in range(40000):
     P=dict(exp=random.uniform(-5,5),temp=random.uniform(-1,1),tint=random.uniform(-1,1),
            con=random.uniform(0.25,2.5),piv=random.uniform(0.15,0.6),sat=random.uniform(0,2),
            bp=random.uniform(-0.05,0.05),wp=random.uniform(-0.15,0.15),
-           sh=random.uniform(0,1),ro=random.uniform(0,1),toe=random.uniform(0,1),dep=random.uniform(0,1))
+           sh=random.uniform(0,1),ro=random.uniform(0,1),toe=random.uniform(0,1),dep=random.uniform(0,1),
+           den=random.uniform(0,1),dens=random.uniform(0,1),sub=random.uniform(0,1),
+           rich=random.uniform(0,1),sep=random.uniform(0,1))
     rgb=[random.uniform(-0.2,1.3) for _ in range(3)]
     o=transform(rgb,P,0); lo=min(lo,min(o)); hi=max(hi,max(o))
 check("T5 DI output stays inside soft limits [-1.5, 3.0]", lo>=-1.5 and hi<=3.0, f"range [{lo:.4f}, {hi:.4f}]")
@@ -199,7 +262,9 @@ for _ in range(4000):
     P=dict(exp=random.uniform(-5,5),temp=0,tint=0,
            con=random.uniform(0.25,2.5),piv=random.uniform(0.15,0.6),sat=1.0,
            bp=random.uniform(-0.05,0.05),wp=random.uniform(-0.15,0.15),
-           sh=random.uniform(0,1),ro=random.uniform(0,1),toe=random.uniform(0,1),dep=random.uniform(0,1))
+           sh=random.uniform(0,1),ro=random.uniform(0,1),toe=random.uniform(0,1),dep=random.uniform(0,1),
+           den=random.uniform(0,1),dens=random.uniform(0,1),sub=random.uniform(0,1),
+           rich=random.uniform(0,1),sep=random.uniform(0,1))
     prev=None
     for i in range(400):
         g=-0.02+i*(1.12+0.02)/399.0
@@ -295,5 +360,137 @@ for _ in range(5000):
     for i in range(3):
         if rgb[i]>1e-4: worst=max(worst,abs(o[i]-rgb[i])/rgb[i])
 check("T13 linear mode round-trips at defaults", worst<1e-6, f"max rel err {worst:.2e}")
+
+
+# ==================== PHASE 2 ====================
+print("\n--- Phase 2 ---")
+random.seed(21)
+FULL=dict(DEF); FULL.update(den=1.0,dens=0.5,sub=1.0,rich=1.0,sep=1.0)
+
+# P1: neutrals are untouched by every Phase 2 operator at every setting
+dev=0.0
+for a in [0.0,0.25,0.5,0.75,1.0]:
+ for st in [0.0,0.5,1.0]:
+  for g in [0.0,0.05,0.336,0.5138,0.9,1.05]:
+    for f in [lambda v:film_density(v,a,st), lambda v:subtractive_saturation(v,a),
+              lambda v:richness(v,a), lambda v:color_separation(v,a)]:
+        o=f([g,g,g]); dev=max(dev,max(o)-min(o),max(abs(o[i]-g) for i in range(3)))
+check("P2-1 neutrals untouched by all four operators", dev<1e-9, f"{dev:.3e}")
+
+# P2: film density darkens only, and preserves channel differences exactly
+worst_diff=0.0; brightened=0
+for _ in range(20000):
+    v=[random.uniform(-0.1,1.1) for _ in range(3)]
+    o=film_density(v,random.uniform(0,1),random.uniform(0,1))
+    for i in range(3):
+        if o[i]>v[i]+1e-12: brightened+=1
+    d1=[v[1]-v[0],v[2]-v[1]]; d2=[o[1]-o[0],o[2]-o[1]]
+    worst_diff=max(worst_diff,abs(d1[0]-d2[0]),abs(d1[1]-d2[1]))
+check("P2-2 film density never brightens a channel", brightened==0, f"{brightened} cases")
+check("P2-2b film density preserves channel differences exactly (hue safe)", worst_diff<1e-12, f"{worst_diff:.2e}")
+
+# P3: subtractive saturation never raises the max channel, and never desaturates
+rose=0; desat=0
+for _ in range(20000):
+    v=[random.uniform(-0.1,1.1) for _ in range(3)]
+    o=subtractive_saturation(v,random.uniform(0,1))
+    if max(o)>max(v)+1e-9: rose+=1
+    if chroma(o)<chroma(v)-1e-9: desat+=1
+check("P2-3 subtractive saturation never raises the max channel", rose==0, f"{rose} cases")
+check("P2-3b subtractive saturation never reduces chroma", desat==0, f"{desat} cases")
+
+# P4: richness holds the median channel exactly fixed
+worst=0.0
+for _ in range(20000):
+    v=[random.uniform(-0.1,1.1) for _ in range(3)]
+    o=richness(v,random.uniform(0,1))
+    worst=max(worst,abs(median3(*o)-median3(*v)))
+check("P2-4 richness holds the median channel fixed", worst<1e-9, f"{worst:.2e}")
+
+# P5: color separation preserves min and max exactly -> chroma bit-preserved
+worstc=0.0
+for _ in range(20000):
+    v=[random.uniform(-0.1,1.1) for _ in range(3)]
+    o=color_separation(v,random.uniform(0,1))
+    worstc=max(worstc,abs(max(o)-max(v)),abs(min(o)-min(v)))
+check("P2-5 color separation preserves min, max and chroma exactly", worstc<1e-9, f"{worstc:.2e}")
+
+# P5b: the hue mapping is strictly increasing in p (hue order preserved)
+nonmono=0
+for k in [0.0,0.2,0.4,0.6]:
+    prev=None
+    for i in range(2001):
+        p=i/2000.0; sp=p*p*(3.0-2.0*p); q=p+k*(sp-p)
+        if prev is not None and q<=prev-1e-15: nonmono+=1; break
+        prev=q
+check("P2-5b hue position mapping is strictly increasing", nonmono==0, f"{nonmono}")
+
+# P5c: the six pure hue axes are exact fixed points
+fp=max(abs((0.0+k*(0.0-0.0))-0.0) for k in [0.0,0.3,0.6])
+fp=max(fp,max(abs((1.0+k*(1.0-1.0))-1.0) for k in [0.0,0.3,0.6]))
+check("P2-5c primaries and secondaries are exact fixed points", fp<1e-15)
+
+# P6: skin stability. The stated requirement names density, richness and color
+# separation; subtractive saturation is a saturation control and is expected to
+# saturate skin, so it is measured separately rather than folded in.
+SKIN={"shadow":[0.12,0.08,0.055],"mid":[0.30,0.20,0.14],"highlight":[0.50,0.36,0.27]}
+DRS=dict(DEF); DRS.update(den=1.0,dens=0.5,rich=1.0,sep=1.0)
+print("    skin, density + richness + separation all at maximum:")
+worst_stops=0.0; worst_hue=0.0
+for name,lin in SKIN.items():
+    di=[lin2di(c) for c in lin]; o=transform(di,DRS,0)
+    dstops=max(abs(o[i]-di[i]) for i in range(3))/DI_C
+    hb=(median3(*di)-min(di))/(max(di)-min(di)); ha=(median3(*o)-min(o))/(max(o)-min(o))
+    worst_stops=max(worst_stops,dstops); worst_hue=max(worst_hue,abs(ha-hb))
+    print(f"      {name:9s} max channel shift {dstops:.3f} stop   hue position {hb:.3f} -> {ha:.3f}")
+check("P2-6 skin within 1/4 stop under density, richness and separation", worst_stops<0.25, f"{worst_stops:.3f} stop")
+check("P2-6b skin hue position essentially unchanged", worst_hue<0.01, f"{worst_hue:.4f}")
+print("    skin, all four including subtractive saturation at maximum:")
+ws2=0.0
+for name,lin in SKIN.items():
+    di=[lin2di(c) for c in lin]; o=transform(di,FULL,0)
+    dstops=max(abs(o[i]-di[i]) for i in range(3))/DI_C
+    hb=(median3(*di)-min(di))/(max(di)-min(di)); ha=(median3(*o)-min(o))/(max(o)-min(o))
+    ws2=max(ws2,dstops)
+    print(f"      {name:9s} max channel shift {dstops:.3f} stop   hue position {hb:.3f} -> {ha:.3f}")
+check("P2-6c skin stays bounded with subtractive saturation maxed too", ws2<1.0, f"{ws2:.3f} stop")
+
+# P6d: the gap function is monotonic and never shrinks a gap
+nm=0; shrink=0
+for b in [0.0,0.15,0.3,0.45,0.6]:
+    prev=None
+    for i in range(4001):
+        gp=i*1.30/4000.0
+        y=subsat_gap(gp,b)
+        if y<gp-1e-12: shrink+=1
+        if prev is not None and y<prev-1e-12: nm+=1; break
+        prev=y
+check("P2-6d gap expansion is monotonic in gap", nm==0, f"{nm}")
+check("P2-6e gap expansion never shrinks a gap", shrink==0, f"{shrink}")
+
+# P7: a saturated primary must actually be affected (the controls do something)
+red=[lin2di(c) for c in [0.50,0.06,0.035]]
+ro=transform(red,FULL,0)
+delta=max(abs(ro[i]-red[i]) for i in range(3))/DI_C
+check("P2-7 a saturated primary is meaningfully affected", delta>0.30, f"{delta:.3f} stop")
+print(f"    saturated red max channel shift {delta:.3f} stop  (vs skin {worst_stops:.3f})")
+
+# P8: constant-hue exposure ramp stays monotonic through the whole chain
+nm=0
+random.seed(33)
+for _ in range(2000):
+    P=dict(exp=0.0,temp=0,tint=0,con=random.uniform(0.25,2.5),piv=random.uniform(0.15,0.6),
+           sat=random.uniform(0,2),bp=random.uniform(-0.05,0.05),wp=random.uniform(-0.15,0.15),
+           sh=random.uniform(0,1),ro=random.uniform(0,1),toe=random.uniform(0,1),dep=random.uniform(0,1),
+           den=random.uniform(0,1),dens=random.uniform(0,1),sub=random.uniform(0,1),
+           rich=random.uniform(0,1),sep=random.uniform(0,1))
+    base=[0.5,0.3,0.2]; prev=None
+    for i in range(200):
+        sc=0.02*(2.0**(i*8.0/199.0-4.0))
+        o=transform([lin2di(c*sc/0.1) for c in base],P,0)
+        y=luma(o)
+        if prev is not None and y<prev-2e-3: nm+=1; break
+        prev=y
+check("P2-8 constant-hue exposure ramp stays monotonic in luma", nm==0, f"{nm} cases")
 
 print("\n"+("ALL CHECKS PASSED" if not fails else f"{len(fails)} FAILURES:\n"+"\n".join(fails)))

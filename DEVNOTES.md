@@ -1,17 +1,28 @@
 # CineCore — Development Notes
 
-Running record of colour-science decisions, approximations and verification.
-Phase 1 is complete and internally consistent: no placeholder maths.
+Running record of color-science decisions, approximations and verification.
+Phases 1 and 2 are complete and internally consistent: no placeholder maths.
 
 ---
 
-## 1. Colour-science decisions
+## 1. Color-science decisions
 
 ### 1.1 Luminance weighting — **implementation choice, not a derivation**
 
-**Decision.** CineCore uses the ITU-R BT.709 luma coefficients
+**Decision.** CineCore borrows the ITU-R BT.709 luma coefficients
 (0.2126 / 0.7152 / 0.0722) as a positive weighting applied directly to the
 working RGB values. They live in `SECTION 2.2` and nowhere else.
+
+> **These are NOT DaVinci Wide Gamut luminance coefficients and must not be
+> treated as a DWG specification.** They are an explicitly chosen stand-in,
+> documented in one place and replaceable in one place. Borrowing the numbers
+> says nothing about the working gamut and confers no Rec.709 property on it.
+
+**Phase 2 added no further dependence on them.** Film density, subtractive
+saturation, richness and color separation are built entirely from channel
+maxima, minima and medians, and use no luminance weighting at all. After
+Phase 2 the only consumers of these three defines remain the Phase 1 tone
+norms, the white-balance normalization and the primary saturation.
 
 **Why not DaVinci Wide Gamut's own coefficients.** Official DWG luminance
 coefficients are not present in the documentation available to this project.
@@ -36,7 +47,7 @@ Resolve's own luminance mixer does by default regardless of working space.
 | | Effect |
 |---|---|
 | Neutrals (R=G=B) | **None, ever.** Any weighting summing to 1 leaves neutrals identical. Exposure, contrast, pivot, black/white point and the whole tone curve are untouched by this choice. |
-| Saturated colour | How much a saturated colour appears to darken under luma-preserving operations, and where the shoulder/toe knees fall for strongly coloured pixels. Visible, but a **character** difference. |
+| Saturated color | How much a saturated color appears to darken under luma-preserving operations, and where the shoulder/toe knees fall for strongly colored pixels. Visible, but a **character** difference. |
 | Failure mode avoided | A negative coefficient would invert luma-preserving maths on saturated blues. That one *is* a correctness issue. |
 
 Verdict: **largely a design choice, not a material image-quality issue** — with
@@ -48,9 +59,11 @@ poorer perceptual match.
 
 ### 1.2 DaVinci Intermediate transfer function
 
-Constants are the published DI values, not values fitted here. They are
-self-checking against the encoding's documented landmarks, which were verified
-numerically before use:
+**Confirmed by the project owner against Blackmagic Design's official DaVinci
+Wide Gamut / DaVinci Intermediate documentation. Locked — do not modify.**
+
+They are also self-checking against the encoding's documented landmarks, which
+were verified numerically before use:
 
 | linear | code value |
 |---|---|
@@ -61,8 +74,7 @@ numerically before use:
 | 100.0 | 1.000000 |
 
 The two segments meet continuously at the cut point and the pair round-trips
-to float precision. **If your documentation states different constants,
-replace them in Section 2.1 — nothing else in the file needs to change.**
+to float precision.
 
 An important consequence that drove the tuning: **code value 1.0 is linear
 100, not white.** Diffuse white sits at 0.5138. Highlight shoulder knees
@@ -81,7 +93,7 @@ knee at 1.0 would be operating well inside the legal signal range.
 - At most **one** linear↔log round trip per pixel, and it is skipped entirely
   when exposure and white balance are neutral, so an untouched panel is a
   bit-exact pass-through rather than a round-trip approximation.
-- **No output colour-space transform.** Input and output are both in the
+- **No output color-space transform.** Input and output are both in the
   timeline encoding.
 
 ### 1.4 Shadow toe — design change made during Phase 1
@@ -125,19 +137,178 @@ reach (1.0 is already linear 100). Ordinary imagery, out-of-gamut negatives
 included, passes through untouched; only genuinely runaway arithmetic is
 bounded, and smoothly. Deliberately **not** a clamp to [0,1]: that would
 destroy highlight roll-off and remove the negatives later stages need to
-recover colour. Values are sanitised once on input and once on output only —
+recover color. Values are sanitised once on input and once on output only —
 never between stages, since every function is total.
 
 ---
+
+## 1.7 Phase 2 — the four film-character operators
+
+The design problem in Phase 2 is that four controls all change how colorful an
+image looks, and they have to feel like four different tools rather than four
+copies of one. They are separated by **what each one anchors on**, which is
+what determines the character of the result:
+
+| Operator | Anchor | What moves | Net effect on brightness |
+|---|---|---|---|
+| Saturation (Phase 1) | luminance | all channels, symmetric | preserved exactly |
+| Film Density | none — uniform offset | all channels equally | darkens saturated color |
+| Subtractive Saturation | max channel | only channels below the max | darkens |
+| Richness | median channel | top up, bottom down, middle fixed | roughly neutral |
+| Color Separation | min and max pinned | only the median channel | none by construction |
+
+Three of the five are structurally incapable of raising a channel, so they
+cannot introduce clipping at all. Only richness can raise the top channel, and
+it is bounded by a midtone window, a gain ceiling and a chroma brake.
+
+### 1.7.1 Film Density
+
+Photographic density is defined as the negative logarithm of transmittance, so
+adding density is *literally* a subtraction in a log domain — which is where
+this stage already runs. The amount subtracted is scaled by a selectivity curve
+on chroma and applied **equally to all three channels**. A uniform log offset
+is an exact exposure pull on that pixel, so channel ratios survive untouched:
+hue and chroma are provably unchanged (verified bit-exact), the color only
+gains weight.
+
+Rejected: a saturation-style operator. It scales chroma, which is exactly what
+this control is specified *not* to do, and scaling chroma is what clips.
+
+Two controls because amount and selectivity are different needs. **Density
+Strength** interpolates the chroma exponent from a cube law (only the purest
+colors gain density) to near-linear (mid-chroma colors join in).
+
+**Limitation:** darkens only, so it cannot recover a color that is already too
+dark. Skin protection is statistical, not semantic — see 1.7.5.
+
+### 1.7.2 Subtractive Saturation
+
+Additive saturation expands about luminance, pushing the brightest channel
+*up*, which is what makes digital saturation clip and glow. Subtractive color
+works the other way: adding dye removes light from the channels that are not
+the color. So this anchors on the **maximum** channel and widens each channel's
+gap below it. The brightest channel has zero gap and never moves — which is why
+this cannot introduce highlight clipping however hard it is pushed — while the
+others fall, so the color saturates and darkens in one move.
+
+**A bug caught in testing.** The first version widened the gap and then passed
+it through the highlight shoulder's soft ceiling. For gaps above ~0.8 the
+ceiling returned a value *below the original gap*, so the control quietly
+desaturated the most saturated colors in the frame — 9,904 of 20,000 random
+pixels. Reworked to bound the **increase** rather than the widened value:
+
+```
+increase' = headroom * (1 - exp(-increase / headroom))     headroom = limit - gap
+```
+
+The increase is non-negative by construction, so the gap can never shrink,
+while the result still approaches the ceiling asymptotically. Now verified:
+never raises the max channel, never reduces chroma, monotonic in gap.
+
+**Limitation:** the image darkens as it saturates. That is inherent to
+subtractive behavior, not a defect. Near the ceiling, large gaps receive
+proportionally less increase than small ones, so extremely saturated colors
+take a small hue shift — the price of the guard.
+
+### 1.7.3 Richness
+
+Anchored on the **median** channel, which makes it the only symmetric operator
+of the three: top channel up, bottom channel down, middle fixed (verified
+exactly). Widening the spread between channels *is* channel separation, which
+is what reads as depth, and because the move is symmetric overall brightness
+barely shifts — so it does not behave like the saturation control next to it.
+
+Weighted by a smooth bump on the median channel, zero and flat at both ends, so
+shadows and highlights are excluded and the midtones carry the effect. Using
+the median as the tone estimate is deliberate: already computed, exact for
+neutrals, and **needs no luminance coefficients**, so this stage adds no
+dependence on the Section 2.2 approximation.
+
+**Limitation:** the one Phase 2 stage that can raise a channel. Bounded, and
+highlights are excluded by the weighting, but not structurally impossible.
+
+### 1.7.4 Color Separation
+
+Separation is a change in *how fast hue varies*, not a rotation, so this is a
+contrast curve on hue position rather than an offset.
+
+Sorting the channels into min / median / max identifies the 60° hue sector; the
+median's position inside it,
+
+```
+p = (median - min) / (max - min)          in 0..1
+```
+
+is where the hue sits within that sector. Applying a smoothstep to `p` is a
+contrast curve on hue: **p = 0 and p = 1 are exact fixed points, so the six pure
+hue axes cannot move at all**, while hues mid-sector are pushed apart at up to
+1.5× the original rate.
+
+Only the median channel moves. Min and max are preserved *exactly* (verified),
+so chroma is unchanged to the last bit and this stage cannot alter saturation,
+brightness or density. It is a pure hue operation — which is what "keep
+luminance-dependent operations isolated from hue-dependent operations" asks
+for, taken literally.
+
+Rejected: an `atan2` hue angle followed by a rotation. It is ill-conditioned
+near neutral, exactly where stability matters most, and a rotation moves colors
+bodily around the wheel — the aggressive hue shifting this control is meant to
+avoid.
+
+Reconstruction uses a monotone piecewise-linear remap pinned at min, median and
+max rather than an offset applied to "the median channel", because that handles
+ties between equal channels without double-counting them.
+
+**Limitations:** hue position is defined in log RGB, not a perceptual hue space,
+so equal changes in `p` are not perceptually equal around the circle — an
+approximation, labelled. And since the average slope of any fixed-endpoint
+mapping is 1, extra separation mid-sector is necessarily paid for with mild
+compression near the sector ends. Deliberate: it is what gives cleaner
+primaries. The blend is capped at `CC_SEP_MAX = 0.6` so the slope stays ≥ 0.4
+everywhere — hues near a primary compress towards it but never collapse onto it.
+
+### 1.7.5 How skin is protected, and what that does not cover
+
+There is **no hue detection anywhere in Phase 2**, by design. Skin protection is
+a consequence of the chroma selectivity curve: chroma is measured as the log
+spread between the largest and smallest channel — exactly zero for a neutral,
+no square root, no arc tangent, nothing to become ill-conditioned near grey —
+and the effect scales as that spread raised to a power above 1. Skin's spread is
+roughly a quarter of a saturated primary's, so squaring leaves it at a few
+percent of the effect. Measured, with density, richness and separation all at
+maximum:
+
+| patch | max channel shift | hue position |
+|---|---|---|
+| shadow skin | 0.107 stop | 0.472 → 0.472 |
+| mid skin | 0.174 stop | 0.465 → 0.464 |
+| highlight skin | 0.153 stop | 0.465 → 0.465 |
+| **saturated red** | **2.212 stop** | — |
+
+A 12.7× selectivity ratio between saturated red and mid skin, with skin hue
+essentially frozen.
+
+**What this does not cover:** protection is statistical, not semantic. An
+unusually saturated skin tone — strong colored light, heavy makeup, a costume
+in a skin-adjacent hue — has high chroma and *will* be treated as a saturated
+color. There is no hue-aware skin qualifier in Phase 2. Phase 3's hue density
+controls will make it possible to pull the orange band back independently.
+
+Subtractive saturation is excluded from the skin figures above, deliberately:
+it is a saturation control and is *expected* to saturate skin. Measured
+separately it moves mid skin 0.853 stop at maximum, bounded and hue-stable.
 
 ## 2. Labelled approximations
 
 | Approximation | Nature | Why accepted |
 |---|---|---|
 | BT.709 luma coefficients on DWG values | Not colorimetric for this gamut | Positive, standard, stable; see 1.1 |
-| White balance as normalised channel gains | Not a chromatic adaptation transform | A true CAT needs a documented DWG matrix this project does not have. Gain model is the standard well-behaved substitute, exact in stops and exposure-preserving on neutrals |
-| Saturation in log rather than linear | Not chromaticity-preserving in a strict colorimetric sense | Log saturation is far gentler and reads as colour rather than clipping; linear saturation drives channels negative almost immediately on saturated colour. Extreme boosts drift slightly in hue |
+| White balance as normalized channel gains | Not a chromatic adaptation transform | A true CAT needs a documented DWG matrix this project does not have. Gain model is the standard well-behaved substitute, exact in stops and exposure-preserving on neutrals |
+| Saturation in log rather than linear | Not chromaticity-preserving in a strict colorimetric sense | Log saturation is far gentler and reads as color rather than clipping; linear saturation drives channels negative almost immediately on saturated color. Extreme boosts drift slightly in hue |
 | 25% per-channel share in shoulder and toe | Introduces a small hue shift by construction | This *is* the film behaviour being modelled; at 25% it stays well short of a pure per-channel curve's hue skew |
+| Hue position `p` measured in log RGB | Not a perceptual hue space | No trigonometry, no ill-conditioning near neutral, and the six primaries are exact fixed points. A perceptual hue space would need a documented DWG matrix this project does not have |
+| Chroma as max − min channel spread | Not a colorimetric chroma | Exactly zero for neutrals, always non-negative, no square root or arc tangent, and stable to the last bit near grey — which is precisely where a hue-angle formulation fails |
+| Skin protection via chroma selectivity | Statistical, not semantic | No hue detection is used anywhere in Phase 2; an unusually saturated skin tone will be treated as saturated color. Measured 12.7× selectivity between saturated red and mid skin |
 
 ---
 
@@ -149,20 +320,31 @@ compiles clean as C under `-Wall -Wextra -Wshadow` against a shim whose
 
 - Defaults are a **bit-exact** pass-through (20k random pixels, zero delta)
 - No control alters the image at its default value
-- Neutral grey stays neutral across all non-colour controls (3,645 combinations)
+- Neutral grey stays neutral across all non-color controls (3,645 combinations)
 - No NaN or Inf from 60k random control/pixel combinations including NaN, ±Inf, ±1e30 inputs
 - Output stays inside the soft limits over 40k random grades
 - Tone chain is monotonic on a neutral ramp (4k random grades)
 - Exposure is exact in stops (max relative error 2e-5)
 - White balance preserves neutral luminance exactly (error < 1e-12)
-- Saturation preserves luma exactly, does not rotate the colour vector, and gives exact monochrome at 0
+- Saturation preserves luma exactly, does not rotate the color vector, and gives exact monochrome at 0
 - Shoulder is C0/C1 continuous at the knee
 - Toe keeps black pinned at exactly 0 and is strictly increasing
 - Shadow depth does not drive black negative
 - Linear mode round-trips at defaults
 
+**Phase 2 additions:**
+
+- Neutrals untouched by all four operators at every setting
+- Film density never brightens a channel, and preserves channel differences bit-exactly (hue-safe)
+- Subtractive saturation never raises the max channel and never reduces chroma; gap expansion monotonic
+- Richness holds the median channel exactly fixed
+- Color separation preserves min, max and chroma exactly; hue mapping strictly increasing; the six primaries are exact fixed points
+- Skin within 0.174 stop under density + richness + separation at maximum, hue position essentially frozen
+- Constant-hue exposure ramp stays monotonic in luma through the whole chain
+
 Every division is guarded or has a non-zero compile-time constant denominator;
-`_expf` is clamped, `_logf` is floored, `_sqrtf` is floored, `_powf` is unused.
+`_expf` is clamped, `_logf` is floored, `_sqrtf` is floored, and the single
+`_powf` call takes a base floored at zero with a positive exponent.
 
 ---
 
@@ -171,21 +353,22 @@ Every division is guarded or has a non-zero compile-time constant denominator;
 | Phase | Contents | Status |
 |---|---|---|
 | 1 | Structure, UI, safety, exposure, WB/tint, contrast, pivot, saturation, shoulder, toe, depth, black/white point | **Complete** |
-| 2 | Film density, subtractive saturation, richness, colour separation | Not started |
+| 2 | Film density, subtractive saturation, richness, color separation | **Complete** |
 | 3 | Hue densities, split toning, highlight warmth, shadow cooling, bleach bypass | Not started |
 | 4 | Film-look engine and profile architecture | Not started |
 | 5 | ~20 film looks on the shared engine | Not started |
 | 6 | GPU, cleanliness, stability, Resolve compatibility | Not started |
 
-Phase 2 inserts at the marked point in `SECTION 9`, between black/white point
-and the existing saturation. No restructuring required.
+Phase 3 inserts at the marked point in `SECTION 11`, after color separation.
+`SECTION 9` (color character) is where the hue density, split toning and
+bleach bypass functions belong. No restructuring required.
 
 ---
 
 ## 5. Open questions
 
-1. **DI constants** — please confirm against your DCTL documentation. They are
-   self-consistent and land on the documented landmarks, but confirmation is
-   cheap and they are the one place a wrong number would be systematic.
-2. **Luminance weighting** — happy to switch to equal weights, or to a
-   documented DWG set if your documentation contains one.
+1. **Luminance weighting** — unchanged and still labelled an approximation.
+   Swappable at any time in Section 2.2; Phase 2 added no new dependence on it.
+2. **Skin qualification** — Phase 2 protects skin only through chroma
+   selectivity. If semantic skin protection is wanted, the natural place is
+   Phase 3's hue density band for orange.
