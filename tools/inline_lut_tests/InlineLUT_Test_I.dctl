@@ -1,0 +1,46 @@
+// InlineLUT_Test_I.dctl   -   is the SECOND inline LUT actually applied?
+//
+// Test C built with two identity LUTs and showed no change, which is correct -
+// but a silently IGNORED second LUT looks exactly the same. That is the one
+// outcome that would quietly produce wrong looks later, so it has to be ruled
+// out before anything is embedded.
+//
+// LUT ONE is an identity. LUT TWO swaps red and blue.
+//
+// EXPECTED: a dramatic colour change. Blue sky turns red/orange, skin turns
+// blue. If the image is UNCHANGED, the second LUT is being ignored - which
+// means only one inline LUT is really active, and it fails silently rather
+// than with an error.
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+    float3 a = APPLY_LUT(p_R, p_G, p_B, CC_TEST_LUT_ONE);
+
+    float3 b = APPLY_LUT(a.x, a.y, a.z, CC_TEST_LUT_TWO);
+
+    return b;
+}
+
+DEFINE_CUBE_LUT(CC_TEST_LUT_ONE) {
+LUT_3D_SIZE 2
+0.000000 0.000000 0.000000
+1.000000 0.000000 0.000000
+0.000000 1.000000 0.000000
+1.000000 1.000000 0.000000
+0.000000 0.000000 1.000000
+1.000000 0.000000 1.000000
+0.000000 1.000000 1.000000
+1.000000 1.000000 1.000000
+}
+
+DEFINE_CUBE_LUT(CC_TEST_LUT_TWO) {
+LUT_3D_SIZE 2
+0.000000 0.000000 0.000000
+0.000000 0.000000 1.000000
+0.000000 1.000000 0.000000
+0.000000 1.000000 1.000000
+1.000000 0.000000 0.000000
+1.000000 0.000000 1.000000
+1.000000 1.000000 0.000000
+1.000000 1.000000 1.000000
+}
