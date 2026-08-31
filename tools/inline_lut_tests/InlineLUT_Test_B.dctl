@@ -1,0 +1,24 @@
+// InlineLUT_Test_B.dctl
+// Same as InlineLUT_Test.dctl but with the optional standard .cube header
+// fields present, in case the parser requires a complete header.
+
+DEFINE_CUBE_LUT(CC_TEST_LUT)
+{
+TITLE "identity"
+LUT_3D_SIZE 2
+DOMAIN_MIN 0.0 0.0 0.0
+DOMAIN_MAX 1.0 1.0 1.0
+0.000000 0.000000 0.000000
+1.000000 0.000000 0.000000
+0.000000 1.000000 0.000000
+1.000000 1.000000 0.000000
+0.000000 0.000000 1.000000
+1.000000 0.000000 1.000000
+0.000000 1.000000 1.000000
+1.000000 1.000000 1.000000
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+    return APPLY_LUT(p_R, p_G, p_B, CC_TEST_LUT);
+}

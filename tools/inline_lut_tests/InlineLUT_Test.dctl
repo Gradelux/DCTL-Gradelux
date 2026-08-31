@@ -1,0 +1,21 @@
+// InlineLUT_Test.dctl
+// Minimal test of inline DEFINE_CUBE_LUT. 2x2x2 identity.
+// If this compiles, the image must be unchanged.
+
+DEFINE_CUBE_LUT(CC_TEST_LUT)
+{
+LUT_3D_SIZE 2
+0.000000 0.000000 0.000000
+1.000000 0.000000 0.000000
+0.000000 1.000000 0.000000
+1.000000 1.000000 0.000000
+0.000000 0.000000 1.000000
+1.000000 0.000000 1.000000
+0.000000 1.000000 1.000000
+1.000000 1.000000 1.000000
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+    return APPLY_LUT(p_R, p_G, p_B, CC_TEST_LUT);
+}
