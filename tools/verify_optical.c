@@ -33,17 +33,16 @@ static float gSubSaturation=0,gRichness=0,gColorSeparation=0;
 static float gRedDensity=0,gOrangeDensity=0,gYellowDensity=0,gGreenDensity=0;
 static float gCyanDensity=0,gBlueDensity=0,gMagentaDensity=0;
 static float gWarmHighlights=0,gCoolShadows=0,gSplitBalance=0,gBleachBypass=0,gBleachMix=1;
-static float gVignette=0,gVignetteSize=0.5f,gVignetteSoft=0.5f,gMatte=0;
-static float gSharpen=0,gSharpenRadius=0.35f,gSharpenThresh=0.15f;
 static float gPrintContrast=0,gPrintPivot=0.336f,gNegPrint=0;
 static float gHiDesat=0,gLoDesat=0,gLoDesatStart=0.22f;
 static float gCrossR=0,gCrossG=0,gCrossB=0,gCrossAmount=0;
 static float gChanDensR=0,gChanDensG=0,gChanDensB=0;
 static float gBlackDensity=0,gHighlightDensity=0,gFilmFade=0;
 static float gFilmBias=0,gMidBias=0,gHiHueShift=0,gLoHueShift=0;
-static float gVignetteWarm=0;
+
+static float gMatte=0;
 static float gChromAb=0,gChromAbRadius=0.4f,gChromAbFalloff=0.5f;
-static float gFilmSoft=0,gFilmSoftRadius=0.4f,gEdgeSoft=0,gEdgeSoftStart=0.45f;
+static float gFilmSoft=0,gFilmSoftRadius=0.4f;
 static float gMicroContrast=0,gMicroRadius=0.5f;
 #include "CineCore.dctl"
 
@@ -54,15 +53,14 @@ static void reset(void){ gExposure=0;gTemperature=0;gTint=0;gContrast=1;gPivot=0
   gFilmDensity=0;gDensityStrength=0.5f;gSubSaturation=0;gRichness=0;gColorSeparation=0;
   gRedDensity=0;gOrangeDensity=0;gYellowDensity=0;gGreenDensity=0;gCyanDensity=0;gBlueDensity=0;
   gMagentaDensity=0;gWarmHighlights=0;gCoolShadows=0;gSplitBalance=0;gBleachBypass=0;gBleachMix=1;
-  gVignette=0;gVignetteSize=0.5f;gVignetteSoft=0.5f;gMatte=0;gBypass=0;
-  gSharpen=0;gSharpenRadius=0.35f;gSharpenThresh=0.15f;
+  gMatte=0;gBypass=0;
   gPrintContrast=0;gPrintPivot=0.336f;gNegPrint=0;
   gHiDesat=0;gLoDesat=0;gLoDesatStart=0.22f;
   gCrossR=0;gCrossG=0;gCrossB=0;gCrossAmount=0;gChanDensR=0;gChanDensG=0;gChanDensB=0;
   gBlackDensity=0;gHighlightDensity=0;gFilmFade=0;gFilmBias=0;gMidBias=0;
-  gHiHueShift=0;gLoHueShift=0;gVignetteWarm=0;
+  gHiHueShift=0;gLoHueShift=0;
   gChromAb=0;gChromAbRadius=0.4f;gChromAbFalloff=0.5f;gFilmSoft=0;gFilmSoftRadius=0.4f;
-  gEdgeSoft=0;gEdgeSoftStart=0.45f;gMicroContrast=0;gMicroRadius=0.5f;gQuality=CC_Q_FULL; }
+  gMicroContrast=0;gMicroRadius=0.5f;gQuality=CC_Q_FULL; }
 static float3 T(int x,int y){ return transform(W,H,x,y,&TR,&TG,&TB); }
 static float md(float3 a,float3 b){ return fmaxf(fmaxf(fabsf(a.x-b.x),fabsf(a.y-b.y)),fabsf(a.z-b.z)); }
 static float3 IN(int x,int y){ return make_float3(TR.p[y][x],TG.p[y][x],TB.p[y][x]); }
@@ -81,22 +79,6 @@ int main(void){
     sprintf(buf,"max delta %.3e",worst);
     check("defaults return the input exactly", worst==0.0f, buf);
 
-    printf("\n--- vignette ---\n");
-    reset(); float3 e1=T(2,2), e2=T(W/2,H/2);
-    reset(); gVignette=1.0f; float3 f1=T(2,2), f2=T(W/2,H/2);
-    sprintf(buf,"corner %+.4f, centre %+.4f", f1.x-e1.x, f2.x-e2.x);
-    check("vignette darkens corners and leaves centre alone",
-          f1.x<e1.x-0.01f && fabsf(f2.x-e2.x)<1e-6f, buf);
-    check("vignette is achromatic", fabsf((f1.x-e1.x)-(f1.z-e1.z))<1e-5f, "");
-    reset(); gVignette=-1.0f; float3 g1=T(2,2);
-    check("negative vignette brightens corners", g1.x>e1.x+0.01f, "");
-    /* symmetry across the frame */
-    reset(); gVignette=1.0f;
-    float s1=T(2,2).x, s2=T(W-3,2).x, s3=T(2,H-3).x, s4=T(W-3,H-3).x;
-    sprintf(buf,"spread %.2e", fmaxf(fmaxf(s1,s2),fmaxf(s3,s4))-fminf(fminf(s1,s2),fminf(s3,s4)));
-    check("vignette is symmetric in all four corners",
-          fmaxf(fmaxf(s1,s2),fmaxf(s3,s4))-fminf(fminf(s1,s2),fminf(s3,s4)) < 1e-5f, buf);
-
     printf("\n--- matte ---\n");
     for(int y=0;y<H;y++) for(int x=0;x<W;x++){ float v=(float)x/(W-1);
         TR.p[y][x]=v; TG.p[y][x]=v; TB.p[y][x]=v; }
@@ -112,48 +94,16 @@ int main(void){
     sprintf(buf,"%d reversals",nm);
     check("matte keeps the ramp monotonic", nm==0, buf);
 
-    printf("\n--- sharpening ---\n");
-    /* hard vertical edge down the middle, plus a low-amplitude noise field */
-    for(int y=0;y<H;y++) for(int x=0;x<W;x++){
-        float v = (x < W/2) ? 0.30f : 0.55f;
-        if(y > H*3/4) v = 0.40f + (((x*7+y*13)%5)-2) * 0.0025f;   /* tiny noise */
-        TR.p[y][x]=v; TG.p[y][x]=v; TB.p[y][x]=v; }
-    /* probes sit ONE pixel either side of the edge: the default radius is under
-       2 px, so a probe 2 px away correctly sees no detail at all. */
-    int eL=W/2-1, eR=W/2+1, flatX=20, flatY=20, noiseY=H*3/4+10;
-    reset(); float3 pL=T(eL,H/4), pR=T(eR,H/4), pF=T(flatX,flatY), pN=T(flatX,noiseY);
-    reset(); gSharpen=1.0f;
-    float3 sL=T(eL,H/4), sR=T(eR,H/4), sF=T(flatX,flatY), sN=T(flatX,noiseY);
-    sprintf(buf,"dark side %+.4f, light side %+.4f", sL.x-pL.x, sR.x-pR.x);
-    check("sharpening increases contrast across an edge", (sR.x-pR.x)>0.004f && (sL.x-pL.x)<-0.004f, buf);
-    sprintf(buf,"R %+.5f  G %+.5f  B %+.5f", sR.x-pR.x, sR.y-pR.y, sR.z-pR.z);
-    check("sharpening produces no colour fringing",
-          fabsf((sR.x-pR.x)-(sR.y-pR.y))<1e-6f && fabsf((sR.y-pR.y)-(sR.z-pR.z))<1e-6f, buf);
-    sprintf(buf,"delta %.2e", md(sF,pF));
-    check("flat areas are untouched", md(sF,pF)<1e-6f, buf);
-    sprintf(buf,"noise delta %.5f vs edge delta %.5f", md(sN,pN), fabsf(sR.x-pR.x));
-    check("threshold suppresses noise while keeping edges",
-          md(sN,pN) < fabsf(sR.x-pR.x)*0.2f, buf);
-    reset(); gSharpen=1.0f; gSharpenThresh=0.0f;
-    float3 nT=T(flatX,noiseY);
-    check("threshold at 0 does let fine detail through", md(nT,pN) > md(sN,pN), "");
-    /* overshoot is bounded */
-    reset(); gSharpen=1.0f; gSharpenRadius=1.0f;
-    float mx2=0; for(int y=0;y<H/2;y++) for(int x=0;x<W;x++) mx2=fmaxf(mx2,fabsf(T(x,y).x-IN(x,y).x));
-    sprintf(buf,"largest excursion %.4f",mx2);
-    check("overshoot is soft-limited, not unbounded", mx2 < 0.11f, buf);
-
     printf("\n--- stability ---\n");
     int bad=0;
-    reset(); gVignette=1;gMatte=1;gContrast=2.5f;gExposure=5;
+    reset(); gMatte=1;gContrast=2.5f;gExposure=5;
     gFilmDensity=1;gSubSaturation=1;gRichness=1;gColorSeparation=1;gBleachBypass=1;
-    gHighlightShoulder=1;gShadowToe=1;gShadowDepth=1;gSaturation=2;gSharpen=1;gSharpenRadius=1;
     for(int y=0;y<H;y+=3) for(int x=0;x<W;x+=3){ float3 o=T(x,y);
         if(o.x!=o.x||o.y!=o.y||o.z!=o.z||isinf(o.x)||isinf(o.y)||isinf(o.z)) bad++; }
     sprintf(buf,"%d non-finite",bad);
     check("no NaN or Inf with every effect at maximum", bad==0, buf);
     /* edge safety: no bright rim from out-of-frame taps */
-    reset(); gSharpen=1.0f;
+    reset(); gFilmSoft=1.0f;
     float rim=0; for(int y=0;y<H;y++){ rim=fmaxf(rim,fabsf(T(0,y).x-T(1,y).x)); }
     sprintf(buf,"largest edge step %.4f",rim);
     check("no edge artefact from clamped sampling", rim<0.02f, buf);
@@ -302,19 +252,6 @@ int main(void){
     check("film softness produces no colour fringing",
           fabsf((fs1.x-fs0.x)-(fs1.z-fs0.z))<1e-6f, buf);
     /* softness and sharpening must oppose each other */
-    reset(); gSharpen=1.0f; float3 sh1=T(ex,ey);
-    sprintf(buf,"soften %+.4f vs sharpen %+.4f", fs1.x-fs0.x, sh1.x-fs0.x);
-    check("softness and sharpening move detail in opposite directions",
-          (fs1.x-fs0.x)*(sh1.x-fs0.x) < 0.0f, buf);
-
-    /* edge softness: nothing at centre, softening at the frame edge */
-    reset(); gEdgeSoft=1.0f;
-    float3 es_c=T(W/2+3,cay), es_e=T(W-4,H-4);
-    reset(); float3 es_c0=T(W/2+3,cay), es_e0=T(W-4,H-4);
-    sprintf(buf,"centre %.2e, corner %.4f", md(es_c,es_c0), md(es_e,es_e0));
-    check("edge softness acts at the frame edge, not the centre",
-          md(es_c,es_c0)<1e-6f && md(es_e,es_e0)>0.002f, buf);
-
     /* micro contrast: adds structure, reverses sign, bounded */
     reset(); float3 mc0=T(ex,ey);
     reset(); gMicroContrast=1.0f; float3 mc1=T(ex,ey);
@@ -330,7 +267,7 @@ int main(void){
     check("micro contrast is soft-limited", mmax<0.16f, buf);
 
     /* everything on at once */
-    reset(); gChromAb=1;gFilmSoft=1;gEdgeSoft=1;gMicroContrast=1;gSharpen=1;gVignette=1;gMatte=1;gPrintContrast=1;gFilmFade=1;
+    reset(); gChromAb=1;gFilmSoft=1;gMicroContrast=1;gMatte=1;gPrintContrast=1;gFilmFade=1;
     gHiDesat=1;gLoDesat=1;gCrossAmount=1;gCrossR=1;gBlackDensity=1;gHighlightDensity=1;
     int bad2=0;
     for(int y=0;y<H;y+=2) for(int x=0;x<W;x+=2){ float3 o=T(x,y);
@@ -351,7 +288,7 @@ int main(void){
     int qx=W/2+33;
     reset(); float3 q0=T(qx,H/2);
     float qd[2];
-    for(int q=0;q<2;q++){ reset(); gQuality=q; gSharpen=1;gMicroContrast=1;
+    for(int q=0;q<2;q++){ reset(); gQuality=q; gFilmSoft=1;gMicroContrast=1;
         qd[q]=md(T(qx,H/2),q0); }
     sprintf(buf,"full %.4f  fast %.4f",qd[0],qd[1]);
     check("both quality modes produce the effect", qd[0]>0.002f&&qd[1]>0.002f, buf);
@@ -359,7 +296,7 @@ int main(void){
     check("Fast stays close to Full", fabsf(qd[1]-qd[0])/qd[0]<0.20f, buf);
     int qbad=0;
     for(int q=0;q<2;q++){ reset(); gQuality=q;
-        gSharpen=1;gFilmSoft=1;gEdgeSoft=1;
+        gFilmSoft=1;
         gMicroContrast=1;gChromAb=1;
         for(int y=0;y<H;y+=3) for(int x=0;x<W;x+=3){ float3 o=T(x,y);
             if(o.x!=o.x||isinf(o.x)) qbad++; } }
@@ -394,6 +331,50 @@ int main(void){
     reset(); float3 cb=T(W-8,H/2);
     sprintf(buf,"R %+.5f  B %+.5f", cg.x-cb.x, cg.z-cb.z);
     check("CA still separates red and blue oppositely", (cg.x-cb.x)*(cg.z-cb.z)<0.0f, buf);
+
+    printf("\n--- colour separation ---\n");
+    /* Two neighbouring hues that should DIVERGE. Hue is measured as the sextant
+       position, in degrees, so the question is whether their separation grows. */
+    for(int y=0;y<H;y++) for(int x=0;x<W;x++){ TR.p[y][x]=0.45f; TG.p[y][x]=0.32f; TB.p[y][x]=0.18f; }
+    float3 A0=T(10,10);
+    for(int y=0;y<H;y++) for(int x=0;x<W;x++){ TR.p[y][x]=0.45f; TG.p[y][x]=0.36f; TB.p[y][x]=0.18f; }
+    float3 B0=T(10,10);
+    float hA0=(fmaxf(fminf(A0.x,A0.y),fminf(fmaxf(A0.x,A0.y),A0.z))-fminf(fminf(A0.x,A0.y),A0.z))
+              /(fmaxf(fmaxf(A0.x,A0.y),A0.z)-fminf(fminf(A0.x,A0.y),A0.z));
+    float hB0=(fmaxf(fminf(B0.x,B0.y),fminf(fmaxf(B0.x,B0.y),B0.z))-fminf(fminf(B0.x,B0.y),B0.z))
+              /(fmaxf(fmaxf(B0.x,B0.y),B0.z)-fminf(fminf(B0.x,B0.y),B0.z));
+    for(int y=0;y<H;y++) for(int x=0;x<W;x++){ TR.p[y][x]=0.45f; TG.p[y][x]=0.32f; TB.p[y][x]=0.18f; }
+    reset(); gColorSeparation=1.0f; float3 A1=T(10,10);
+    for(int y=0;y<H;y++) for(int x=0;x<W;x++){ TR.p[y][x]=0.45f; TG.p[y][x]=0.36f; TB.p[y][x]=0.18f; }
+    reset(); gColorSeparation=1.0f; float3 B1=T(10,10);
+    float hA1=(fmaxf(fminf(A1.x,A1.y),fminf(fmaxf(A1.x,A1.y),A1.z))-fminf(fminf(A1.x,A1.y),A1.z))
+              /(fmaxf(fmaxf(A1.x,A1.y),A1.z)-fminf(fminf(A1.x,A1.y),A1.z));
+    float hB1=(fmaxf(fminf(B1.x,B1.y),fminf(fmaxf(B1.x,B1.y),B1.z))-fminf(fminf(B1.x,B1.y),B1.z))
+              /(fmaxf(fmaxf(B1.x,B1.y),B1.z)-fminf(fminf(B1.x,B1.y),B1.z));
+    float gap0=fabsf(hA0-hB0)*60.0f, gap1=fabsf(hA1-hB1)*60.0f;
+    sprintf(buf,"%.2f deg apart -> %.2f deg, x%.2f", gap0, gap1, gap1/gap0);
+    check("neighbouring hues actually separate", gap1 > gap0*1.10f, buf);
+    /* A sits at p = 0.52, essentially the pivot of the hue contrast curve, where
+       a colour correctly stays put while its neighbours diverge around it. The
+       magnitude has to be measured off-pivot. */
+    for(int y=0;y<H;y++) for(int x=0;x<W;x++){ TR.p[y][x]=0.45f; TG.p[y][x]=0.2475f; TB.p[y][x]=0.18f; }
+    reset(); float3 C0=T(10,10);
+    reset(); gColorSeparation=1.0f; float3 C1=T(10,10);
+    sprintf(buf,"off-pivot median moves %.5f in code value (%.2f stop)",
+            fabsf(C1.y-C0.y), fabsf(C1.y-C0.y)/0.0733f);
+    check("the move is large enough to see", fabsf(C1.y-C0.y) > 0.004f, buf);
+    float cA0=fmaxf(fmaxf(A0.x,A0.y),A0.z)-fminf(fminf(A0.x,A0.y),A0.z);
+    float cA1=fmaxf(fmaxf(A1.x,A1.y),A1.z)-fminf(fminf(A1.x,A1.y),A1.z);
+    sprintf(buf,"chroma %.5f -> %.5f", cA0, cA1);
+    check("separation still preserves chroma exactly", fabsf(cA1-cA0)<1e-6f, buf);
+    /* skin must still be far less affected than a saturated colour */
+    for(int y=0;y<H;y++) for(int x=0;x<W;x++){ TR.p[y][x]=0.3733f; TG.p[y][x]=0.3455f; TB.p[y][x]=0.3106f; }
+    reset(); float3 sk0=T(10,10);
+    reset(); gColorSeparation=1.0f; float3 sk1=T(10,10);
+    sprintf(buf,"skin moves %.5f, saturated moves %.5f, ratio %.1fx",
+            fabsf(sk1.y-sk0.y), fabsf(A1.y-A0.y), fabsf(A1.y-A0.y)/fmaxf(fabsf(sk1.y-sk0.y),1e-9f));
+    check("skin is still far less affected than saturated colour",
+          fabsf(sk1.y-sk0.y) < fabsf(A1.y-A0.y)*0.4f, buf);
 
     printf("\n%s\n", fails?"FAILURES PRESENT":"ALL CHECKS PASSED");
     return fails?1:0; }

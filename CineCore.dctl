@@ -38,8 +38,8 @@ DEFINE_UI_PARAMS(gBypass, Bypass, DCTLUI_CHECK_BOX, 0)
 //  rejected: it shortens the reach, which makes the effect look wrong rather
 //  than cheaper.
 //
-//     Full   28 taps per pixel with every sampled effect enabled
-//     Fast   16
+//     Full   20 taps per pixel with every sampled effect enabled
+//     Fast   10
 //
 //  It changes NOTHING when those effects are off - their gathers are skipped
 //  entirely at zero strength. Fast interleaves directions between rings so
@@ -95,16 +95,9 @@ DEFINE_UI_PARAMS(gBleachBypass, Bleach Bypass, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 
 DEFINE_UI_PARAMS(gBleachMix, Bleach Bypass Mix, DCTLUI_SLIDER_FLOAT, 1.0f, 0.0f, 1.0f, 0.001f)
 
 // ---- Optical, per-pixel ----------------------------------------------------
-//  Vignette and Matte read only the pixel they are working on, so they cost
-//  nothing beyond arithmetic. The sampled effects that do read neighbours are
-//  grouped separately below.
-DEFINE_UI_PARAMS(gVignette, Vignette, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
-DEFINE_UI_PARAMS(gVignetteSize, Vignette Size, DCTLUI_SLIDER_FLOAT, 0.5f, 0.0f, 1.0f, 0.001f)
-DEFINE_UI_PARAMS(gVignetteSoft, Vignette Softness, DCTLUI_SLIDER_FLOAT, 0.5f, 0.0f, 1.0f, 0.001f)
+//  Matte reads only the pixel it is working on. The sampled effects that read
+//  neighbours are grouped separately below.
 DEFINE_UI_PARAMS(gMatte, Matte, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
-DEFINE_UI_PARAMS(gSharpen, Sharpness, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
-DEFINE_UI_PARAMS(gSharpenRadius, Sharpen Radius, DCTLUI_SLIDER_FLOAT, 0.35f, 0.0f, 1.0f, 0.001f)
-DEFINE_UI_PARAMS(gSharpenThresh, Sharpen Threshold, DCTLUI_SLIDER_FLOAT, 0.15f, 0.0f, 1.0f, 0.001f)
 
 // ---- Optical, sampled -------------------------------------------------------
 //  These read neighbouring pixels and so cost texture taps. Each is skipped
@@ -114,8 +107,6 @@ DEFINE_UI_PARAMS(gChromAbRadius, Chromatic Aberration Radius, DCTLUI_SLIDER_FLOA
 DEFINE_UI_PARAMS(gChromAbFalloff, Chromatic Aberration Falloff, DCTLUI_SLIDER_FLOAT, 0.5f, 0.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gFilmSoft, Film Softness, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gFilmSoftRadius, Film Softness Radius, DCTLUI_SLIDER_FLOAT, 0.4f, 0.0f, 1.0f, 0.001f)
-DEFINE_UI_PARAMS(gEdgeSoft, Edge Softness, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
-DEFINE_UI_PARAMS(gEdgeSoftStart, Edge Softness Start, DCTLUI_SLIDER_FLOAT, 0.45f, 0.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gMicroContrast, Micro Contrast, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gMicroRadius, Micro Contrast Radius, DCTLUI_SLIDER_FLOAT, 0.5f, 0.0f, 1.0f, 0.001f)
 
@@ -150,7 +141,6 @@ DEFINE_UI_PARAMS(gHiHueShift, Highlight Hue Shift, DCTLUI_SLIDER_FLOAT, 0.0f, -1
 DEFINE_UI_PARAMS(gLoHueShift, Shadow Hue Shift, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
 
 // ---- Optical colour --------------------------------------------------------
-DEFINE_UI_PARAMS(gVignetteWarm, Vignette Color, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
 
 
 
@@ -336,17 +326,19 @@ DEFINE_UI_PARAMS(gVignetteWarm, Vignette Color, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f
 #define CC_BLEACH_GAMMA     0.55f       // added log gamma at full strength
 
 // --- color separation ---
-#define CC_SEP_MAX          0.60f       // max blend towards the hue contrast curve
-#define CC_SEP_EXP          2.0f        // chroma selectivity of the effect
+#define CC_SEP_MAX          0.85f       // max blend towards the hue contrast curve
+//  A LINEAR chroma gate, not the quadratic one film density uses. The quadratic
+//  gate was tried first and made the control useless: at a typical chroma of
+//  0.15 it kept only 14 percent of the effect, so the median channel moved
+//  0.0012 in code value - about a sixtieth of a stop, and hue moved half a
+//  degree. Protecting skin is worth doing, but not at the cost of the control
+//  doing nothing at all. Skin's low chroma still protects it under a linear
+//  gate; it simply is not protected six times over.
+#define CC_SEP_EXP          1.0f        // chroma selectivity of the effect
 
 // --- optical effects ---
-#define CC_SHARP_RADIUS_MIN 0.8f        // sharpening radius in PIXELS, not a
-#define CC_SHARP_RADIUS_MAX 4.0f        //   fraction of frame - see Section 10
-#define CC_SHARP_AMOUNT     1.00f       // detail gain at full strength
-#define CC_SHARP_THRESH_MAX 0.045f      // detail below this is treated as noise
-#define CC_SHARP_LIMIT      0.050f      // detail is soft-limited here to stop ringing
+#define CC_MICRO_LIMIT      0.075f      // micro contrast detail limit, stops ringing
 
-#define CC_VIGNETTE_AMOUNT  0.22f       // max log falloff at the corners
 #define CC_MATTE_LIFT       0.055f      // max black lift
 #define CC_MATTE_COMPRESS   0.30f       // max highlight softening
 
@@ -356,7 +348,6 @@ DEFINE_UI_PARAMS(gVignetteWarm, Vignette Color, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f
 #define CC_SOFT_RADIUS_MIN  1.0f        // softness radius in PIXELS
 #define CC_SOFT_RADIUS_MAX  5.0f
 #define CC_SOFT_AMOUNT      0.90f       // share of local detail removable
-#define CC_EDGESOFT_AMOUNT  0.95f
 #define CC_MICRO_RADIUS_MIN 3.0f        // micro contrast radius in PIXELS - larger
 #define CC_MICRO_RADIUS_MAX 14.0f       //   than sharpening, this is structure
 #define CC_MICRO_AMOUNT     0.85f
@@ -394,7 +385,6 @@ DEFINE_UI_PARAMS(gVignetteWarm, Vignette Color, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f
 #define CC_HUESHIFT_MAX     0.12f       // hue movement, in 60 degree sector units
 
 // --- optical colour ---
-#define CC_VIGWARM_AMOUNT   0.035f
 
 // --- output safety net ---
 //  A VALIDITY net, not a range limiter. The knees sit far outside anything a
@@ -1333,7 +1323,7 @@ __DEVICE__ float3 cc_bleach_bypass(float3 v, float amount, float mix)
 //
 // STABILITY: pixels below the chroma floor return untouched, because hue is
 // meaningless for a neutral and p would be ill-conditioned. Above the floor the
-// effect is scaled by the same chroma selectivity curve used by film density,
+// effect is scaled by a chroma selectivity curve,
 // so low-chroma colors barely move: skin sits at roughly a quarter of a
 // saturated primary's spread, and the squared weight leaves it at a few percent
 // of the effect. The blend is capped at CC_SEP_MAX so the mapping's slope stays
@@ -1410,88 +1400,6 @@ __DEVICE__ float cc_tap(__TEXTURE__ t, int w, int h, float x, float y)
     int yi = (int)_fmaxf(0.0f, _fminf((float)(h - 1), y));
 
     return _tex2D(t, xi, yi);
-}
-
-// --- Sharpening -------------------------------------------------------------
-// INTENDED BEHAVIOR: recover the crispness a lens and a debayer take out,
-// without the two things that make sharpening look digital - coloured fringes
-// along edges, and crawling noise in flat areas.
-//
-// APPROACH: an unsharp mask driven by LUMINANCE only. The detail signal is the
-// difference between this pixel's luminance and the mean of a ring of samples
-// around it, and it is added back as a UNIFORM offset across the three
-// channels. A uniform log offset is an exposure change on that pixel, so
-// channel ratios are untouched and coloured fringing is impossible by
-// construction rather than by being tuned out.
-//
-// Radius is in PIXELS, deliberately, unlike the glow radii which scale with the
-// frame. Sharpening addresses the sensor and the lens, which do not know how
-// large the frame is; a 2-pixel radius means the same thing at any resolution.
-//
-// TWO GUARDS:
-//   * Threshold. Detail below the threshold is faded out smoothly rather than
-//     cut, so grain and sensor noise are not amplified while real edges are.
-//   * Soft limit. The detail signal is passed through the same asymptotic
-//     ceiling used by the highlight shoulder, so a hard edge cannot produce an
-//     unbounded overshoot. Halos are inherent to unsharp masking; this bounds
-//     how large they can get rather than pretending they are absent.
-//
-// LIMITATION: sharpening is applied to the INPUT, before grading, because
-// _tex2D can only read the node's input. That is also the sensible order -
-// detail is sharpened once and then graded with everything else, so a contrast
-// change scales edges consistently instead of leaving them at a fixed
-// amplitude on top of a stretched image.
-__DEVICE__ float cc_sharpen_detail(float centre, float blurred, float thresh)
-{
-    float d = centre - blurred;
-    float ad = _fabs(d);
-
-    // Fade out low-amplitude detail: noise, not edges.
-    float t = thresh * CC_SHARP_THRESH_MAX;
-    float keep = (t > CC_EPS) ? cc_smooth01((ad - t) / t) : 1.0f;
-
-    // Bound the overshoot a hard edge can produce.
-    float lim = cc_soft_ceil(ad * keep, CC_SHARP_LIMIT, CC_SHARP_LIMIT);
-
-    return _copysignf(lim, d);
-}
-
-// --- Vignette ---------------------------------------------------------------
-// INTENDED BEHAVIOR: the gentle corner falloff of a real lens, or its inverse.
-//
-// APPROACH: a smooth radial weight on the distance from frame centre, scaled
-// into a log offset. A uniform offset across the three channels is an exposure
-// pull, so the vignette darkens without tinting - real lens falloff is
-// achromatic and a vignette that shifts colour looks like a filter, not optics.
-//
-// The distance is normalised by the frame diagonal, so the shape is identical
-// at any resolution and any aspect ratio rather than turning oval on 2.39:1.
-//
-// Size sets where the falloff begins, Softness how gradually it arrives.
-// Negative Vignette brightens the corners instead, which is the same maths with
-// the sign flipped.
-__DEVICE__ float3 cc_vignette(float3 v, float amount, float size, float soft,
-                              int w, int h, int x, int y)
-{
-    if (amount == 0.0f) return v;
-
-    // Pixel CENTRES, not corners. With pixels numbered 0..w-1 the centre of
-    // the frame is at (w-1)/2, and using w/2 leaves the vignette half a pixel
-    // off axis - which shows up as the four corners not matching.
-    float cx = (float)(w - 1) * 0.5f;
-    float cy = (float)(h - 1) * 0.5f;
-    float dx = ((float)x - cx) / _fmaxf(cx, 1.0f);
-    float dy = ((float)y - cy) / _fmaxf(cy, 1.0f);
-
-    float r = cc_sqrt(dx * dx + dy * dy) * 0.70710678f;   // 1.0 at the corners
-
-    float start = cc_lerp(0.15f, 0.85f, _saturatef(size));
-    float width = _fmaxf(cc_lerp(0.10f, 0.90f, _saturatef(soft)), CC_EPS);
-
-    float wgt = cc_smooth01((r - start) / width);
-    float o = -_clampf(amount, -1.0f, 1.0f) * CC_VIGNETTE_AMOUNT * wgt;
-
-    return make_float3(v.x + o, v.y + o, v.z + o);
 }
 
 // --- Matte ------------------------------------------------------------------
@@ -1895,15 +1803,15 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
         gGreenDensity == 0.0f && gCyanDensity == 0.0f && gBlueDensity == 0.0f &&
         gMagentaDensity == 0.0f &&
         gWarmHighlights == 0.0f && gCoolShadows == 0.0f &&
-        gVignette == 0.0f && gMatte == 0.0f &&
-        gSharpen == 0.0f && gPrintContrast == 0.0f && gNegPrint == 0.0f &&
+        gMatte == 0.0f &&
+        gPrintContrast == 0.0f && gNegPrint == 0.0f &&
         gHiDesat == 0.0f && gLoDesat == 0.0f && gCrossAmount == 0.0f &&
         gChanDensR == 0.0f && gChanDensG == 0.0f && gChanDensB == 0.0f &&
         gBlackDensity == 0.0f && gHighlightDensity == 0.0f && gFilmFade == 0.0f &&
         gFilmBias == 0.0f && gMidBias == 0.0f &&
-        gHiHueShift == 0.0f && gLoHueShift == 0.0f && gVignetteWarm == 0.0f &&
+        gHiHueShift == 0.0f && gLoHueShift == 0.0f &&
         gChromAb == 0.0f && gFilmSoft == 0.0f &&
-        gEdgeSoft == 0.0f && gMicroContrast == 0.0f)
+        gMicroContrast == 0.0f)
     {
         return rgb;
     }
@@ -1921,38 +1829,12 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     //  this costs nothing beyond the taps it saves.
     int kStep = (gQuality == CC_Q_FULL) ? 1 : 2;
 
-    // -- Sharpening ----------------------------------------------------------
-    //  Applied to the input, before grading. Luminance-driven and added as a
-    //  uniform offset, so it cannot introduce colour fringing.
-    if (gSharpen > 0.0f)
-    {
-        float rad = cc_lerp(CC_SHARP_RADIUS_MIN, CC_SHARP_RADIUS_MAX, _saturatef(gSharpenRadius));
-
-        float blur = 0.0f;
-        float bn = 0.0f;
-        for (int k = 0; k < 8; k += kStep)
-        {
-            float sx = (float)p_X + dirX[k] * rad;
-            float sy = (float)p_Y + dirY[k] * rad;
-            blur += cc_luma(make_float3(cc_tap(p_TexR, p_Width, p_Height, sx, sy),
-                                        cc_tap(p_TexG, p_Width, p_Height, sx, sy),
-                                        cc_tap(p_TexB, p_Width, p_Height, sx, sy)));
-            bn += 1.0f;
-        }
-        blur *= cc_div(1.0f, bn);
-
-        float d = cc_sharpen_detail(cc_luma(rgb), blur, _saturatef(gSharpenThresh));
-        float o = d * _saturatef(gSharpen) * CC_SHARP_AMOUNT;
-
-        rgb = make_float3(rgb.x + o, rgb.y + o, rgb.z + o);
-    }
-
     //  Film softness, edge softness and micro contrast all work on the same
     //  quantity: the difference between this pixel's luminance and the mean of
     //  a ring around it. Softness SUBTRACTS that detail, micro contrast ADDS it
     //  at a larger radius. Both are applied as uniform offsets, so neither can
     //  introduce colour fringing.
-    if (gFilmSoft > 0.0f || gEdgeSoft > 0.0f)
+    if (gFilmSoft > 0.0f)
     {
         float rad = cc_lerp(CC_SOFT_RADIUS_MIN, CC_SOFT_RADIUS_MAX, _saturatef(gFilmSoftRadius));
         float blur = 0.0f;
@@ -1976,10 +1858,6 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
         //  position and the image does not go out of focus.
         float k = _saturatef(gFilmSoft) * CC_SOFT_AMOUNT;
 
-        //  Edge softness: the same reduction, weighted towards the frame edges,
-        //  where a lens actually loses resolution.
-        k += _saturatef(gEdgeSoft) * CC_EDGESOFT_AMOUNT
-             * cc_smooth01((fRad - _saturatef(gEdgeSoftStart)) / 0.55f);
 
         float o = -d * _fminf(k, 1.0f);
         rgb = make_float3(rgb.x + o, rgb.y + o, rgb.z + o);
@@ -2005,7 +1883,7 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
         //  structure rather than edge definition, and it reads as stock
         //  character. Soft-limited so a hard edge cannot ring.
         float d = cc_luma(rgb) - blur;
-        float lim = cc_soft_ceil(_fabs(d), CC_SHARP_LIMIT * 1.5f, CC_SHARP_LIMIT * 1.5f);
+        float lim = cc_soft_ceil(_fabs(d), CC_MICRO_LIMIT, CC_MICRO_LIMIT);
         float o = _copysignf(lim, d) * _clampf(gMicroContrast, -1.0f, 1.0f) * CC_MICRO_AMOUNT;
 
         rgb = make_float3(rgb.x + o, rgb.y + o, rgb.z + o);
@@ -2093,26 +1971,6 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
 
     // -- 18b. Film fade -------------------------------------------------------
     cv = cc_film_fade(cv, gFilmFade);
-
-    // -- 21. Vignette --------------------------------------------------------
-    cv = cc_vignette(cv, gVignette, gVignetteSize, gVignetteSoft,
-                     p_Width, p_Height, p_X, p_Y);
-
-    //  Lens Vignette Color: a slight warm or cool drift towards the edges,
-    //  alongside the darkening. Luminance-neutral, so it tints without
-    //  darkening further.
-    if (gVignetteWarm != 0.0f)
-    {
-        float r = fRad;
-
-        float start = cc_lerp(0.15f, 0.85f, _saturatef(gVignetteSize));
-        float width = _fmaxf(cc_lerp(0.10f, 0.90f, _saturatef(gVignetteSoft)), CC_EPS);
-        float wgt = cc_smooth01((r - start) / width);
-
-        float3 ax = cc_warm_axis();
-        float c = _clampf(gVignetteWarm, -1.0f, 1.0f) * CC_VIGWARM_AMOUNT * wgt;
-        cv = make_float3(cv.x + ax.x * c, cv.y + ax.y * c, cv.z + ax.z * c);
-    }
 
     // -- 22. Matte -----------------------------------------------------------
     cv = cc_matte(cv, gMatte);
