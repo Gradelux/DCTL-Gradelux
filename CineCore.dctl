@@ -3,14 +3,17 @@
 //  A modular grading and film-look engine for DaVinci Resolve
 //  ---------------------------------------------------------------------------
 //  Working space : DaVinci Wide Gamut / DaVinci Intermediate
-//  Build stage   : PHASE 1
-//                  input safety, exposure, white balance, tint, contrast,
-//                  pivot, highlight shoulder, shadow toe, shadow depth,
-//                  black point, white point, saturation, output safety.
+//  Build stage   : PHASE 2
+//                  Phase 1  input safety, exposure, white balance, tint,
+//                           contrast, pivot, highlight shoulder, shadow toe,
+//                           shadow depth, black point, white point,
+//                           saturation, output safety.
+//                  Phase 2  film density, subtractive saturation, richness,
+//                           color separation.
 //
-//  Later phases add film density, subtractive saturation, richness, color
-//  separation, hue densities, split toning, bleach bypass and the film-look
-//  engine. The pipeline is staged so those drop in without restructuring.
+//  Later phases add hue densities, split toning, bleach bypass and the
+//  film-look engine. The pipeline is staged so those drop in without
+//  restructuring.
 //
 //  PIPELINE DESIGN
 //  ---------------------------------------------------------------------------
@@ -20,7 +23,7 @@
 //  of changing exposure, and that is a large part of why naive log-domain
 //  grades look brittle.
 //
-//  Tone shaping (contrast, pivot, shoulder, toe, black / white point) runs in
+//  Tone shaping and all color character work runs in
 //  DAVINCI INTERMEDIATE LOG, because log is close to perceptually uniform: a
 //  straight slope through a pivot is exactly the classic film gamma, and the
 //  shoulder and toe knees land where the eye expects them.
@@ -69,7 +72,7 @@ DEFINE_UI_PARAMS(gColorSeparation, Color Separation, DCTLUI_SLIDER_FLOAT, 0.0f, 
 
 
 // ============================================================================
-//  SECTION 2 :: COLOUR SCIENCE ASSUMPTIONS
+//  SECTION 2 :: COLOR SCIENCE ASSUMPTIONS
 //  ---------------------------------------------------------------------------
 //  SINGLE POINT OF TRUTH. Every color-space assumption CineCore makes lives
 //  in this section. Nothing outside it hard-codes a color-space number, so
@@ -357,7 +360,7 @@ __DEVICE__ float cc_soft_floor(float x, float knee, float range)
 
 
 // ============================================================================
-//  SECTION 5 :: COLOUR SPACE HELPERS
+//  SECTION 5 :: COLOR SPACE HELPERS
 //  The only code that reads Section 2.
 // ============================================================================
 
@@ -1044,8 +1047,11 @@ __DEVICE__ float3 cc_out_limit3(float3 v)
 //  SECTION 11 :: MAIN TRANSFORM
 // ============================================================================
 
-__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y,
-                            float p_R, float p_G, float p_B)
+// NOTE: Resolve parses this signature textually from the line containing
+// "transform(", so it MUST stay on a single line. Wrapping it produces
+// "wrong argument int p_Width in Transform DCTL" even though the arguments
+// are correct and the file is valid C.
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
 {
     // -- 1. Input handling and safety ---------------------------------------
     // Sanitised once here and once on the way out. Intermediate stages are
