@@ -1,0 +1,36 @@
+// ============================================================================
+//  CubeLUTProbe
+//  ---------------------------------------------------------------------------
+//  Tests ONE thing: whether DEFINE_CUBE_LUT with inline data compiles on this
+//  Resolve build, and in what exact form.
+//
+//  The embedded LUT is a 2x2x2 IDENTITY, eight entries. So:
+//     Look = Off        image unchanged
+//     Look = Inline LUT image unchanged as well, because the LUT is an identity
+//
+//  If both look identical and it compiles, the macro works and the data is
+//  being read correctly. Eight entries rather than 35,937 so a syntax problem
+//  costs seconds, not a 2 MB download.
+// ============================================================================
+
+DEFINE_UI_PARAMS(gUseLut, Look, DCTLUI_COMBO_BOX, 0, {PROBE_OFF, PROBE_ON}, {Off, Inline LUT})
+
+DEFINE_CUBE_LUT(CC_PROBE_INLINE)
+LUT_3D_SIZE 2
+0.00000000 0.00000000 0.00000000
+1.00000000 0.00000000 0.00000000
+0.00000000 1.00000000 0.00000000
+1.00000000 1.00000000 0.00000000
+0.00000000 0.00000000 1.00000000
+1.00000000 0.00000000 1.00000000
+0.00000000 1.00000000 1.00000000
+1.00000000 1.00000000 1.00000000
+END_CUBE_LUT
+
+// Signature must stay on one line: Resolve parses it textually.
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+    if (gUseLut == PROBE_OFF) return make_float3(p_R, p_G, p_B);
+
+    return APPLY_LUT(_saturatef(p_R), _saturatef(p_G), _saturatef(p_B), CC_PROBE_INLINE);
+}
