@@ -1,13 +1,12 @@
 # LUT folder
 
-`CineCoreLook.dctl` expects its `.cube` files here, beside the DCTL, named
-exactly as listed below. Resolve resolves `DEFINE_LUT` paths relative to the
+`CineCore.dctl` expects its `.cube` files here, beside the DCTL, named
+exactly as listed below. **It will not compile if any of them is missing.** Resolve resolves `DEFINE_LUT` paths relative to the
 DCTL file, so the layout must be:
 
 ```
 LUT/
   CineCore.dctl
-  CineCoreLook.dctl
   luts/
     70s.cube
     Alpine.cube
@@ -29,7 +28,9 @@ excludes `*.cube` so they cannot be added by accident.
 **If CineCore is ever distributed**, these LUTs cannot go with it. The look
 selector is generic — it references files by name and contains no LUT data —
 so it can ship with a freely licensable LUT set, or with looks built by the
-parametric engine in Phase 4.
+parametric engine in Phase 4. Note that a distributed CineCore would need its
+`DEFINE_LUT` lines adjusted to whatever LUT set ships with it, since a missing
+file stops the DCTL compiling.
 
 ## Expected filenames
 
@@ -66,11 +67,11 @@ very differently from the rest.
 
 ## Adding more looks
 
-Three edits in `CineCoreLook.dctl`, all mechanical:
+Three edits in `CineCore.dctl`, all mechanical:
 
-1. Add the enum name and label to the `DEFINE_UI_PARAMS` combo box in Section 1.
-2. Add a `DEFINE_LUT` line in Section 2.
-3. Add one `if` line in `cc_lookup` in Section 4.
+1. Add the enum name and label to the `Film Look` combo box in Section 1.
+2. Add a `DEFINE_LUT` line, also in Section 1.
+3. Add one `if` line in `cc_lookup` in Section 10.
 
 Cost per look is GPU memory and compile time, not per-pixel speed: the selector
 is a uniform branch, so every pixel takes the same path and exactly one LUT

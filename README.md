@@ -18,6 +18,7 @@ restructuring the transform.
 | Primary grade | Exposure, Temperature, Tint, Contrast, Pivot, Saturation, Black Point, White Point |
 | Film response | Highlight Shoulder, Highlight Roll Off, Shadow Toe, Shadow Depth |
 | Film density and color | Film Density, Density Strength, Subtractive Saturation, Richness, Color Separation |
+| Film look | Film Look (19 LUT looks), Look Mix |
 
 Film density, subtractive saturation, richness, color separation, hue
 densities, split toning, bleach bypass and the film-look engine arrive in
@@ -47,22 +48,21 @@ returns its input unchanged.
 
 ## LUT looks
 
-`CineCoreLook.dctl` applies a selectable `.cube` look with a mix control.
+The film look selector is built into `CineCore.dctl`: a **Film Look** combo box
+and a **Look Mix** slider, applied as the last stage before output safety. It
+defaults to `None`, which is a bit-exact pass-through.
 
-It expects **DaVinci Intermediate** input and performs no colour space
-conversion, so it runs directly after CineCore with nothing between:
+> **`CineCore.dctl` will not compile unless every LUT it declares is present.**
+> A `luts` folder must sit beside it containing all 19 `.cube` files, named
+> exactly as listed in [luts/README.md](luts/README.md).
 
-```
-[ CineCore.dctl ] -> [ CineCoreLook.dctl ]
-```
+The LUTs must be baked for **DaVinci Intermediate** input — the DCTL performs
+no colour space conversion. The supplied looks are Rec.709 and must be
+converted once, offline: see **[BAKING.md](BAKING.md)**. Applying a Rec.709 LUT
+to DI data gives a broken image, not a look.
 
-This requires LUTs re-baked for DI input. The supplied looks are Rec.709 and
-must be converted once, offline — see **[BAKING.md](BAKING.md)**. Applying a
-Rec.709 LUT to DI data gives a broken image, not a look.
-
-A DCTL fails to compile if a LUT it references is missing, so the look stage is
-a separate file: `CineCore.dctl` still builds on a machine with no LUTs
-present.
+`tools/LUTProbe.dctl` is a one-LUT diagnostic. If CineCore fails to build, the
+probe tells you whether the cause is the LUT macros or a missing file.
 
 The `.cube` files are not distributed with this project — see
 [luts/README.md](luts/README.md).

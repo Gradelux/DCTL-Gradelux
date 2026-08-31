@@ -1,0 +1,37 @@
+// ============================================================================
+//  LUTProbe
+//  ---------------------------------------------------------------------------
+//  Diagnostic only. Not part of the grading chain.
+//
+//  CineCore.dctl declares 19 LUTs, so if it fails to build there are two very
+//  different possible causes and the error message may not distinguish them:
+//
+//      1. DEFINE_LUT / APPLY_LUT are not supported the way this project uses
+//         them on your Resolve build.
+//      2. One of the 19 .cube files is missing, misnamed, or in the wrong
+//         folder.
+//
+//  This file isolates cause 1. It declares exactly one LUT and does nothing
+//  else. If this builds, the macros are fine and the problem is a LUT file.
+//  If this fails, the macro syntax is what needs correcting - send the exact
+//  error text.
+//
+//  Place beside a "luts" folder containing Koda.cube, or edit the path below
+//  to point at any single LUT you have.
+// ============================================================================
+
+DEFINE_UI_PARAMS(gMix, Mix, DCTLUI_SLIDER_FLOAT, 1.0f, 0.0f, 1.0f, 0.001f)
+
+DEFINE_LUT(CC_PROBE_LUT, luts/Koda.cube)
+
+// Signature must stay on one line: Resolve parses it textually.
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+    float3 lut = APPLY_LUT(_saturatef(p_R), _saturatef(p_G), _saturatef(p_B), CC_PROBE_LUT);
+
+    float m = _saturatef(gMix);
+
+    return make_float3(p_R + (lut.x - p_R) * m,
+                       p_G + (lut.y - p_G) * m,
+                       p_B + (lut.z - p_B) * m);
+}

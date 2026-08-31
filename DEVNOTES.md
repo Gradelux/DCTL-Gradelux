@@ -330,9 +330,19 @@ procedure is `BAKING.md`. The three routes as costed:
 | **B. Keep the look stage on a separate node after a CST** | Nothing — works today | Zero risk, standard Resolve practice, no rule changes. Costs the single-node integration |
 | **C. Add a DWG->Rec.709 conversion inside the DCTL** | Lifting the three rules, plus an official DWG matrix | Single node, full integration. But the matrix is not in the documentation available here and must not be derived, so this route is blocked on a documented matrix being supplied |
 
-`CineCoreLook.dctl` now implements route A: it expects DaVinci Intermediate and
-applies no conversion whatsoever. Its logic was already conversion-free, so the
-switch from route B was a change of contract and documentation only.
+The look stage now lives **inside `CineCore.dctl`** (Section 10), implementing
+route A: it expects DaVinci Intermediate and applies no conversion whatsoever.
+
+The trade accepted in merging it: **`CineCore.dctl` no longer compiles without
+the full LUT set.** A DCTL that references a missing `.cube` fails to build, so
+the grading engine and the LUT folder are now a package. `tools/LUTProbe.dctl`
+exists to disambiguate build failures — it declares one LUT and nothing else,
+so it separates "the macros are wrong" from "a file is missing".
+
+The look is applied at step 16, after color separation and before output
+safety, matching the project's processing order. Phase 3's hue density shaping
+goes before it; split toning, bleach bypass and the highlight / shadow color
+shaping go after.
 
 ### 1.8.1a Highlights above diffuse white — a correction
 
@@ -449,7 +459,7 @@ Every division is guarded or has a non-zero compile-time constant denominator;
 | 3 | Hue densities, split toning, highlight warmth, shadow cooling, bleach bypass | Not started |
 | 4 | Film-look engine and profile architecture | Not started |
 | 5 | ~20 film looks on the shared engine | Not started |
-| — | `CineCoreLook.dctl`, LUT look selector, 19 looks | **Route A adopted. Awaiting the re-bake, then merge into CineCore** |
+| — | LUT look selector, 19 looks, merged into `CineCore.dctl` Section 10 | **Route A adopted. Awaiting the re-bake** |
 | 6 | GPU, cleanliness, stability, Resolve compatibility | Not started |
 
 Phase 3 inserts at the marked point in `SECTION 11`, after color separation.
