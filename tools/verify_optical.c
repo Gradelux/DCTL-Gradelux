@@ -33,8 +33,6 @@ static float gSubSaturation=0,gRichness=0,gColorSeparation=0;
 static float gRedDensity=0,gOrangeDensity=0,gYellowDensity=0,gGreenDensity=0;
 static float gCyanDensity=0,gBlueDensity=0,gMagentaDensity=0;
 static float gWarmHighlights=0,gCoolShadows=0,gSplitBalance=0,gBleachBypass=0,gBleachMix=1;
-static float gHalation=0,gHalationWidth=0.5f,gHalationThresh=0.45f;
-static float gBloom=0,gBloomWidth=0.5f,gBloomThresh=0.50f;
 static float gVignette=0,gVignetteSize=0.5f,gVignetteSoft=0.5f,gMatte=0;
 static float gSharpen=0,gSharpenRadius=0.35f,gSharpenThresh=0.15f;
 static float gPrintContrast=0,gPrintPivot=0.336f,gNegPrint=0;
@@ -43,9 +41,8 @@ static float gCrossR=0,gCrossG=0,gCrossB=0,gCrossAmount=0;
 static float gChanDensR=0,gChanDensG=0,gChanDensB=0;
 static float gBlackDensity=0,gHighlightDensity=0,gFilmFade=0;
 static float gFilmBias=0,gMidBias=0,gHiHueShift=0,gLoHueShift=0;
-static float gHaloWarm=0,gHaloSat=1,gBloomWarm=0,gVignetteWarm=0;
+static float gVignetteWarm=0;
 static float gChromAb=0,gChromAbRadius=0.4f,gChromAbFalloff=0.5f;
-static float gDiffusion=0,gDiffusionRadius=0.5f,gDiffusionThresh=0.30f,gDiffusionHiBias=0.5f;
 static float gFilmSoft=0,gFilmSoftRadius=0.4f,gEdgeSoft=0,gEdgeSoftStart=0.45f;
 static float gMicroContrast=0,gMicroRadius=0.5f;
 #include "CineCore.dctl"
@@ -57,16 +54,14 @@ static void reset(void){ gExposure=0;gTemperature=0;gTint=0;gContrast=1;gPivot=0
   gFilmDensity=0;gDensityStrength=0.5f;gSubSaturation=0;gRichness=0;gColorSeparation=0;
   gRedDensity=0;gOrangeDensity=0;gYellowDensity=0;gGreenDensity=0;gCyanDensity=0;gBlueDensity=0;
   gMagentaDensity=0;gWarmHighlights=0;gCoolShadows=0;gSplitBalance=0;gBleachBypass=0;gBleachMix=1;
-  gHalation=0;gHalationWidth=0.5f;gHalationThresh=0.45f;gBloom=0;gBloomWidth=0.5f;gBloomThresh=0.5f;
   gVignette=0;gVignetteSize=0.5f;gVignetteSoft=0.5f;gMatte=0;gBypass=0;
   gSharpen=0;gSharpenRadius=0.35f;gSharpenThresh=0.15f;
   gPrintContrast=0;gPrintPivot=0.336f;gNegPrint=0;
   gHiDesat=0;gLoDesat=0;gLoDesatStart=0.22f;
   gCrossR=0;gCrossG=0;gCrossB=0;gCrossAmount=0;gChanDensR=0;gChanDensG=0;gChanDensB=0;
   gBlackDensity=0;gHighlightDensity=0;gFilmFade=0;gFilmBias=0;gMidBias=0;
-  gHiHueShift=0;gLoHueShift=0;gHaloWarm=0;gHaloSat=1;gBloomWarm=0;gVignetteWarm=0;
-  gChromAb=0;gChromAbRadius=0.4f;gChromAbFalloff=0.5f;gDiffusion=0;gDiffusionRadius=0.5f;
-  gDiffusionThresh=0.30f;gDiffusionHiBias=0.5f;gFilmSoft=0;gFilmSoftRadius=0.4f;
+  gHiHueShift=0;gLoHueShift=0;gVignetteWarm=0;
+  gChromAb=0;gChromAbRadius=0.4f;gChromAbFalloff=0.5f;gFilmSoft=0;gFilmSoftRadius=0.4f;
   gEdgeSoft=0;gEdgeSoftStart=0.45f;gMicroContrast=0;gMicroRadius=0.5f;gQuality=CC_Q_FULL; }
 static float3 T(int x,int y){ return transform(W,H,x,y,&TR,&TG,&TB); }
 static float md(float3 a,float3 b){ return fmaxf(fmaxf(fabsf(a.x-b.x),fabsf(a.y-b.y)),fabsf(a.z-b.z)); }
@@ -85,31 +80,6 @@ int main(void){
     for(int y=0;y<H;y+=7) for(int x=0;x<W;x+=7) worst=fmaxf(worst,md(T(x,y),IN(x,y)));
     sprintf(buf,"max delta %.3e",worst);
     check("defaults return the input exactly", worst==0.0f, buf);
-
-    printf("\n--- halation ---\n");
-    int nearX=W/2+16, nearY=H/2;      /* just outside the disc */
-    int farX=8, farY=8;               /* far corner, no bright light nearby */
-    reset(); float3 b1=T(nearX,nearY), b2=T(farX,farY);
-    reset(); gHalation=1.0f;
-    float3 h1=T(nearX,nearY), h2=T(farX,farY);
-    sprintf(buf,"near bright light %.4f, far away %.4f", md(h1,b1), md(h2,b2));
-    check("halation glows next to bright areas, not far from them",
-          md(h1,b1)>0.004f && md(h2,b2)<md(h1,b1)*0.25f, buf);
-    check("halation only adds light, never subtracts", h1.x>=b1.x && h1.y>=b1.y && h1.z>=b1.z, "");
-    sprintf(buf,"R %+.4f  G %+.4f  B %+.4f", h1.x-b1.x, h1.y-b1.y, h1.z-b1.z);
-    check("halation is red-weighted", (h1.x-b1.x) > (h1.y-b1.y) && (h1.y-b1.y) > (h1.z-b1.z), buf);
-
-    printf("\n--- bloom ---\n");
-    /* bloom's radius is tight by design: on this 240x160 test frame it is under
-       2 px, so it must be probed right at the edge of the bright area rather
-       than 4 px away, or the test measures the probe distance. */
-    int bx=W/2+13, by=H/2;
-    reset(); float3 c1=T(bx,by);
-    reset(); gBloom=1.0f; float3 d1=T(bx,by);
-    sprintf(buf,"delta %.4f",md(d1,c1));
-    check("bloom lifts next to bright areas", md(d1,c1)>0.003f, buf);
-    sprintf(buf,"R %+.4f  G %+.4f  B %+.4f", d1.x-c1.x, d1.y-c1.y, d1.z-c1.z);
-    check("bloom is achromatic", fabsf((d1.x-c1.x)-(d1.z-c1.z))<1e-5f, buf);
 
     printf("\n--- vignette ---\n");
     reset(); float3 e1=T(2,2), e2=T(W/2,H/2);
@@ -175,7 +145,7 @@ int main(void){
 
     printf("\n--- stability ---\n");
     int bad=0;
-    reset(); gHalation=1;gBloom=1;gVignette=1;gMatte=1;gContrast=2.5f;gExposure=5;
+    reset(); gVignette=1;gMatte=1;gContrast=2.5f;gExposure=5;
     gFilmDensity=1;gSubSaturation=1;gRichness=1;gColorSeparation=1;gBleachBypass=1;
     gHighlightShoulder=1;gShadowToe=1;gShadowDepth=1;gSaturation=2;gSharpen=1;gSharpenRadius=1;
     for(int y=0;y<H;y+=3) for(int x=0;x<W;x+=3){ float3 o=T(x,y);
@@ -183,7 +153,7 @@ int main(void){
     sprintf(buf,"%d non-finite",bad);
     check("no NaN or Inf with every effect at maximum", bad==0, buf);
     /* edge safety: no bright rim from out-of-frame taps */
-    reset(); gHalation=1.0f;
+    reset(); gSharpen=1.0f;
     float rim=0; for(int y=0;y<H;y++){ rim=fmaxf(rim,fabsf(T(0,y).x-T(1,y).x)); }
     sprintf(buf,"largest edge step %.4f",rim);
     check("no edge artefact from clamped sampling", rim<0.02f, buf);
@@ -320,18 +290,6 @@ int main(void){
     check("CA reverses direction with a negative amount",
           (sp.x-sp.z)*(spn.x-spn.z) < 0.0f, "");
 
-    /* diffusion: glows near bright areas, additive, wider than bloom */
-    int dnear=W/2+16;
-    reset(); float3 df0=T(dnear,H/2), dffar=T(6,6);
-    reset(); gDiffusion=1.0f; float3 df1=T(dnear,H/2), dffar1=T(6,6);
-    sprintf(buf,"near %.4f, far %.4f", md(df1,df0), md(dffar1,dffar));
-    check("diffusion spreads light near bright areas", md(df1,df0)>0.003f, buf);
-    check("diffusion only adds light", df1.x>=df0.x && df1.y>=df0.y && df1.z>=df0.z, "");
-    reset(); gBloom=1.0f; float3 bl=T(dnear,H/2);
-    reset(); gDiffusion=1.0f; float3 dfw=T(dnear,H/2);
-    sprintf(buf,"diffusion %.4f vs bloom %.4f at the same distance", md(dfw,df0), md(bl,df0));
-    check("diffusion reaches further than bloom", md(dfw,df0) > md(bl,df0), buf);
-
     /* film softness: reduces local detail, no colour fringing, edges keep position */
     /* one pixel from a stripe boundary, so both radii reach across it */
     int ex=W/2+1, ey=H*3/4;
@@ -372,8 +330,7 @@ int main(void){
     check("micro contrast is soft-limited", mmax<0.16f, buf);
 
     /* everything on at once */
-    reset(); gChromAb=1;gDiffusion=1;gFilmSoft=1;gEdgeSoft=1;gMicroContrast=1;
-    gHalation=1;gBloom=1;gSharpen=1;gVignette=1;gMatte=1;gPrintContrast=1;gFilmFade=1;
+    reset(); gChromAb=1;gFilmSoft=1;gEdgeSoft=1;gMicroContrast=1;gSharpen=1;gVignette=1;gMatte=1;gPrintContrast=1;gFilmFade=1;
     gHiDesat=1;gLoDesat=1;gCrossAmount=1;gCrossR=1;gBlackDensity=1;gHighlightDensity=1;
     int bad2=0;
     for(int y=0;y<H;y+=2) for(int x=0;x<W;x+=2){ float3 o=T(x,y);
@@ -394,7 +351,7 @@ int main(void){
     int qx=W/2+33;
     reset(); float3 q0=T(qx,H/2);
     float qd[2];
-    for(int q=0;q<2;q++){ reset(); gQuality=q; gHalation=1;gBloom=1;gDiffusion=1;
+    for(int q=0;q<2;q++){ reset(); gQuality=q; gSharpen=1;gMicroContrast=1;
         qd[q]=md(T(qx,H/2),q0); }
     sprintf(buf,"full %.4f  fast %.4f",qd[0],qd[1]);
     check("both quality modes produce the effect", qd[0]>0.002f&&qd[1]>0.002f, buf);
@@ -402,7 +359,7 @@ int main(void){
     check("Fast stays close to Full", fabsf(qd[1]-qd[0])/qd[0]<0.20f, buf);
     int qbad=0;
     for(int q=0;q<2;q++){ reset(); gQuality=q;
-        gHalation=1;gBloom=1;gDiffusion=1;gSharpen=1;gFilmSoft=1;gEdgeSoft=1;
+        gSharpen=1;gFilmSoft=1;gEdgeSoft=1;
         gMicroContrast=1;gChromAb=1;
         for(int y=0;y<H;y+=3) for(int x=0;x<W;x+=3){ float3 o=T(x,y);
             if(o.x!=o.x||isinf(o.x)) qbad++; } }

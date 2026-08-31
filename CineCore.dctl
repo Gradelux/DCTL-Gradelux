@@ -38,8 +38,8 @@ DEFINE_UI_PARAMS(gBypass, Bypass, DCTLUI_CHECK_BOX, 0)
 //  rejected: it shortens the reach, which makes the effect look wrong rather
 //  than cheaper.
 //
-//     Full   84 taps per pixel with every sampled effect enabled
-//     Fast   44
+//     Full   28 taps per pixel with every sampled effect enabled
+//     Fast   16
 //
 //  It changes NOTHING when those effects are off - their gathers are skipped
 //  entirely at zero strength. Fast interleaves directions between rings so
@@ -98,12 +98,6 @@ DEFINE_UI_PARAMS(gBleachMix, Bleach Bypass Mix, DCTLUI_SLIDER_FLOAT, 1.0f, 0.0f,
 //  Halation and Bloom read neighbouring pixels, which is why this DCTL uses the
 //  texture form of the main entry function. Both are skipped entirely at zero,
 //  so they cost nothing when unused.
-DEFINE_UI_PARAMS(gHalation, Halation, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
-DEFINE_UI_PARAMS(gHalationWidth, Halation Width, DCTLUI_SLIDER_FLOAT, 0.5f, 0.0f, 1.0f, 0.001f)
-DEFINE_UI_PARAMS(gHalationThresh, Halation Threshold, DCTLUI_SLIDER_FLOAT, 0.45f, 0.2f, 0.8f, 0.001f)
-DEFINE_UI_PARAMS(gBloom, Bloom, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
-DEFINE_UI_PARAMS(gBloomWidth, Bloom Width, DCTLUI_SLIDER_FLOAT, 0.5f, 0.0f, 1.0f, 0.001f)
-DEFINE_UI_PARAMS(gBloomThresh, Bloom Threshold, DCTLUI_SLIDER_FLOAT, 0.50f, 0.2f, 0.8f, 0.001f)
 DEFINE_UI_PARAMS(gVignette, Vignette, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gVignetteSize, Vignette Size, DCTLUI_SLIDER_FLOAT, 0.5f, 0.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gVignetteSoft, Vignette Softness, DCTLUI_SLIDER_FLOAT, 0.5f, 0.0f, 1.0f, 0.001f)
@@ -118,10 +112,6 @@ DEFINE_UI_PARAMS(gSharpenThresh, Sharpen Threshold, DCTLUI_SLIDER_FLOAT, 0.15f, 
 DEFINE_UI_PARAMS(gChromAb, Chromatic Aberration, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gChromAbRadius, Chromatic Aberration Radius, DCTLUI_SLIDER_FLOAT, 0.4f, 0.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gChromAbFalloff, Chromatic Aberration Falloff, DCTLUI_SLIDER_FLOAT, 0.5f, 0.0f, 1.0f, 0.001f)
-DEFINE_UI_PARAMS(gDiffusion, Diffusion, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
-DEFINE_UI_PARAMS(gDiffusionRadius, Diffusion Radius, DCTLUI_SLIDER_FLOAT, 0.5f, 0.0f, 1.0f, 0.001f)
-DEFINE_UI_PARAMS(gDiffusionThresh, Diffusion Threshold, DCTLUI_SLIDER_FLOAT, 0.30f, 0.0f, 0.8f, 0.001f)
-DEFINE_UI_PARAMS(gDiffusionHiBias, Diffusion Highlight Bias, DCTLUI_SLIDER_FLOAT, 0.5f, 0.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gFilmSoft, Film Softness, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gFilmSoftRadius, Film Softness Radius, DCTLUI_SLIDER_FLOAT, 0.4f, 0.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gEdgeSoft, Edge Softness, DCTLUI_SLIDER_FLOAT, 0.0f, 0.0f, 1.0f, 0.001f)
@@ -160,9 +150,6 @@ DEFINE_UI_PARAMS(gHiHueShift, Highlight Hue Shift, DCTLUI_SLIDER_FLOAT, 0.0f, -1
 DEFINE_UI_PARAMS(gLoHueShift, Shadow Hue Shift, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
 
 // ---- Optical colour --------------------------------------------------------
-DEFINE_UI_PARAMS(gHaloWarm, Halation Color, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
-DEFINE_UI_PARAMS(gHaloSat, Halation Saturation, DCTLUI_SLIDER_FLOAT, 1.0f, 0.0f, 2.0f, 0.001f)
-DEFINE_UI_PARAMS(gBloomWarm, Bloom Color, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
 DEFINE_UI_PARAMS(gVignetteWarm, Vignette Color, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f, 1.0f, 0.001f)
 
 
@@ -353,13 +340,6 @@ DEFINE_UI_PARAMS(gVignetteWarm, Vignette Color, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f
 #define CC_SEP_EXP          2.0f        // chroma selectivity of the effect
 
 // --- optical effects ---
-#define CC_HALO_RADIUS      0.055f      // widest halation radius, fraction of the short side
-#define CC_BLOOM_RADIUS     0.022f      // widest bloom radius, fraction of the short side
-#define CC_HALO_AMOUNT      0.45f       // log gain added by halation at full strength
-#define CC_BLOOM_AMOUNT     0.35f       // log gain added by bloom at full strength
-#define CC_HALO_R           1.00f       // halation tint: red scatters furthest in the base
-#define CC_HALO_G           0.42f
-#define CC_HALO_B           0.14f
 #define CC_SHARP_RADIUS_MIN 0.8f        // sharpening radius in PIXELS, not a
 #define CC_SHARP_RADIUS_MAX 4.0f        //   fraction of frame - see Section 10
 #define CC_SHARP_AMOUNT     1.00f       // detail gain at full strength
@@ -373,8 +353,6 @@ DEFINE_UI_PARAMS(gVignetteWarm, Vignette Color, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f
 // --- sampled optics ---
 #define CC_CA_MIN           0.5f        // channel separation in pixels, at radius 0
 #define CC_CA_MAX           6.0f        //   and at radius 1
-#define CC_DIFF_RADIUS      0.075f      // diffusion radius, fraction of the short side
-#define CC_DIFF_AMOUNT      0.30f       // log gain added at full strength
 #define CC_SOFT_RADIUS_MIN  1.0f        // softness radius in PIXELS
 #define CC_SOFT_RADIUS_MAX  5.0f
 #define CC_SOFT_AMOUNT      0.90f       // share of local detail removable
@@ -416,8 +394,6 @@ DEFINE_UI_PARAMS(gVignetteWarm, Vignette Color, DCTLUI_SLIDER_FLOAT, 0.0f, -1.0f
 #define CC_HUESHIFT_MAX     0.12f       // hue movement, in 60 degree sector units
 
 // --- optical colour ---
-#define CC_HALOWARM_RANGE   0.35f
-#define CC_BLOOMWARM_RANGE  0.30f
 #define CC_VIGWARM_AMOUNT   0.035f
 
 // --- output safety net ---
@@ -1420,10 +1396,10 @@ __DEVICE__ float3 cc_color_separation(float3 v, float amount)
 
 // ============================================================================
 //  SECTION 10 :: OPTICAL EFFECTS
-//  Halation and bloom need to see the pixels AROUND the current one, which a
-//  per-pixel DCTL cannot do. That is why the main entry function below takes
-//  textures and samples them with _tex2D rather than taking a single RGB
-//  triplet. Everything else in the file is unchanged by that.
+//  Sharpening, softness, micro contrast, edge softness and chromatic aberration
+//  all need to see pixels AROUND the current one, which a per-pixel DCTL cannot
+//  do. That is why the main entry function takes textures and samples them with
+//  _tex2D rather than taking a single RGB triplet.
 // ============================================================================
 
 // Clamped texture read. Sampling outside the frame would otherwise wrap or
@@ -1919,92 +1895,31 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
         gGreenDensity == 0.0f && gCyanDensity == 0.0f && gBlueDensity == 0.0f &&
         gMagentaDensity == 0.0f &&
         gWarmHighlights == 0.0f && gCoolShadows == 0.0f &&
-        gHalation == 0.0f && gBloom == 0.0f && gVignette == 0.0f && gMatte == 0.0f &&
+        gVignette == 0.0f && gMatte == 0.0f &&
         gSharpen == 0.0f && gPrintContrast == 0.0f && gNegPrint == 0.0f &&
         gHiDesat == 0.0f && gLoDesat == 0.0f && gCrossAmount == 0.0f &&
         gChanDensR == 0.0f && gChanDensG == 0.0f && gChanDensB == 0.0f &&
         gBlackDensity == 0.0f && gHighlightDensity == 0.0f && gFilmFade == 0.0f &&
         gFilmBias == 0.0f && gMidBias == 0.0f &&
         gHiHueShift == 0.0f && gLoHueShift == 0.0f && gVignetteWarm == 0.0f &&
-        gChromAb == 0.0f && gDiffusion == 0.0f && gFilmSoft == 0.0f &&
+        gChromAb == 0.0f && gFilmSoft == 0.0f &&
         gEdgeSoft == 0.0f && gMicroContrast == 0.0f)
     {
         return rgb;
     }
 
     // -- Optical gather -------------------------------------------------------
-    //  Halation and bloom both need the light in the SURROUNDING pixels, so the
-    //  neighbourhood is sampled once here, before any grading, while the image
-    //  still represents what reached the film.
+    //  Shared sampling directions for every gather below.
     //
-    //  Eight directions on each of several rings, rather than a full box. A
-    //  true Gaussian would need hundreds of taps in a single pass; concentric
-    //  rings put the samples where a glow actually has energy and stay smooth
-    //  because the falloff being approximated is smooth to begin with. The
-    //  directions are constants, so no trigonometry runs per pixel.
-    //
-    //  Each effect is skipped entirely at zero strength, so an unused effect
-    //  costs nothing at all rather than costing a branch per tap.
+    //  Eight directions per gather, or four in Fast. The directions are
+    //  constants, so no trigonometry runs per pixel, and each effect is skipped
+    //  entirely at zero strength.
     float dirX[8] = { 1.0f,  0.70711f,  0.0f, -0.70711f, -1.0f, -0.70711f,  0.0f,  0.70711f };
     float dirY[8] = { 0.0f,  0.70711f,  1.0f,  0.70711f,  0.0f, -0.70711f, -1.0f, -0.70711f };
-
-    float shortSide = (float)((p_Width < p_Height) ? p_Width : p_Height);
 
     //  Sampling density. A uniform branch: every pixel takes the same path, so
     //  this costs nothing beyond the taps it saves.
     int kStep = (gQuality == CC_Q_FULL) ? 1 : 2;
-
-    float3 halo  = make_float3(0.0f, 0.0f, 0.0f);
-    float3 bloom = make_float3(0.0f, 0.0f, 0.0f);
-
-    if (gHalation > 0.0f)
-    {
-        float R = CC_HALO_RADIUS * shortSide * _fmaxf(_saturatef(gHalationWidth), 0.05f);
-        float wsum = 0.0f;
-        for (int ring = 1; ring <= 3; ++ring)
-        {
-            float rr = R * (float)ring / 3.0f;
-            float rw = 1.0f / (float)ring;              // inner rings weigh more
-            for (int k = (ring & 1); k < 8; k += kStep)
-            {
-                float sx = (float)p_X + dirX[k] * rr;
-                float sy = (float)p_Y + dirY[k] * rr;
-                float3 t = make_float3(cc_tap(p_TexR, p_Width, p_Height, sx, sy),
-                                       cc_tap(p_TexG, p_Width, p_Height, sx, sy),
-                                       cc_tap(p_TexB, p_Width, p_Height, sx, sy));
-                // bright pass: only light above the threshold scatters
-                float e = _fmaxf(cc_maxc(t) - gHalationThresh, 0.0f);
-                halo.x += e * rw; halo.y += e * rw; halo.z += e * rw;
-                wsum += rw;
-            }
-        }
-        float inv = cc_div(1.0f, wsum);
-        halo = make_float3(halo.x * inv, halo.y * inv, halo.z * inv);
-    }
-
-    if (gBloom > 0.0f)
-    {
-        float R = CC_BLOOM_RADIUS * shortSide * _fmaxf(_saturatef(gBloomWidth), 0.05f);
-        float wsum = 0.0f;
-        for (int ring = 1; ring <= 2; ++ring)
-        {
-            float rr = R * (float)ring * 0.5f;
-            float rw = 1.0f / (float)ring;
-            for (int k = (ring & 1); k < 8; k += kStep)
-            {
-                float sx = (float)p_X + dirX[k] * rr;
-                float sy = (float)p_Y + dirY[k] * rr;
-                float3 t = make_float3(cc_tap(p_TexR, p_Width, p_Height, sx, sy),
-                                       cc_tap(p_TexG, p_Width, p_Height, sx, sy),
-                                       cc_tap(p_TexB, p_Width, p_Height, sx, sy));
-                float e = _fmaxf(cc_maxc(t) - gBloomThresh, 0.0f);
-                bloom.x += e * rw; bloom.y += e * rw; bloom.z += e * rw;
-                wsum += rw;
-            }
-        }
-        float inv = cc_div(1.0f, wsum);
-        bloom = make_float3(bloom.x * inv, bloom.y * inv, bloom.z * inv);
-    }
 
     // -- Sharpening ----------------------------------------------------------
     //  Applied to the input, before grading. Luminance-driven and added as a
@@ -2030,39 +1945,6 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
         float o = d * _saturatef(gSharpen) * CC_SHARP_AMOUNT;
 
         rgb = make_float3(rgb.x + o, rgb.y + o, rgb.z + o);
-    }
-
-    //  Diffusion: a wider, softer, lower-threshold glow than bloom. Bloom is
-    //  veiling glare from a clean lens; this is what a diffusion filter does -
-    //  it spreads midtones as well as highlights, which is why its threshold
-    //  sits lower and its radius is larger. Highlight Bias weights the gather
-    //  towards the brightest areas, so at 1 it behaves like a wide bloom and at
-    //  0 it softens the whole image evenly.
-    float3 diff = make_float3(0.0f, 0.0f, 0.0f);
-    if (gDiffusion > 0.0f)
-    {
-        float R = CC_DIFF_RADIUS * shortSide * _fmaxf(_saturatef(gDiffusionRadius), 0.05f);
-        float bias = cc_lerp(1.0f, 3.0f, _saturatef(gDiffusionHiBias));
-        float wsum = 0.0f;
-        for (int ring = 1; ring <= 2; ++ring)
-        {
-            float rr = R * (float)ring * 0.5f;
-            float rw = 1.0f / (float)ring;
-            for (int k = (ring & 1); k < 8; k += kStep)
-            {
-                float sx = (float)p_X + dirX[k] * rr;
-                float sy = (float)p_Y + dirY[k] * rr;
-                float3 t = make_float3(cc_tap(p_TexR, p_Width, p_Height, sx, sy),
-                                       cc_tap(p_TexG, p_Width, p_Height, sx, sy),
-                                       cc_tap(p_TexB, p_Width, p_Height, sx, sy));
-                float e = _fmaxf(cc_maxc(t) - gDiffusionThresh, 0.0f);
-                e = cc_pow_pos(e, bias);
-                diff.x += e * rw; diff.y += e * rw; diff.z += e * rw;
-                wsum += rw;
-            }
-        }
-        float inv = cc_div(1.0f, wsum);
-        diff = make_float3(diff.x * inv, diff.y * inv, diff.z * inv);
     }
 
     //  Film softness, edge softness and micro contrast all work on the same
@@ -2211,58 +2093,6 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
 
     // -- 18b. Film fade -------------------------------------------------------
     cv = cc_film_fade(cv, gFilmFade);
-
-    // -- 19. Halation --------------------------------------------------------
-    //  Scattered light ADDS, so this is applied as light rather than as a
-    //  density: the gathered energy is added, tinted towards red because red
-    //  penetrates the film base furthest before reflecting off the backing.
-    //  Adding light can only lighten, so halation cannot crush anything.
-    if (gHalation > 0.0f)
-    {
-        float a = _saturatef(gHalation) * CC_HALO_AMOUNT;
-
-        //  The scatter tint, biased warm or cool by Halation Color and pulled
-        //  towards neutral by Halation Saturation. At saturation 0 the halo is
-        //  achromatic, which turns halation into a wide neutral glow.
-        float wtR = CC_HALO_R;
-        float wtG = CC_HALO_G + _clampf(gHaloWarm, -1.0f, 1.0f) * CC_HALOWARM_RANGE * 0.5f;
-        float wtB = CC_HALO_B + _clampf(gHaloWarm, -1.0f, 1.0f) * CC_HALOWARM_RANGE;
-        wtG = _fmaxf(wtG, 0.0f);
-        wtB = _fmaxf(wtB, 0.0f);
-
-        float mean = (wtR + wtG + wtB) * 0.33333333f;
-        float sat = _clampf(gHaloSat, 0.0f, 2.0f);
-        wtR = mean + (wtR - mean) * sat;
-        wtG = mean + (wtG - mean) * sat;
-        wtB = mean + (wtB - mean) * sat;
-
-        cv = make_float3(cv.x + halo.x * a * _fmaxf(wtR, 0.0f),
-                         cv.y + halo.y * a * _fmaxf(wtG, 0.0f),
-                         cv.z + halo.z * a * _fmaxf(wtB, 0.0f));
-    }
-
-    // -- 20. Bloom -----------------------------------------------------------
-    //  The same gather, applied achromatically and over a tighter radius: lens
-    //  and sensor veiling glare rather than scatter inside the film base.
-    if (gBloom > 0.0f)
-    {
-        float a = _saturatef(gBloom) * CC_BLOOM_AMOUNT;
-
-        //  Bloom Color leans the glow warm or cool. At 0 it stays achromatic,
-        //  which is the veiling glare of a clean lens.
-        float b = _clampf(gBloomWarm, -1.0f, 1.0f) * CC_BLOOMWARM_RANGE;
-
-        cv = make_float3(cv.x + bloom.x * a * (1.0f + b),
-                         cv.y + bloom.y * a,
-                         cv.z + bloom.z * a * (1.0f - b));
-    }
-
-    // -- 20b. Diffusion ------------------------------------------------------
-    if (gDiffusion > 0.0f)
-    {
-        float a = _saturatef(gDiffusion) * CC_DIFF_AMOUNT;
-        cv = make_float3(cv.x + diff.x * a, cv.y + diff.y * a, cv.z + diff.z * a);
-    }
 
     // -- 21. Vignette --------------------------------------------------------
     cv = cc_vignette(cv, gVignette, gVignetteSize, gVignetteSoft,
