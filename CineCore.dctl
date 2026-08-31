@@ -22,7 +22,7 @@
 //  ---------------------------------------------------------------------------
 //  This DCTL declares LUT files in Section 1 and WILL NOT COMPILE if any of
 //  them is missing. A "luts" folder must sit beside this file containing every
-//  .cube listed there, named exactly.
+//   cube file listed there, named exactly.
 //
 //  Those LUTs must be baked for DaVinci Intermediate input. See BAKING.md.
 //
@@ -125,28 +125,28 @@ DEFINE_UI_PARAMS(gLookMix, Look Mix, DCTLUI_SLIDER_FLOAT, 1.0f, 0.0f, 1.0f, 0.00
 //  the same node as the grade. To drop a look, delete its line here, its entry
 //  in the combo box above, and its line in cc_lookup in Section 10.
 //
-//  The .cube files are not distributed with this project; several are licensed
+//  The  cube file files are not distributed with this project; several are licensed
 //  to an individual owner and may not be redistributed. See luts/README.md.
-DEFINE_LUT(CC_LUT_REFERENCE, luts/_Reference_Identity.cube)
-DEFINE_LUT(CC_LUT_70S, luts/70s.cube)
-DEFINE_LUT(CC_LUT_ALPINE, luts/Alpine.cube)
-DEFINE_LUT(CC_LUT_CHROME, luts/Chrome.cube)
-DEFINE_LUT(CC_LUT_CLEAN, luts/Clean.cube)
-DEFINE_LUT(CC_LUT_COAST, luts/Coast.cube)
-DEFINE_LUT(CC_LUT_DAZE, luts/Daze.cube)
-DEFINE_LUT(CC_LUT_DUSK, luts/Dusk.cube)
-DEFINE_LUT(CC_LUT_KODA, luts/Koda.cube)
-DEFINE_LUT(CC_LUT_LAGUNA, luts/Laguna.cube)
-DEFINE_LUT(CC_LUT_LUCID, luts/Lucid.cube)
-DEFINE_LUT(CC_LUT_LUX, luts/Lux.cube)
-DEFINE_LUT(CC_LUT_MIST, luts/Mist.cube)
-DEFINE_LUT(CC_LUT_MONACO, luts/Monaco.cube)
-DEFINE_LUT(CC_LUT_NORDIC, luts/Nordic.cube)
-DEFINE_LUT(CC_LUT_OBSIDIAN, luts/Obsidian.cube)
-DEFINE_LUT(CC_LUT_PALMA, luts/Palma.cube)
-DEFINE_LUT(CC_LUT_SILVER, luts/Silver.cube)
-DEFINE_LUT(CC_LUT_STERLING, luts/Sterling.cube)
-DEFINE_LUT(CC_LUT_VISTA, luts/Vista.cube)
+DEFINE_LUT(CC_LUT_REFERENCE, luts/_Reference_Identity cube file)
+DEFINE_LUT(CC_LUT_70S, luts/70s cube file)
+DEFINE_LUT(CC_LUT_ALPINE, luts/Alpine cube file)
+DEFINE_LUT(CC_LUT_CHROME, luts/Chrome cube file)
+DEFINE_LUT(CC_LUT_CLEAN, luts/Clean cube file)
+DEFINE_LUT(CC_LUT_COAST, luts/Coast cube file)
+DEFINE_LUT(CC_LUT_DAZE, luts/Daze cube file)
+DEFINE_LUT(CC_LUT_DUSK, luts/Dusk cube file)
+DEFINE_LUT(CC_LUT_KODA, luts/Koda cube file)
+DEFINE_LUT(CC_LUT_LAGUNA, luts/Laguna cube file)
+DEFINE_LUT(CC_LUT_LUCID, luts/Lucid cube file)
+DEFINE_LUT(CC_LUT_LUX, luts/Lux cube file)
+DEFINE_LUT(CC_LUT_MIST, luts/Mist cube file)
+DEFINE_LUT(CC_LUT_MONACO, luts/Monaco cube file)
+DEFINE_LUT(CC_LUT_NORDIC, luts/Nordic cube file)
+DEFINE_LUT(CC_LUT_OBSIDIAN, luts/Obsidian cube file)
+DEFINE_LUT(CC_LUT_PALMA, luts/Palma cube file)
+DEFINE_LUT(CC_LUT_SILVER, luts/Silver cube file)
+DEFINE_LUT(CC_LUT_STERLING, luts/Sterling cube file)
+DEFINE_LUT(CC_LUT_VISTA, luts/Vista cube file)
 
 
 // ============================================================================
@@ -1337,7 +1337,7 @@ __DEVICE__ float3 cc_color_separation(float3 v, float amount)
 //  distributable, a LUT look is fixed and carries its own licence terms.
 // ============================================================================
 
-// A .cube LUT is only defined across its declared domain, 0..1 for every LUT
+// A cube LUT is only defined across its declared domain, 0..1 for every LUT
 // in this set. This is one of the few places where a hard clamp is technically
 // necessary rather than stylistic: outside the domain there is no data to
 // interpolate and the sampler's behavior is not something to rely on.
