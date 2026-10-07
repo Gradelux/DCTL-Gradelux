@@ -100,7 +100,7 @@ struct CameraView: View {
         }
     }
 
-    /// `4K | 24 FPS | 180° | ISO 400` — every value is read back from the camera hardware.
+    /// `4K | 24 FPS | 180° | ISO 400 | WB 5600K` — every value is read back from the camera hardware.
     private var barItems: [SettingsBarItem] {
         let isAuto = camera.exposureMode == .auto
         return [
@@ -579,10 +579,10 @@ private struct WhiteBalancePanel: View {
                     .tint(.red)
                     .disabled(!isEnabled)
 
-                    if let note = note(readout: readout, temperature: temperature, tint: tint) {
-                        Text(note.text)
+                    if let status = statusNote(readout: readout, temperature: temperature, tint: tint) {
+                        Text(status.text)
                             .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundStyle(note.isWarning ? Color.red : Color.white.opacity(0.6))
+                            .foregroundStyle(status.isWarning ? Color.red : Color.white.opacity(0.6))
                     }
                 } else {
                     Text("This camera doesn't support manual white balance.")
@@ -597,9 +597,9 @@ private struct WhiteBalancePanel: View {
         }
     }
 
-    private func note(readout: WhiteBalanceReadout,
-                      temperature: Float,
-                      tint: Float) -> (text: String, isWarning: Bool)? {
+    private func statusNote(readout: WhiteBalanceReadout,
+                            temperature: Float,
+                            tint: Float) -> (text: String, isWarning: Bool)? {
         if isAuto {
             return ("Moving a slider locks white balance (manual).", false)
         }
