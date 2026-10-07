@@ -19,7 +19,9 @@ nonisolated enum CameraError: LocalizedError, Equatable, Sendable {
     case savingFailed(String)
     case formatNotSupported(String)
     case formatChangeFailed(String)
-    case formatChangeWhileRecording
+    case settingsLockedWhileRecording
+    case manualExposureNotSupported
+    case exposureChangeFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -47,8 +49,12 @@ nonisolated enum CameraError: LocalizedError, Equatable, Sendable {
             "This camera can't record \(setting)."
         case .formatChangeFailed(let reason):
             "The camera format could not be changed: \(reason)"
-        case .formatChangeWhileRecording:
-            "Resolution and frame rate can't be changed while recording."
+        case .settingsLockedWhileRecording:
+            "Camera settings can't be changed while recording."
+        case .manualExposureNotSupported:
+            "This camera doesn't support manual ISO and shutter. Auto Exposure stays on."
+        case .exposureChangeFailed(let reason):
+            "Exposure could not be changed: \(reason)"
         }
     }
 
@@ -118,6 +124,33 @@ final class CameraManager {
         isSessionRunning && recordingState == .idle && !isApplyingFormat
     }
 
+    // MARK: Exposure state
+
+    /// Auto Exposure, or manual ISO + shutter angle.
+    private(set) var exposureMode: ExposureMode = .auto
+    /// Manual values. nil while switching from Auto (the camera derives them so brightness doesn't jump).
+    private(set) var manualISO: Float?
+    private(set) var manualShutterAngle: ShutterAngle?
+    /// Live ISO / shutter values read back from the camera a few times per second.
+    private(set) var exposureReadout: ExposureReadout?
+
+    /// Exposure changes are only allowed while the camera is running and not recording.
+    var canChangeExposure: Bool {
+        isSessionRunning && recordingState == .idle && !isApplyingFormat
+    }
+
+    /// The request matching the current exposure state.
+    private var currentExposureRequest: ExposureRequest {
+        switch exposureMode {
+        case .auto: .auto
+        case .manual: .manual(iso: manualISO, angle: manualShutterAngle)
+        }
+    }
+
+    @ObservationIgnored private var isSendingExposure = false
+    @ObservationIgnored private var exposureNeedsResend = false
+    @ObservationIgnored private var exposureMonitorTask: Task<Void, Never>?
+
     var isRecording: Bool { recordingState == .recording }
 
     /// Elapsed time formatted as 00:00:00.
@@ -163,8 +196,9 @@ final class CameraManager {
 
         let resolution = selectedResolution
         let frameRate = selectedFrameRate
+        let exposure = currentExposureRequest
         let result = await performOnSessionQueue {
-            self.configureAndStartSession(resolution: resolution, frameRate: frameRate)
+            self.configureAndStartSession(resolution: resolution, frameRate: frameRate, exposure: exposure)
         }
 
         switch result {
@@ -178,7 +212,9 @@ final class CameraManager {
                 selectedFrameRate = frameRate
             }
             activeSettings = setup.active
+            handleExposureOutcome(setup.exposure, overwriteManualValues: true)
             isSessionRunning = true
+            startExposureMonitoring()
             if let formatError = setup.formatError {
                 alertMessage = formatError.localizedDescription
             }
@@ -188,6 +224,7 @@ final class CameraManager {
     /// Stops the session. If a recording is in progress it is finished and still saved.
     func stop() {
         isSessionRunning = false
+        stopExposureMonitoring()
         sessionQueue.async {
             self.stopSessionOnQueue()
         }
@@ -209,7 +246,7 @@ final class CameraManager {
 
     private func applyFormat(resolution: VideoResolution, frameRate: FrameRate) {
         guard recordingState == .idle else {
-            alertMessage = CameraError.formatChangeWhileRecording.localizedDescription
+            alertMessage = CameraError.settingsLockedWhileRecording.localizedDescription
             return
         }
         guard canChangeFormat else { return }
@@ -219,11 +256,17 @@ final class CameraManager {
         }
 
         isApplyingFormat = true
+        // Exposure is re-applied with the new frame rate, so the shutter angle stays the same.
+        let exposure = currentExposureRequest
         Task {
             let result = await performOnSessionQueue {
-                self.applyFormatOnQueue(resolution: resolution, frameRate: frameRate)
+                self.applyFormatOnQueue(resolution: resolution, frameRate: frameRate, exposure: exposure)
             }
             isApplyingFormat = false
+            handleExposureOutcome(result.exposure, overwriteManualValues: true)
+            if let readout = result.exposureReadout {
+                exposureReadout = readout
+            }
             if let active = result.active {
                 activeSettings = active
                 // Keep the selection in sync with what the hardware really reports.
@@ -236,6 +279,117 @@ final class CameraManager {
                 alertMessage = error.localizedDescription
             }
         }
+    }
+
+    // MARK: - Exposure (ISO & shutter angle)
+
+    /// Turns Auto Exposure on or off. Turning it off locks the current brightness.
+    func setAutoExposure(_ isAuto: Bool) {
+        guard checkCanChangeExposure() else { return }
+        if isAuto {
+            exposureMode = .auto
+        } else if exposureMode == .auto {
+            exposureMode = .manual
+            manualISO = nil          // both derived from the camera's current values
+            manualShutterAngle = nil
+        } else {
+            return
+        }
+        sendExposure()
+    }
+
+    func setShutterAngle(_ angle: ShutterAngle) {
+        guard checkCanChangeExposure() else { return }
+        if exposureMode == .auto {
+            exposureMode = .manual
+            manualISO = nil          // ISO compensates so the image doesn't jump
+        }
+        manualShutterAngle = angle
+        sendExposure()
+    }
+
+    func setISO(_ iso: Float) {
+        guard checkCanChangeExposure() else { return }
+        if exposureMode == .auto {
+            exposureMode = .manual
+            manualShutterAngle = nil // nearest preset to what Auto was using
+        }
+        manualISO = iso
+        sendExposure()
+    }
+
+    private func checkCanChangeExposure() -> Bool {
+        if recordingState != .idle {
+            alertMessage = CameraError.settingsLockedWhileRecording.localizedDescription
+            return false
+        }
+        return canChangeExposure
+    }
+
+    /// Sends the current exposure state to the camera.
+    /// Slider drags produce many changes; only one is in flight at a time and the latest one wins.
+    private func sendExposure() {
+        guard !isSendingExposure else {
+            exposureNeedsResend = true
+            return
+        }
+        isSendingExposure = true
+        let request = currentExposureRequest
+
+        Task {
+            let result = await performOnSessionQueue { self.applyExposureOnQueue(request) }
+            isSendingExposure = false
+            handleExposureOutcome(result.outcome, overwriteManualValues: false)
+            if let readout = result.readout {
+                exposureReadout = readout
+            }
+            if let error = result.error {
+                alertMessage = error.localizedDescription
+            }
+            if exposureNeedsResend {
+                exposureNeedsResend = false
+                sendExposure()
+            }
+        }
+    }
+
+    /// Stores what the camera actually applied.
+    /// `overwriteManualValues` is true after format changes (values may have been clamped to the new
+    /// format's limits) and false after slider updates (so a newer slider value isn't replaced by an older one).
+    private func handleExposureOutcome(_ outcome: ExposureOutcome?, overwriteManualValues: Bool) {
+        switch outcome {
+        case .manual(let iso, let angle)?:
+            guard exposureMode == .manual else { return }
+            if overwriteManualValues || manualISO == nil { manualISO = iso }
+            if overwriteManualValues || manualShutterAngle == nil { manualShutterAngle = angle }
+        case .manualNotSupported?:
+            exposureMode = .auto
+            manualISO = nil
+            manualShutterAngle = nil
+            alertMessage = CameraError.manualExposureNotSupported.localizedDescription
+        case .auto?, nil:
+            break
+        }
+    }
+
+    /// Reads live ISO / shutter from the camera a few times per second (Auto changes them constantly).
+    private func startExposureMonitoring() {
+        exposureMonitorTask?.cancel()
+        exposureMonitorTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                let readout = await self.performOnSessionQueue { self.readExposureOnQueue() }
+                if let readout, readout != self.exposureReadout {
+                    self.exposureReadout = readout
+                }
+                try? await Task.sleep(for: .milliseconds(300))
+            }
+        }
+    }
+
+    private func stopExposureMonitoring() {
+        exposureMonitorTask?.cancel()
+        exposureMonitorTask = nil
     }
 
     // MARK: - Recording
@@ -413,7 +567,8 @@ final class CameraManager {
     // MARK: - Session queue work (never call these on the main thread)
 
     nonisolated private func configureAndStartSession(resolution: VideoResolution,
-                                                      frameRate: FrameRate) -> Result<SessionSetup, CameraError> {
+                                                      frameRate: FrameRate,
+                                                      exposure: ExposureRequest) -> Result<SessionSetup, CameraError> {
         if !isConfigured {
             if let error = configureSession() {
                 return .failure(error)
@@ -438,8 +593,13 @@ final class CameraManager {
         }
 
         var formatError: CameraError?
+        var exposureOutcome: ExposureOutcome?
         if let chosenResolution, let chosenFrameRate {
-            formatError = applyFormatOnQueue(resolution: chosenResolution, frameRate: chosenFrameRate).error
+            let formatResult = applyFormatOnQueue(resolution: chosenResolution,
+                                                  frameRate: chosenFrameRate,
+                                                  exposure: exposure)
+            formatError = formatResult.error
+            exposureOutcome = formatResult.exposure
         } else {
             formatError = .formatNotSupported("HD or 4K at 24–120 FPS")
         }
@@ -461,6 +621,7 @@ final class CameraManager {
             resolution: chosenResolution,
             frameRate: chosenFrameRate,
             active: active,
+            exposure: exposureOutcome,
             formatError: formatError
         ))
     }
@@ -468,19 +629,21 @@ final class CameraManager {
     /// Switches the camera to the best format for `resolution` + `frameRate`, locks the frame
     /// duration, then reads the hardware back to confirm the change really happened.
     nonisolated private func applyFormatOnQueue(resolution: VideoResolution,
-                                                frameRate: FrameRate) -> FormatChangeResult {
+                                                frameRate: FrameRate,
+                                                exposure: ExposureRequest) -> FormatChangeResult {
         guard let device = videoDeviceInput?.device else {
             return FormatChangeResult(active: nil, error: .cameraUnavailable)
         }
         // Never reconfigure during recording.
         guard !movieOutput.isRecording else {
             return FormatChangeResult(active: ActiveCaptureSettings.read(from: device),
-                                      error: .formatChangeWhileRecording)
+                                      error: .settingsLockedWhileRecording)
         }
         guard let format = CaptureFormatSelector.bestFormat(for: device, resolution: resolution, frameRate: frameRate) else {
             return FormatChangeResult(active: ActiveCaptureSettings.read(from: device),
                                       error: .formatNotSupported("\(resolution.label) at \(frameRate.label)"))
         }
+        var exposureOutcome: ExposureOutcome?
 
         session.beginConfiguration()
         do {
@@ -491,6 +654,8 @@ final class CameraManager {
             // Equal min and max durations lock the camera to a constant frame rate.
             device.activeVideoMinFrameDuration = frameRate.frameDuration
             device.activeVideoMaxFrameDuration = frameRate.frameDuration
+            // Re-apply exposure for the new frame rate and the new format's ISO / shutter limits.
+            exposureOutcome = ExposureControl.apply(exposure, to: device)
             device.unlockForConfiguration()
         } catch {
             session.commitConfiguration()
@@ -501,15 +666,44 @@ final class CameraManager {
 
         // Verify the hardware and the recording output.
         let active = ActiveCaptureSettings.read(from: device)
+        let readout = ExposureReadout.read(from: device)
         guard active.matches(resolution, frameRate) else {
-            return FormatChangeResult(active: active, error: .formatChangeFailed(
+            return FormatChangeResult(active: active, exposure: exposureOutcome, exposureReadout: readout,
+                                      error: .formatChangeFailed(
                 "the camera is running at \(active.resolutionLabel) · \(active.frameRateLabel)."))
         }
         guard let connection = movieOutput.connection(with: .video), connection.isEnabled else {
-            return FormatChangeResult(active: active, error: .formatChangeFailed(
+            return FormatChangeResult(active: active, exposure: exposureOutcome, exposureReadout: readout,
+                                      error: .formatChangeFailed(
                 "the video recorder is not connected for this format."))
         }
-        return FormatChangeResult(active: active, error: nil)
+        return FormatChangeResult(active: active, exposure: exposureOutcome, exposureReadout: readout, error: nil)
+    }
+
+    /// Applies an exposure change (ISO / shutter angle / Auto) to the hardware.
+    nonisolated private func applyExposureOnQueue(_ request: ExposureRequest) -> ExposureChangeResult {
+        guard let device = videoDeviceInput?.device else {
+            return ExposureChangeResult(outcome: nil, readout: nil, error: .cameraUnavailable)
+        }
+        // Never change settings during recording.
+        guard !movieOutput.isRecording else {
+            return ExposureChangeResult(outcome: nil, readout: ExposureReadout.read(from: device),
+                                        error: .settingsLockedWhileRecording)
+        }
+        do {
+            try device.lockForConfiguration()
+        } catch {
+            return ExposureChangeResult(outcome: nil, readout: ExposureReadout.read(from: device),
+                                        error: .exposureChangeFailed(error.localizedDescription))
+        }
+        let outcome = ExposureControl.apply(request, to: device)
+        device.unlockForConfiguration()
+        return ExposureChangeResult(outcome: outcome, readout: ExposureReadout.read(from: device), error: nil)
+    }
+
+    nonisolated private func readExposureOnQueue() -> ExposureReadout? {
+        guard let device = videoDeviceInput?.device else { return nil }
+        return ExposureReadout.read(from: device)
     }
 
     nonisolated private func configureSession() -> CameraError? {
@@ -619,12 +813,22 @@ nonisolated private struct SessionSetup: Sendable {
     let resolution: VideoResolution?
     let frameRate: FrameRate?
     let active: ActiveCaptureSettings
+    let exposure: ExposureOutcome?
     let formatError: CameraError?
 }
 
 /// Result of a format change: what the hardware is now set to, and any error.
 nonisolated private struct FormatChangeResult: Sendable {
     let active: ActiveCaptureSettings?
+    var exposure: ExposureOutcome? = nil
+    var exposureReadout: ExposureReadout? = nil
+    let error: CameraError?
+}
+
+/// Result of an exposure change.
+nonisolated private struct ExposureChangeResult: Sendable {
+    let outcome: ExposureOutcome?
+    let readout: ExposureReadout?
     let error: CameraError?
 }
 

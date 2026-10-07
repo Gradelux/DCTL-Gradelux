@@ -5,6 +5,8 @@ import UIKit
 private enum SettingsPanel {
     case resolution
     case frameRate
+    case shutter
+    case iso
 }
 
 /// The full-screen camera screen: live preview, settings bar, timer, record button, and status messages.
@@ -27,8 +29,7 @@ struct CameraView: View {
 
                 VStack(spacing: 10) {
                     SettingsBar(
-                        resolutionText: camera.activeSettings?.resolutionLabel ?? "—",
-                        frameRateText: camera.activeSettings?.frameRateLabel ?? "—",
+                        items: barItems,
                         openPanel: openPanel,
                         isEnabled: camera.canChangeFormat,
                         isBusy: camera.isApplyingFormat
@@ -98,6 +99,25 @@ struct CameraView: View {
         }
     }
 
+    /// `4K | 24 FPS | 180° | ISO 400` — every value is read back from the camera hardware.
+    private var barItems: [SettingsBarItem] {
+        let isAuto = camera.exposureMode == .auto
+        return [
+            SettingsBarItem(panel: .resolution,
+                            text: camera.activeSettings?.resolutionLabel ?? "—",
+                            isAuto: false),
+            SettingsBarItem(panel: .frameRate,
+                            text: camera.activeSettings?.frameRateLabel ?? "—",
+                            isAuto: false),
+            SettingsBarItem(panel: .shutter,
+                            text: camera.exposureReadout?.shutterAngleLabel ?? "—°",
+                            isAuto: isAuto),
+            SettingsBarItem(panel: .iso,
+                            text: camera.exposureReadout?.isoLabel ?? "ISO —",
+                            isAuto: isAuto),
+        ]
+    }
+
     @ViewBuilder
     private func settingsPanel(_ panel: SettingsPanel) -> some View {
         switch panel {
@@ -123,16 +143,43 @@ struct CameraView: View {
             ) { frameRate in
                 camera.selectFrameRate(frameRate)
             }
+        case .shutter:
+            ShutterPanel(
+                frameRate: camera.activeSettings?.maxFrameRate ?? 0,
+                isAuto: camera.exposureMode == .auto,
+                selected: camera.exposureMode == .manual ? camera.manualShutterAngle : nil,
+                readout: camera.exposureReadout,
+                isEnabled: camera.canChangeExposure,
+                onAutoChange: { camera.setAutoExposure($0) },
+                onSelect: { camera.setShutterAngle($0) }
+            )
+        case .iso:
+            ISOPanel(
+                readout: camera.exposureReadout,
+                isAuto: camera.exposureMode == .auto,
+                manualISO: camera.manualISO,
+                isEnabled: camera.canChangeExposure,
+                onAutoChange: { camera.setAutoExposure($0) },
+                onISOChange: { camera.setISO($0) }
+            )
         }
     }
 }
 
 // MARK: - Settings bar
 
-/// Top status bar, e.g. `4K | 24 FPS`. Each value is tappable.
+private struct SettingsBarItem: Identifiable {
+    let panel: SettingsPanel
+    let text: String
+    /// Shows a small red "A" when the value is controlled by Auto Exposure.
+    let isAuto: Bool
+
+    var id: SettingsPanel { panel }
+}
+
+/// Top status bar, e.g. `4K | 24 FPS | 180° | ISO 400`. Each value is tappable.
 private struct SettingsBar: View {
-    let resolutionText: String
-    let frameRateText: String
+    let items: [SettingsBarItem]
     let openPanel: SettingsPanel?
     let isEnabled: Bool
     let isBusy: Bool
@@ -140,20 +187,24 @@ private struct SettingsBar: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            SettingChip(text: resolutionText, isOpen: openPanel == .resolution, isEnabled: isEnabled) {
-                onTap(.resolution)
-            }
-            Divider()
-                .frame(height: 14)
-                .overlay(Color.white.opacity(0.35))
-            SettingChip(text: frameRateText, isOpen: openPanel == .frameRate, isEnabled: isEnabled) {
-                onTap(.frameRate)
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                if index > 0 {
+                    Divider()
+                        .frame(height: 14)
+                        .overlay(Color.white.opacity(0.35))
+                }
+                SettingChip(text: item.text,
+                            isAuto: item.isAuto,
+                            isOpen: openPanel == item.panel,
+                            isEnabled: isEnabled) {
+                    onTap(item.panel)
+                }
             }
             if isBusy {
                 ProgressView()
                     .controlSize(.small)
                     .tint(.white)
-                    .padding(.trailing, 10)
+                    .padding(.trailing, 8)
             }
         }
         .background(Color.black.opacity(0.6), in: Capsule())
@@ -163,18 +214,28 @@ private struct SettingsBar: View {
 
 private struct SettingChip: View {
     let text: String
+    let isAuto: Bool
     let isOpen: Bool
     let isEnabled: Bool
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Text(text)
-                .font(.system(size: 15, weight: .semibold, design: .monospaced))
-                .foregroundStyle(isOpen ? Color.red : Color.white)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .contentShape(Rectangle())
+            HStack(spacing: 3) {
+                if isAuto {
+                    Text("A")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Color.red)
+                }
+                Text(text)
+                    .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(isOpen ? Color.red : Color.white)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(!isEnabled)
@@ -182,7 +243,59 @@ private struct SettingChip: View {
     }
 }
 
-// MARK: - Option panel
+// MARK: - Panels
+
+/// Shared dark card used by every settings panel.
+private struct PanelContainer<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.6))
+            content
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.black.opacity(0.75), in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.white.opacity(0.1), lineWidth: 1))
+    }
+}
+
+/// One selectable choice: big value on top, small detail underneath.
+private struct OptionButton: View {
+    let label: String
+    let detail: String
+    let isSelected: Bool
+    let isEnabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 2) {
+                Text(label)
+                    .font(.system(size: 17, weight: .semibold, design: .monospaced))
+                Text(detail)
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .opacity(0.6)
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .background(Color.white.opacity(isSelected ? 0.12 : 0.04),
+                        in: RoundedRectangle(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(isSelected ? Color.red : Color.white.opacity(0.15),
+                                  lineWidth: isSelected ? 1.5 : 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+    }
+}
 
 /// A row of choices (e.g. HD / 4K). Only supported options are passed in.
 private struct OptionPanel<Option: Identifiable & Equatable>: View {
@@ -195,11 +308,7 @@ private struct OptionPanel<Option: Identifiable & Equatable>: View {
     let onSelect: (Option) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.6))
-
+        PanelContainer(title: title) {
             if options.isEmpty {
                 Text("No supported options on this camera.")
                     .font(.footnote)
@@ -207,37 +316,173 @@ private struct OptionPanel<Option: Identifiable & Equatable>: View {
             } else {
                 HStack(spacing: 8) {
                     ForEach(options) { option in
-                        let isSelected = option == selected
-                        Button {
+                        OptionButton(label: label(option),
+                                     detail: detail(option),
+                                     isSelected: option == selected,
+                                     isEnabled: isEnabled) {
                             onSelect(option)
-                        } label: {
-                            VStack(spacing: 2) {
-                                Text(label(option))
-                                    .font(.system(size: 17, weight: .semibold, design: .monospaced))
-                                Text(detail(option))
-                                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                    .opacity(0.6)
-                            }
-                            .foregroundStyle(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                            .background(Color.white.opacity(isSelected ? 0.12 : 0.04),
-                                        in: RoundedRectangle(cornerRadius: 8))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .strokeBorder(isSelected ? Color.red : Color.white.opacity(0.15),
-                                                  lineWidth: isSelected ? 1.5 : 1)
-                            )
                         }
-                        .buttonStyle(.plain)
-                        .disabled(!isEnabled)
                     }
                 }
             }
         }
-        .padding(14)
-        .background(Color.black.opacity(0.75), in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.white.opacity(0.1), lineWidth: 1))
+    }
+}
+
+/// "AUTO EXPOSURE" switch shown in the shutter and ISO panels.
+private struct AutoExposureToggle: View {
+    let isAuto: Bool
+    let isEnabled: Bool
+    let onChange: (Bool) -> Void
+
+    var body: some View {
+        Button {
+            onChange(!isAuto)
+        } label: {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(isAuto ? Color.red : Color.white.opacity(0.25))
+                    .frame(width: 8, height: 8)
+                Text(isAuto ? "AUTO EXPOSURE · ON" : "AUTO EXPOSURE · OFF")
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.white)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color.white.opacity(0.06), in: Capsule())
+            .overlay(Capsule().strokeBorder(isAuto ? Color.red : Color.white.opacity(0.15), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.45)
+    }
+}
+
+/// Shutter angle presets. Selecting one switches to manual exposure.
+private struct ShutterPanel: View {
+    let frameRate: Double
+    let isAuto: Bool
+    let selected: ShutterAngle?
+    let readout: ExposureReadout?
+    let isEnabled: Bool
+    let onAutoChange: (Bool) -> Void
+    let onSelect: (ShutterAngle) -> Void
+
+    var body: some View {
+        PanelContainer(title: "SHUTTER ANGLE · \(Int(frameRate.rounded())) FPS") {
+            AutoExposureToggle(isAuto: isAuto, isEnabled: isEnabled, onChange: onAutoChange)
+
+            if readout?.supportsManual == false {
+                Text("This camera doesn't support manual shutter.")
+                    .font(.footnote)
+                    .foregroundStyle(.white.opacity(0.8))
+            } else {
+                HStack(spacing: 6) {
+                    ForEach(ShutterAngle.allCases) { angle in
+                        OptionButton(label: angle.label,
+                                     detail: angle.shutterSpeedLabel(frameRate: frameRate),
+                                     isSelected: angle == selected,
+                                     isEnabled: isEnabled) {
+                            onSelect(angle)
+                        }
+                    }
+                }
+            }
+
+            if let note {
+                Text(note)
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundStyle(isLimited ? Color.red : Color.white.opacity(0.6))
+            }
+        }
+    }
+
+    /// True when the hardware is using a different angle than the one selected.
+    private var isLimited: Bool {
+        guard !isAuto, let selected, let readout else { return false }
+        return abs(readout.shutterAngle - Double(selected.rawValue)) > 1.5
+    }
+
+    private var note: String? {
+        guard let readout else { return nil }
+        if isAuto {
+            return "Auto is using \(readout.shutterAngleLabel) · \(readout.shutterSpeedLabel)"
+        }
+        if isLimited {
+            return "Camera limit: using \(readout.shutterAngleLabel) · \(readout.shutterSpeedLabel)"
+        }
+        return "Shutter \(readout.shutterSpeedLabel) s"
+    }
+}
+
+/// ISO slider (logarithmic, so low ISOs get as much room as high ones).
+private struct ISOPanel: View {
+    let readout: ExposureReadout?
+    let isAuto: Bool
+    let manualISO: Float?
+    let isEnabled: Bool
+    let onAutoChange: (Bool) -> Void
+    let onISOChange: (Float) -> Void
+
+    var body: some View {
+        PanelContainer(title: "ISO") {
+            AutoExposureToggle(isAuto: isAuto, isEnabled: isEnabled, onChange: onAutoChange)
+
+            if let readout {
+                if readout.supportsManual {
+                    let displayISO = isAuto ? readout.iso : (manualISO ?? readout.iso)
+
+                    HStack {
+                        Text("ISO \(Int(displayISO.rounded()))")
+                            .font(.system(size: 17, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(.white)
+                        Spacer()
+                        Text("\(Int(readout.minISO.rounded()))–\(Int(readout.maxISO.rounded()))")
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.6))
+                    }
+
+                    Slider(
+                        value: Binding(
+                            get: { position(of: displayISO, in: readout) },
+                            set: { onISOChange(iso(at: $0, in: readout)) }
+                        ),
+                        in: 0...1
+                    )
+                    .tint(.red)
+                    .disabled(!isEnabled)
+
+                    if isAuto {
+                        Text("Moving the slider switches to manual exposure.")
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.6))
+                    }
+                } else {
+                    Text("This camera doesn't support manual ISO.")
+                        .font(.footnote)
+                        .foregroundStyle(.white.opacity(0.8))
+                }
+            } else {
+                Text("Reading camera…")
+                    .font(.footnote)
+                    .foregroundStyle(.white.opacity(0.8))
+            }
+        }
+    }
+
+    private func position(of iso: Float, in readout: ExposureReadout) -> Double {
+        let minISO = Double(readout.minISO)
+        let maxISO = Double(readout.maxISO)
+        guard maxISO > minISO, minISO > 0 else { return 0 }
+        let clamped = min(max(Double(iso), minISO), maxISO)
+        return log(clamped / minISO) / log(maxISO / minISO)
+    }
+
+    private func iso(at position: Double, in readout: ExposureReadout) -> Float {
+        let minISO = Double(readout.minISO)
+        let maxISO = Double(readout.maxISO)
+        guard maxISO > minISO, minISO > 0 else { return readout.minISO }
+        return Float(minISO * pow(maxISO / minISO, position))
     }
 }
 
