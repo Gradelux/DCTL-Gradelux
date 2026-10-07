@@ -17,6 +17,9 @@ nonisolated enum CameraError: LocalizedError, Equatable, Sendable {
     case cannotAddMovieOutput
     case recordingFailed(String)
     case savingFailed(String)
+    case formatNotSupported(String)
+    case formatChangeFailed(String)
+    case formatChangeWhileRecording
 
     var errorDescription: String? {
         switch self {
@@ -40,6 +43,12 @@ nonisolated enum CameraError: LocalizedError, Equatable, Sendable {
             "Recording failed: \(reason)"
         case .savingFailed(let reason):
             "The video could not be saved to Photos: \(reason)"
+        case .formatNotSupported(let setting):
+            "This camera can't record \(setting)."
+        case .formatChangeFailed(let reason):
+            "The camera format could not be changed: \(reason)"
+        case .formatChangeWhileRecording:
+            "Resolution and frame rate can't be changed while recording."
         }
     }
 
@@ -89,6 +98,25 @@ final class CameraManager {
     private(set) var elapsedSeconds = 0
     private(set) var isSaving = false
     private(set) var showSavedConfirmation = false
+    private(set) var savedConfirmationText = "Saved"
+
+    /// Resolution / frame-rate combinations the current camera can really record.
+    private(set) var capabilities = CaptureCapabilities.empty
+
+    /// What the user asked for.
+    private(set) var selectedResolution: VideoResolution = .hd
+    private(set) var selectedFrameRate: FrameRate = .fps30
+
+    /// What the camera hardware is actually set to (read back after every change).
+    /// The settings bar displays this, not the request, so it never shows a value that isn't real.
+    private(set) var activeSettings: ActiveCaptureSettings?
+
+    private(set) var isApplyingFormat = false
+
+    /// Format changes are only allowed while the camera is running and not recording.
+    var canChangeFormat: Bool {
+        isSessionRunning && recordingState == .idle && !isApplyingFormat
+    }
 
     var isRecording: Bool { recordingState == .recording }
 
@@ -102,6 +130,8 @@ final class CameraManager {
 
     @ObservationIgnored private var timerTask: Task<Void, Never>?
     @ObservationIgnored private var savedConfirmationTask: Task<Void, Never>?
+    /// Hardware settings at the moment recording started, used to verify the finished file.
+    @ObservationIgnored private var settingsAtRecordingStart: ActiveCaptureSettings?
 
     // MARK: Capture objects (only touched on sessionQueue)
 
@@ -131,13 +161,28 @@ final class CameraManager {
             return
         }
 
-        if let configurationError = await performOnSessionQueue({ self.configureAndStartSession() }) {
-            setupError = configurationError
-            isSessionRunning = false
-            return
+        let resolution = selectedResolution
+        let frameRate = selectedFrameRate
+        let result = await performOnSessionQueue {
+            self.configureAndStartSession(resolution: resolution, frameRate: frameRate)
         }
 
-        isSessionRunning = true
+        switch result {
+        case .failure(let error):
+            setupError = error
+            isSessionRunning = false
+        case .success(let setup):
+            capabilities = setup.capabilities
+            if let resolution = setup.resolution, let frameRate = setup.frameRate {
+                selectedResolution = resolution
+                selectedFrameRate = frameRate
+            }
+            activeSettings = setup.active
+            isSessionRunning = true
+            if let formatError = setup.formatError {
+                alertMessage = formatError.localizedDescription
+            }
+        }
     }
 
     /// Stops the session. If a recording is in progress it is finished and still saved.
@@ -145,6 +190,51 @@ final class CameraManager {
         isSessionRunning = false
         sessionQueue.async {
             self.stopSessionOnQueue()
+        }
+    }
+
+    // MARK: - Resolution & frame rate
+
+    func selectResolution(_ resolution: VideoResolution) {
+        guard let frameRate = capabilities.bestFrameRate(for: resolution, preferring: selectedFrameRate) else {
+            alertMessage = CameraError.formatNotSupported(resolution.label).localizedDescription
+            return
+        }
+        applyFormat(resolution: resolution, frameRate: frameRate)
+    }
+
+    func selectFrameRate(_ frameRate: FrameRate) {
+        applyFormat(resolution: selectedResolution, frameRate: frameRate)
+    }
+
+    private func applyFormat(resolution: VideoResolution, frameRate: FrameRate) {
+        guard recordingState == .idle else {
+            alertMessage = CameraError.formatChangeWhileRecording.localizedDescription
+            return
+        }
+        guard canChangeFormat else { return }
+        guard capabilities.supports(resolution, frameRate) else {
+            alertMessage = CameraError.formatNotSupported("\(resolution.label) at \(frameRate.label)").localizedDescription
+            return
+        }
+
+        isApplyingFormat = true
+        Task {
+            let result = await performOnSessionQueue {
+                self.applyFormatOnQueue(resolution: resolution, frameRate: frameRate)
+            }
+            isApplyingFormat = false
+            if let active = result.active {
+                activeSettings = active
+                // Keep the selection in sync with what the hardware really reports.
+                if let activeResolution = active.resolution, let activeFrameRate = active.lockedFrameRate {
+                    selectedResolution = activeResolution
+                    selectedFrameRate = activeFrameRate
+                }
+            }
+            if let error = result.error {
+                alertMessage = error.localizedDescription
+            }
         }
     }
 
@@ -163,8 +253,9 @@ final class CameraManager {
     }
 
     private func startRecording() {
-        guard isSessionRunning else { return }
+        guard isSessionRunning, !isApplyingFormat else { return }
         recordingState = .starting
+        settingsAtRecordingStart = activeSettings
 
         Task {
             if let error = await performOnSessionQueue({ self.startRecordingOnQueue() }) {
@@ -239,9 +330,22 @@ final class CameraManager {
         isSaving = true
         defer { isSaving = false }
 
+        // Read the real resolution and frame rate from the file before it is moved into Photos.
+        let info = await RecordedVideoInfo.load(from: fileURL)
+        let expected = settingsAtRecordingStart
+
         do {
             try await Self.saveMovieToPhotos(at: fileURL)
-            presentSavedConfirmation()
+
+            if let info {
+                presentSavedConfirmation(text: "Saved · \(info.summary)")
+                if let expected, !info.matches(expected) {
+                    alertMessage = "The video was saved, but it was recorded as \(info.summary) instead of \(expected.resolutionLabel) · \(expected.frameRateLabel)."
+                }
+            } else {
+                presentSavedConfirmation(text: "Saved")
+                alertMessage = "The video was saved, but its resolution and frame rate could not be verified."
+            }
         } catch {
             try? FileManager.default.removeItem(at: fileURL)
             alertMessage = CameraError.savingFailed(error.localizedDescription).localizedDescription
@@ -258,12 +362,13 @@ final class CameraManager {
         }
     }
 
-    private func presentSavedConfirmation() {
+    private func presentSavedConfirmation(text: String) {
         savedConfirmationTask?.cancel()
+        savedConfirmationText = text
         showSavedConfirmation = true
 
         savedConfirmationTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(1.5))
+            try? await Task.sleep(for: .seconds(2.5))
             guard !Task.isCancelled, let self else { return }
             self.showSavedConfirmation = false
         }
@@ -307,25 +412,112 @@ final class CameraManager {
 
     // MARK: - Session queue work (never call these on the main thread)
 
-    nonisolated private func configureAndStartSession() -> CameraError? {
+    nonisolated private func configureAndStartSession(resolution: VideoResolution,
+                                                      frameRate: FrameRate) -> Result<SessionSetup, CameraError> {
         if !isConfigured {
             if let error = configureSession() {
-                return error
+                return .failure(error)
             }
         }
+        guard let device = videoDeviceInput?.device else {
+            return .failure(.cameraUnavailable)
+        }
+
+        let capabilities = CaptureCapabilities.discover(for: device)
+
+        // Use the requested format if this camera supports it, otherwise the closest supported one.
+        var chosenResolution: VideoResolution?
+        var chosenFrameRate: FrameRate?
+        if capabilities.supports(resolution, frameRate) {
+            chosenResolution = resolution
+            chosenFrameRate = frameRate
+        } else if let fallbackResolution = capabilities.resolutions.contains(resolution)
+                    ? resolution : capabilities.resolutions.first {
+            chosenResolution = fallbackResolution
+            chosenFrameRate = capabilities.bestFrameRate(for: fallbackResolution, preferring: frameRate)
+        }
+
+        var formatError: CameraError?
+        if let chosenResolution, let chosenFrameRate {
+            formatError = applyFormatOnQueue(resolution: chosenResolution, frameRate: chosenFrameRate).error
+        } else {
+            formatError = .formatNotSupported("HD or 4K at 24–120 FPS")
+        }
+
         if !session.isRunning {
             session.startRunning() // Blocking — this is why we are on sessionQueue.
         }
-        return nil
+
+        // Read back after the session is running, so we report what is really active.
+        let active = ActiveCaptureSettings.read(from: device)
+        if formatError == nil, let chosenResolution, let chosenFrameRate,
+           !active.matches(chosenResolution, chosenFrameRate) {
+            formatError = .formatChangeFailed(
+                "the camera is running at \(active.resolutionLabel) · \(active.frameRateLabel).")
+        }
+
+        return .success(SessionSetup(
+            capabilities: capabilities,
+            resolution: chosenResolution,
+            frameRate: chosenFrameRate,
+            active: active,
+            formatError: formatError
+        ))
+    }
+
+    /// Switches the camera to the best format for `resolution` + `frameRate`, locks the frame
+    /// duration, then reads the hardware back to confirm the change really happened.
+    nonisolated private func applyFormatOnQueue(resolution: VideoResolution,
+                                                frameRate: FrameRate) -> FormatChangeResult {
+        guard let device = videoDeviceInput?.device else {
+            return FormatChangeResult(active: nil, error: .cameraUnavailable)
+        }
+        // Never reconfigure during recording.
+        guard !movieOutput.isRecording else {
+            return FormatChangeResult(active: ActiveCaptureSettings.read(from: device),
+                                      error: .formatChangeWhileRecording)
+        }
+        guard let format = CaptureFormatSelector.bestFormat(for: device, resolution: resolution, frameRate: frameRate) else {
+            return FormatChangeResult(active: ActiveCaptureSettings.read(from: device),
+                                      error: .formatNotSupported("\(resolution.label) at \(frameRate.label)"))
+        }
+
+        session.beginConfiguration()
+        do {
+            try device.lockForConfiguration()
+            // Setting activeFormat switches the session preset to .inputPriority automatically,
+            // so the session keeps this format instead of overriding it with a preset.
+            device.activeFormat = format
+            // Equal min and max durations lock the camera to a constant frame rate.
+            device.activeVideoMinFrameDuration = frameRate.frameDuration
+            device.activeVideoMaxFrameDuration = frameRate.frameDuration
+            device.unlockForConfiguration()
+        } catch {
+            session.commitConfiguration()
+            return FormatChangeResult(active: ActiveCaptureSettings.read(from: device),
+                                      error: .formatChangeFailed(error.localizedDescription))
+        }
+        session.commitConfiguration()
+
+        // Verify the hardware and the recording output.
+        let active = ActiveCaptureSettings.read(from: device)
+        guard active.matches(resolution, frameRate) else {
+            return FormatChangeResult(active: active, error: .formatChangeFailed(
+                "the camera is running at \(active.resolutionLabel) · \(active.frameRateLabel)."))
+        }
+        guard let connection = movieOutput.connection(with: .video), connection.isEnabled else {
+            return FormatChangeResult(active: active, error: .formatChangeFailed(
+                "the video recorder is not connected for this format."))
+        }
+        return FormatChangeResult(active: active, error: nil)
     }
 
     nonisolated private func configureSession() -> CameraError? {
         session.beginConfiguration()
         defer { session.commitConfiguration() }
 
-        if session.canSetSessionPreset(.high) {
-            session.sessionPreset = .high
-        }
+        // No session preset: the resolution and frame rate are set on the camera itself
+        // (see applyFormatOnQueue), which puts the session in .inputPriority mode.
 
         // Rear wide-angle camera.
         guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
@@ -417,6 +609,23 @@ final class CameraManager {
             movieOutput.stopRecording()
         }
     }
+}
+
+// MARK: - Session queue results
+
+/// Result of starting the session (sent from the session queue to the main actor).
+nonisolated private struct SessionSetup: Sendable {
+    let capabilities: CaptureCapabilities
+    let resolution: VideoResolution?
+    let frameRate: FrameRate?
+    let active: ActiveCaptureSettings
+    let formatError: CameraError?
+}
+
+/// Result of a format change: what the hardware is now set to, and any error.
+nonisolated private struct FormatChangeResult: Sendable {
+    let active: ActiveCaptureSettings?
+    let error: CameraError?
 }
 
 // MARK: - Recording delegate
