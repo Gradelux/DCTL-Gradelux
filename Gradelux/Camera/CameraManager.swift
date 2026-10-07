@@ -22,6 +22,8 @@ nonisolated enum CameraError: LocalizedError, Equatable, Sendable {
     case settingsLockedWhileRecording
     case manualExposureNotSupported
     case exposureChangeFailed(String)
+    case manualWhiteBalanceNotSupported
+    case whiteBalanceChangeFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -55,6 +57,10 @@ nonisolated enum CameraError: LocalizedError, Equatable, Sendable {
             "This camera doesn't support manual ISO and shutter. Auto Exposure stays on."
         case .exposureChangeFailed(let reason):
             "Exposure could not be changed: \(reason)"
+        case .manualWhiteBalanceNotSupported:
+            "This camera doesn't support manual white balance. Auto White Balance stays on."
+        case .whiteBalanceChangeFailed(let reason):
+            "White balance could not be changed: \(reason)"
         }
     }
 
@@ -151,6 +157,31 @@ final class CameraManager {
     @ObservationIgnored private var exposureNeedsResend = false
     @ObservationIgnored private var exposureMonitorTask: Task<Void, Never>?
 
+    // MARK: White balance state
+
+    /// Auto White Balance, or manual Kelvin + tint.
+    private(set) var whiteBalanceMode: WhiteBalanceMode = .auto
+    /// Manual values. nil while switching from Auto (the current gains are kept, so color doesn't shift).
+    private(set) var manualTemperature: Float?
+    private(set) var manualTint: Float?
+    /// Live temperature / tint read back from the camera.
+    private(set) var whiteBalanceReadout: WhiteBalanceReadout?
+    /// Kelvin range this camera can reach (measured at startup).
+    private(set) var whiteBalanceRange = WhiteBalanceRange.fallback
+
+    /// White balance changes are only allowed while the camera is running and not recording.
+    var canChangeWhiteBalance: Bool { canChangeExposure }
+
+    private var currentWhiteBalanceRequest: WhiteBalanceRequest {
+        switch whiteBalanceMode {
+        case .auto: .auto
+        case .manual: .manual(temperature: manualTemperature, tint: manualTint)
+        }
+    }
+
+    @ObservationIgnored private var isSendingWhiteBalance = false
+    @ObservationIgnored private var whiteBalanceNeedsResend = false
+
     var isRecording: Bool { recordingState == .recording }
 
     /// Elapsed time formatted as 00:00:00.
@@ -197,8 +228,10 @@ final class CameraManager {
         let resolution = selectedResolution
         let frameRate = selectedFrameRate
         let exposure = currentExposureRequest
+        let whiteBalance = currentWhiteBalanceRequest
         let result = await performOnSessionQueue {
-            self.configureAndStartSession(resolution: resolution, frameRate: frameRate, exposure: exposure)
+            self.configureAndStartSession(resolution: resolution, frameRate: frameRate,
+                                          exposure: exposure, whiteBalance: whiteBalance)
         }
 
         switch result {
@@ -213,6 +246,8 @@ final class CameraManager {
             }
             activeSettings = setup.active
             handleExposureOutcome(setup.exposure, overwriteManualValues: true)
+            whiteBalanceRange = setup.whiteBalanceRange
+            handleWhiteBalanceOutcome(setup.whiteBalance, overwriteManualValues: true)
             isSessionRunning = true
             startExposureMonitoring()
             if let formatError = setup.formatError {
@@ -258,14 +293,20 @@ final class CameraManager {
         isApplyingFormat = true
         // Exposure is re-applied with the new frame rate, so the shutter angle stays the same.
         let exposure = currentExposureRequest
+        let whiteBalance = currentWhiteBalanceRequest
         Task {
             let result = await performOnSessionQueue {
-                self.applyFormatOnQueue(resolution: resolution, frameRate: frameRate, exposure: exposure)
+                self.applyFormatOnQueue(resolution: resolution, frameRate: frameRate,
+                                        exposure: exposure, whiteBalance: whiteBalance)
             }
             isApplyingFormat = false
             handleExposureOutcome(result.exposure, overwriteManualValues: true)
             if let readout = result.exposureReadout {
                 exposureReadout = readout
+            }
+            handleWhiteBalanceOutcome(result.whiteBalance, overwriteManualValues: true)
+            if let readout = result.whiteBalanceReadout {
+                whiteBalanceReadout = readout
             }
             if let active = result.active {
                 activeSettings = active
@@ -372,15 +413,20 @@ final class CameraManager {
         }
     }
 
-    /// Reads live ISO / shutter from the camera a few times per second (Auto changes them constantly).
+    /// Reads live ISO / shutter / white balance from the camera a few times per second
+    /// (Auto modes change them constantly).
     private func startExposureMonitoring() {
         exposureMonitorTask?.cancel()
         exposureMonitorTask = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
-                let readout = await self.performOnSessionQueue { self.readExposureOnQueue() }
-                if let readout, readout != self.exposureReadout {
-                    self.exposureReadout = readout
+                if let live = await self.performOnSessionQueue({ self.readLiveValuesOnQueue() }) {
+                    if live.exposure != self.exposureReadout {
+                        self.exposureReadout = live.exposure
+                    }
+                    if live.whiteBalance != self.whiteBalanceReadout {
+                        self.whiteBalanceReadout = live.whiteBalance
+                    }
                 }
                 try? await Task.sleep(for: .milliseconds(300))
             }
@@ -390,6 +436,93 @@ final class CameraManager {
     private func stopExposureMonitoring() {
         exposureMonitorTask?.cancel()
         exposureMonitorTask = nil
+    }
+
+    // MARK: - White balance (Kelvin & tint)
+
+    /// Turns Auto White Balance on or off. Turning it off locks the current color exactly.
+    func setAutoWhiteBalance(_ isAuto: Bool) {
+        guard checkCanChangeWhiteBalance() else { return }
+        if isAuto {
+            whiteBalanceMode = .auto
+        } else if whiteBalanceMode == .auto {
+            whiteBalanceMode = .manual
+            manualTemperature = nil   // keep the gains Auto is using right now
+            manualTint = nil
+        } else {
+            return
+        }
+        sendWhiteBalance()
+    }
+
+    func setTemperature(_ temperature: Float) {
+        guard checkCanChangeWhiteBalance() else { return }
+        if whiteBalanceMode == .auto {
+            whiteBalanceMode = .manual
+            manualTint = nil          // keep the tint Auto was using
+        }
+        manualTemperature = min(max(temperature, whiteBalanceRange.minTemperature), whiteBalanceRange.maxTemperature)
+        sendWhiteBalance()
+    }
+
+    func setTint(_ tint: Float) {
+        guard checkCanChangeWhiteBalance() else { return }
+        if whiteBalanceMode == .auto {
+            whiteBalanceMode = .manual
+            manualTemperature = nil   // keep the temperature Auto was using
+        }
+        manualTint = min(max(tint, WhiteBalanceRange.tintRange.lowerBound), WhiteBalanceRange.tintRange.upperBound)
+        sendWhiteBalance()
+    }
+
+    private func checkCanChangeWhiteBalance() -> Bool {
+        if recordingState != .idle {
+            alertMessage = CameraError.settingsLockedWhileRecording.localizedDescription
+            return false
+        }
+        return canChangeWhiteBalance
+    }
+
+    /// Sends the current white balance to the camera. Only one change is in flight; the latest wins.
+    private func sendWhiteBalance() {
+        guard !isSendingWhiteBalance else {
+            whiteBalanceNeedsResend = true
+            return
+        }
+        isSendingWhiteBalance = true
+        let request = currentWhiteBalanceRequest
+
+        Task {
+            let result = await performOnSessionQueue { self.applyWhiteBalanceOnQueue(request) }
+            isSendingWhiteBalance = false
+            handleWhiteBalanceOutcome(result.outcome, overwriteManualValues: false)
+            if let readout = result.readout {
+                whiteBalanceReadout = readout
+            }
+            if let error = result.error {
+                alertMessage = error.localizedDescription
+            }
+            if whiteBalanceNeedsResend {
+                whiteBalanceNeedsResend = false
+                sendWhiteBalance()
+            }
+        }
+    }
+
+    private func handleWhiteBalanceOutcome(_ outcome: WhiteBalanceOutcome?, overwriteManualValues: Bool) {
+        switch outcome {
+        case .manual(let temperature, let tint, _)?:
+            guard whiteBalanceMode == .manual else { return }
+            if overwriteManualValues || manualTemperature == nil { manualTemperature = temperature }
+            if overwriteManualValues || manualTint == nil { manualTint = tint }
+        case .manualNotSupported?:
+            whiteBalanceMode = .auto
+            manualTemperature = nil
+            manualTint = nil
+            alertMessage = CameraError.manualWhiteBalanceNotSupported.localizedDescription
+        case .auto?, nil:
+            break
+        }
     }
 
     // MARK: - Recording
@@ -568,7 +701,8 @@ final class CameraManager {
 
     nonisolated private func configureAndStartSession(resolution: VideoResolution,
                                                       frameRate: FrameRate,
-                                                      exposure: ExposureRequest) -> Result<SessionSetup, CameraError> {
+                                                      exposure: ExposureRequest,
+                                                      whiteBalance: WhiteBalanceRequest) -> Result<SessionSetup, CameraError> {
         if !isConfigured {
             if let error = configureSession() {
                 return .failure(error)
@@ -579,6 +713,7 @@ final class CameraManager {
         }
 
         let capabilities = CaptureCapabilities.discover(for: device)
+        let whiteBalanceRange = WhiteBalanceRange.discover(for: device)
 
         // Use the requested format if this camera supports it, otherwise the closest supported one.
         var chosenResolution: VideoResolution?
@@ -594,12 +729,15 @@ final class CameraManager {
 
         var formatError: CameraError?
         var exposureOutcome: ExposureOutcome?
+        var whiteBalanceOutcome: WhiteBalanceOutcome?
         if let chosenResolution, let chosenFrameRate {
             let formatResult = applyFormatOnQueue(resolution: chosenResolution,
                                                   frameRate: chosenFrameRate,
-                                                  exposure: exposure)
+                                                  exposure: exposure,
+                                                  whiteBalance: whiteBalance)
             formatError = formatResult.error
             exposureOutcome = formatResult.exposure
+            whiteBalanceOutcome = formatResult.whiteBalance
         } else {
             formatError = .formatNotSupported("HD or 4K at 24–120 FPS")
         }
@@ -622,6 +760,8 @@ final class CameraManager {
             frameRate: chosenFrameRate,
             active: active,
             exposure: exposureOutcome,
+            whiteBalanceRange: whiteBalanceRange,
+            whiteBalance: whiteBalanceOutcome,
             formatError: formatError
         ))
     }
@@ -630,7 +770,8 @@ final class CameraManager {
     /// duration, then reads the hardware back to confirm the change really happened.
     nonisolated private func applyFormatOnQueue(resolution: VideoResolution,
                                                 frameRate: FrameRate,
-                                                exposure: ExposureRequest) -> FormatChangeResult {
+                                                exposure: ExposureRequest,
+                                                whiteBalance: WhiteBalanceRequest) -> FormatChangeResult {
         guard let device = videoDeviceInput?.device else {
             return FormatChangeResult(active: nil, error: .cameraUnavailable)
         }
@@ -644,6 +785,7 @@ final class CameraManager {
                                       error: .formatNotSupported("\(resolution.label) at \(frameRate.label)"))
         }
         var exposureOutcome: ExposureOutcome?
+        var whiteBalanceOutcome: WhiteBalanceOutcome?
 
         session.beginConfiguration()
         do {
@@ -656,6 +798,8 @@ final class CameraManager {
             device.activeVideoMaxFrameDuration = frameRate.frameDuration
             // Re-apply exposure for the new frame rate and the new format's ISO / shutter limits.
             exposureOutcome = ExposureControl.apply(exposure, to: device)
+            // Re-apply white balance so a locked Kelvin / tint survives the format change.
+            whiteBalanceOutcome = WhiteBalanceControl.apply(whiteBalance, to: device)
             device.unlockForConfiguration()
         } catch {
             session.commitConfiguration()
@@ -666,18 +810,20 @@ final class CameraManager {
 
         // Verify the hardware and the recording output.
         let active = ActiveCaptureSettings.read(from: device)
-        let readout = ExposureReadout.read(from: device)
-        guard active.matches(resolution, frameRate) else {
-            return FormatChangeResult(active: active, exposure: exposureOutcome, exposureReadout: readout,
-                                      error: .formatChangeFailed(
-                "the camera is running at \(active.resolutionLabel) · \(active.frameRateLabel)."))
+        var result = FormatChangeResult(active: active,
+                                        exposure: exposureOutcome,
+                                        exposureReadout: ExposureReadout.read(from: device),
+                                        whiteBalance: whiteBalanceOutcome,
+                                        whiteBalanceReadout: Self.whiteBalanceReadout(after: whiteBalanceOutcome,
+                                                                                      device: device),
+                                        error: nil)
+        if !active.matches(resolution, frameRate) {
+            result.error = .formatChangeFailed(
+                "the camera is running at \(active.resolutionLabel) · \(active.frameRateLabel).")
+        } else if movieOutput.connection(with: .video)?.isEnabled != true {
+            result.error = .formatChangeFailed("the video recorder is not connected for this format.")
         }
-        guard let connection = movieOutput.connection(with: .video), connection.isEnabled else {
-            return FormatChangeResult(active: active, exposure: exposureOutcome, exposureReadout: readout,
-                                      error: .formatChangeFailed(
-                "the video recorder is not connected for this format."))
-        }
-        return FormatChangeResult(active: active, exposure: exposureOutcome, exposureReadout: readout, error: nil)
+        return result
     }
 
     /// Applies an exposure change (ISO / shutter angle / Auto) to the hardware.
@@ -701,9 +847,42 @@ final class CameraManager {
         return ExposureChangeResult(outcome: outcome, readout: ExposureReadout.read(from: device), error: nil)
     }
 
-    nonisolated private func readExposureOnQueue() -> ExposureReadout? {
+    /// Applies a white balance change (Kelvin / tint / Auto) to the hardware.
+    nonisolated private func applyWhiteBalanceOnQueue(_ request: WhiteBalanceRequest) -> WhiteBalanceChangeResult {
+        guard let device = videoDeviceInput?.device else {
+            return WhiteBalanceChangeResult(outcome: nil, readout: nil, error: .cameraUnavailable)
+        }
+        // Never change settings during recording.
+        guard !movieOutput.isRecording else {
+            return WhiteBalanceChangeResult(outcome: nil, readout: WhiteBalanceReadout.read(from: device),
+                                            error: .settingsLockedWhileRecording)
+        }
+        do {
+            try device.lockForConfiguration()
+        } catch {
+            return WhiteBalanceChangeResult(outcome: nil, readout: WhiteBalanceReadout.read(from: device),
+                                            error: .whiteBalanceChangeFailed(error.localizedDescription))
+        }
+        let outcome = WhiteBalanceControl.apply(request, to: device)
+        device.unlockForConfiguration()
+        return WhiteBalanceChangeResult(outcome: outcome,
+                                        readout: Self.whiteBalanceReadout(after: outcome, device: device),
+                                        error: nil)
+    }
+
+    /// The applied values for a manual change, otherwise a fresh read from the device.
+    nonisolated private static func whiteBalanceReadout(after outcome: WhiteBalanceOutcome?,
+                                                        device: AVCaptureDevice) -> WhiteBalanceReadout {
+        if case .manual(_, _, let applied)? = outcome {
+            return applied
+        }
+        return WhiteBalanceReadout.read(from: device)
+    }
+
+    nonisolated private func readLiveValuesOnQueue() -> LiveCameraValues? {
         guard let device = videoDeviceInput?.device else { return nil }
-        return ExposureReadout.read(from: device)
+        return LiveCameraValues(exposure: ExposureReadout.read(from: device),
+                                whiteBalance: WhiteBalanceReadout.read(from: device))
     }
 
     nonisolated private func configureSession() -> CameraError? {
@@ -814,6 +993,8 @@ nonisolated private struct SessionSetup: Sendable {
     let frameRate: FrameRate?
     let active: ActiveCaptureSettings
     let exposure: ExposureOutcome?
+    let whiteBalanceRange: WhiteBalanceRange
+    let whiteBalance: WhiteBalanceOutcome?
     let formatError: CameraError?
 }
 
@@ -822,7 +1003,9 @@ nonisolated private struct FormatChangeResult: Sendable {
     let active: ActiveCaptureSettings?
     var exposure: ExposureOutcome? = nil
     var exposureReadout: ExposureReadout? = nil
-    let error: CameraError?
+    var whiteBalance: WhiteBalanceOutcome? = nil
+    var whiteBalanceReadout: WhiteBalanceReadout? = nil
+    var error: CameraError?
 }
 
 /// Result of an exposure change.
@@ -830,6 +1013,19 @@ nonisolated private struct ExposureChangeResult: Sendable {
     let outcome: ExposureOutcome?
     let readout: ExposureReadout?
     let error: CameraError?
+}
+
+/// Result of a white balance change.
+nonisolated private struct WhiteBalanceChangeResult: Sendable {
+    let outcome: WhiteBalanceOutcome?
+    let readout: WhiteBalanceReadout?
+    let error: CameraError?
+}
+
+/// Live values polled from the camera.
+nonisolated private struct LiveCameraValues: Sendable {
+    let exposure: ExposureReadout
+    let whiteBalance: WhiteBalanceReadout
 }
 
 // MARK: - Recording delegate

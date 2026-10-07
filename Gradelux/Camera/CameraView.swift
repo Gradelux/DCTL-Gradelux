@@ -7,6 +7,7 @@ private enum SettingsPanel {
     case frameRate
     case shutter
     case iso
+    case whiteBalance
 }
 
 /// The full-screen camera screen: live preview, settings bar, timer, record button, and status messages.
@@ -115,6 +116,9 @@ struct CameraView: View {
             SettingsBarItem(panel: .iso,
                             text: camera.exposureReadout?.isoLabel ?? "ISO —",
                             isAuto: isAuto),
+            SettingsBarItem(panel: .whiteBalance,
+                            text: "WB " + (camera.whiteBalanceReadout?.temperatureLabel ?? "—"),
+                            isAuto: camera.whiteBalanceMode == .auto),
         ]
     }
 
@@ -162,6 +166,18 @@ struct CameraView: View {
                 onAutoChange: { camera.setAutoExposure($0) },
                 onISOChange: { camera.setISO($0) }
             )
+        case .whiteBalance:
+            WhiteBalancePanel(
+                readout: camera.whiteBalanceReadout,
+                range: camera.whiteBalanceRange,
+                isAuto: camera.whiteBalanceMode == .auto,
+                manualTemperature: camera.manualTemperature,
+                manualTint: camera.manualTint,
+                isEnabled: camera.canChangeWhiteBalance,
+                onAutoChange: { camera.setAutoWhiteBalance($0) },
+                onTemperatureChange: { camera.setTemperature($0) },
+                onTintChange: { camera.setTint($0) }
+            )
         }
     }
 }
@@ -177,7 +193,8 @@ private struct SettingsBarItem: Identifiable {
     var id: SettingsPanel { panel }
 }
 
-/// Top status bar, e.g. `4K | 24 FPS | 180° | ISO 400`. Each value is tappable.
+/// Top status bar, e.g. `4K | 24 FPS | 180° | ISO 400 | WB 5600K`. Each value is tappable.
+/// Centered when it fits; scrolls horizontally on narrow screens.
 private struct SettingsBar: View {
     let items: [SettingsBarItem]
     let openPanel: SettingsPanel?
@@ -186,6 +203,17 @@ private struct SettingsBar: View {
     let onTap: (SettingsPanel) -> Void
 
     var body: some View {
+        ViewThatFits(in: .horizontal) {
+            bar
+                .padding(.horizontal, 12)
+            ScrollView(.horizontal, showsIndicators: false) {
+                bar
+                    .padding(.horizontal, 12)
+            }
+        }
+    }
+
+    private var bar: some View {
         HStack(spacing: 0) {
             ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                 if index > 0 {
@@ -329,8 +357,9 @@ private struct OptionPanel<Option: Identifiable & Equatable>: View {
     }
 }
 
-/// "AUTO EXPOSURE" switch shown in the shutter and ISO panels.
-private struct AutoExposureToggle: View {
+/// "AUTO … · ON / OFF" switch shown at the top of the exposure and white balance panels.
+private struct AutoToggle: View {
+    let title: String
     let isAuto: Bool
     let isEnabled: Bool
     let onChange: (Bool) -> Void
@@ -343,7 +372,7 @@ private struct AutoExposureToggle: View {
                 Circle()
                     .fill(isAuto ? Color.red : Color.white.opacity(0.25))
                     .frame(width: 8, height: 8)
-                Text(isAuto ? "AUTO EXPOSURE · ON" : "AUTO EXPOSURE · OFF")
+                Text("\(title) · \(isAuto ? "ON" : "OFF")")
                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
                     .foregroundStyle(.white)
             }
@@ -370,7 +399,7 @@ private struct ShutterPanel: View {
 
     var body: some View {
         PanelContainer(title: "SHUTTER ANGLE · \(Int(frameRate.rounded())) FPS") {
-            AutoExposureToggle(isAuto: isAuto, isEnabled: isEnabled, onChange: onAutoChange)
+            AutoToggle(title: "AUTO EXPOSURE", isAuto: isAuto, isEnabled: isEnabled, onChange: onAutoChange)
 
             if readout?.supportsManual == false {
                 Text("This camera doesn't support manual shutter.")
@@ -426,7 +455,7 @@ private struct ISOPanel: View {
 
     var body: some View {
         PanelContainer(title: "ISO") {
-            AutoExposureToggle(isAuto: isAuto, isEnabled: isEnabled, onChange: onAutoChange)
+            AutoToggle(title: "AUTO EXPOSURE", isAuto: isAuto, isEnabled: isEnabled, onChange: onAutoChange)
 
             if let readout {
                 if readout.supportsManual {
@@ -483,6 +512,102 @@ private struct ISOPanel: View {
         let maxISO = Double(readout.maxISO)
         guard maxISO > minISO, minISO > 0 else { return readout.minISO }
         return Float(minISO * pow(maxISO / minISO, position))
+    }
+}
+
+/// Kelvin and tint sliders. These change the camera's real white balance gains (not a color overlay).
+private struct WhiteBalancePanel: View {
+    let readout: WhiteBalanceReadout?
+    let range: WhiteBalanceRange
+    let isAuto: Bool
+    let manualTemperature: Float?
+    let manualTint: Float?
+    let isEnabled: Bool
+    let onAutoChange: (Bool) -> Void
+    let onTemperatureChange: (Float) -> Void
+    let onTintChange: (Float) -> Void
+
+    var body: some View {
+        PanelContainer(title: "WHITE BALANCE") {
+            AutoToggle(title: "AUTO WB", isAuto: isAuto, isEnabled: isEnabled, onChange: onAutoChange)
+
+            if let readout {
+                if readout.supportsManual {
+                    let temperature = isAuto ? readout.temperature : (manualTemperature ?? readout.temperature)
+                    let tint = isAuto ? readout.tint : (manualTint ?? readout.tint)
+
+                    // Kelvin
+                    HStack {
+                        Text("\(Int(temperature.rounded()))K")
+                            .font(.system(size: 17, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(.white)
+                        Spacer()
+                        Text("\(Int(range.minTemperature))–\(Int(range.maxTemperature))K")
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.6))
+                    }
+                    Slider(
+                        value: Binding(
+                            get: { min(max(temperature, range.minTemperature), range.maxTemperature) },
+                            set: { onTemperatureChange($0) }
+                        ),
+                        in: range.temperatureRange,
+                        step: 50
+                    )
+                    .tint(.red)
+                    .disabled(!isEnabled)
+
+                    // Tint
+                    HStack {
+                        Text("TINT \(Int(tint.rounded()) > 0 ? "+" : "")\(Int(tint.rounded()))")
+                            .font(.system(size: 15, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(.white)
+                        Spacer()
+                        Text(range.positiveTintIsGreen ? "M ← → G" : "G ← → M")
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.6))
+                    }
+                    Slider(
+                        value: Binding(
+                            get: { min(max(tint, WhiteBalanceRange.tintRange.lowerBound),
+                                       WhiteBalanceRange.tintRange.upperBound) },
+                            set: { onTintChange($0) }
+                        ),
+                        in: WhiteBalanceRange.tintRange,
+                        step: 1
+                    )
+                    .tint(.red)
+                    .disabled(!isEnabled)
+
+                    if let note = note(readout: readout, temperature: temperature, tint: tint) {
+                        Text(note.text)
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundStyle(note.isWarning ? Color.red : Color.white.opacity(0.6))
+                    }
+                } else {
+                    Text("This camera doesn't support manual white balance.")
+                        .font(.footnote)
+                        .foregroundStyle(.white.opacity(0.8))
+                }
+            } else {
+                Text("Reading camera…")
+                    .font(.footnote)
+                    .foregroundStyle(.white.opacity(0.8))
+            }
+        }
+    }
+
+    private func note(readout: WhiteBalanceReadout,
+                      temperature: Float,
+                      tint: Float) -> (text: String, isWarning: Bool)? {
+        if isAuto {
+            return ("Moving a slider locks white balance (manual).", false)
+        }
+        // The hardware gains hit their limit, so the camera can't reach the selected values.
+        if abs(readout.temperature - temperature) > 150 || abs(readout.tint - tint) > 5 {
+            return ("Camera limit: using \(readout.temperatureLabel) · tint \(readout.tintLabel)", true)
+        }
+        return nil
     }
 }
 
