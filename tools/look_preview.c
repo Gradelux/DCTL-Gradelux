@@ -1,18 +1,21 @@
 // =============================================================================
-//  Gradelux FilmLab — look preview renderer (Version 3)
+//  Gradelux FilmLab — look preview renderer (Version 4)
 // -----------------------------------------------------------------------------
-//  Renders a synthetic test scene through every Film Look (reference
-//  configuration, Creative Intensity 100%) using the DCTL source itself.
+//  Renders a synthetic test scene through any Film Look / Film Print
+//  combinations (reference configuration) using the DCTL source itself.
 //  Scene (built in linear Rec.709, converted to DWG / DaVinci Intermediate):
 //    rows 1-2  : 24 colour-checker patches (sRGB reference values)
 //    row 3     : six skin tones, pale to deep, lit and in shade
 //    row 4     : hue sweep (85% saturation), -3 .. +2 stops top to bottom
 //    row 5     : grey ramp, -7 .. +5 stops around 18% grey
-//  Output: raw float32 DaVinci Intermediate RGB, 320x200 per look, 24 looks
-//  (Off first). Turn it into a contact sheet with tools/look_preview.py.
+//  Output: raw float32 DaVinci Intermediate RGB, 320x200 per tile. Tiles
+//  are given as look:print pairs (default: all 24 looks with no print).
+//  Turn it into a contact sheet with tools/look_preview.py.
 //
-//    gcc -O2 -o look_preview tools/look_preview.c -lm && ./look_preview looks.raw
-//    python3 tools/look_preview.py looks.raw preview.png
+//    gcc -O2 -o look_preview tools/look_preview.c -lm
+//    ./look_preview looks.raw                  # all looks
+//    ./look_preview combos.raw 1:0 1:1 1:2     # Pure, Pure+2383, Pure+2393
+//    python3 tools/look_preview.py looks.raw preview.png "Off|Pure|..." [columns]
 // =============================================================================
 #include <math.h>
 #include <stdio.h>
@@ -42,12 +45,16 @@ static const char *LOOK_NAMES[] = { "Off", "Pure", "Ember", "Slate", "Solace", "
     "Bloom", "Haze", "Vivid", "Muse", "Tundra", "Sienna", "Velvet", "Cinder", "Lumen", "Fable", "Moss",
     "Prism", "Eclipse", "Mono", "Obsidian", "Silver" };
 
-// UI globals: reference configuration (defaults; Film Look set per look)
-static int   ui_Look = 0;
-static float ui_CreativeIntensity = 100, ui_ColorDensity = 0, ui_Separation = 50, ui_HlWarmth = 0, ui_ShadowTone = 0;
+enum { GLX_PRINT_NONE, GLX_PRINT_2383, GLX_PRINT_2393, GLX_PRINT_3513, GLX_PRINT_3510, GLX_PRINT_2383_SOFT };
+
+// UI globals: reference configuration (defaults; Film Look / Film Print set per tile)
+static int   ui_Look = 0, ui_Print = 0;
+static float ui_CreativeIntensity = 100, ui_PrintStrength = 100, ui_PrintContrast = 0, ui_PrintDensity = 0,
+             ui_PrintSaturation = 0, ui_PrintRolloff = 0;
+static float ui_ColorDensity = 0, ui_Separation = 50, ui_HlWarmth = 0, ui_ShadowTone = 0;
 static float ui_Density = 0, ui_SubSat = 0, ui_Contrast = 0, ui_Shadow = 0, ui_Rolloff = 0, ui_Intensity = 100;
 
-#include "../Gradelux_FilmLab_v3.dctl"
+#include "../Gradelux_FilmLab_v4.dctl"
 
 #define W 320
 #define H 200
@@ -76,8 +83,11 @@ int main(int argc, char **argv){
   (void)LOOK_NAMES;
   FILE*f=fopen(argc > 1 ? argv[1] : "looks.raw","wb");
   static float img[H][W][3];
-  for(int id=0;id<GLX_LOOK_COUNT;id++){
-    ui_Look=id;
+  int tiles = (argc > 2) ? argc - 2 : GLX_LOOK_COUNT;
+  for(int t=0;t<tiles;t++){
+    int look = t, pr = 0;
+    if (argc > 2) sscanf(argv[t + 2], "%d:%d", &look, &pr);
+    ui_Look=look; ui_Print=pr;
     for(int y=0;y<H;y++)for(int x=0;x<W;x++){ float o[3]; scene(x,y,o);
       float3 c=transform(0,0,0,0,glx_lin_to_di(o[0]),glx_lin_to_di(o[1]),glx_lin_to_di(o[2]));
       img[y][x][0]=c.x;img[y][x][1]=c.y;img[y][x][2]=c.z; }

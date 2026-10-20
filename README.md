@@ -1,21 +1,243 @@
 # Gradelux FilmLab
 
-Cinematic look engine and film grading tools for DaVinci Resolve Studio, written as a DCTL.
+Film look and print emulation engine for DaVinci Resolve Studio, written as a DCTL.
 
 | File | Contents |
 |---|---|
-| `Gradelux_FilmLab_v3.dctl` | **Version 3 (current):** 23 Gradelux looks (20 colour, 3 black-and-white), Creative Intensity, the film adjustment controls and all Version 1 grading controls |
+| `Gradelux_FilmLab_v4.dctl` | **Version 4 (current):** 23 refined Gradelux looks, 5 film print emulations with print controls, the film adjustment controls and all Version 1 grading controls |
+| `Gradelux_FilmLab_v3.dctl` | Version 3: 23 looks, no print stage |
 | `Gradelux_FilmLab_v2.dctl` | Version 2: 10 film-stock profiles |
 | `Gradelux_FilmLab.dctl` | Version 1: the six core controls only |
-| `tools/gradelux_lut.c` | Reference `.cube` generator and LUT accuracy validator (uses the v3 DCTL source) |
-| `tools/look_preview.c`, `tools/look_preview.py` | Renders a test scene through every look into a contact sheet |
-| `docs/LUT_PLAN.md` | Plan for the 46 standalone LUTs (23 DWG + 23 Rec.709) |
-| `docs/FilmLab_v3_look_preview.png` | Contact sheet of all looks on a synthetic test scene |
+| `tools/gradelux_lut.c` | Reference `.cube` generator and LUT accuracy validator (look only, print only, look + print) |
+| `tools/look_preview.c`, `tools/look_preview.py` | Renders a test scene through any look / print combination into a contact sheet |
+| `docs/LUT_PLAN.md` | Plan for the standalone LUTs (DWG and Rec.709) |
+| `docs/FilmLab_v4_looks.png`, `docs/FilmLab_v4_prints.png` | Contact sheets of the v4 looks and of prints and look + print combinations |
+| `docs/FilmLab_v3_look_preview.png` | The v3 looks, for comparison |
 
-Grain, halation, bloom and film damage are intentionally not included. They will be built
-separately from the LUT-compatible colour engine.
+Grain, halation, bloom, diffusion and film damage are intentionally not included. They will be
+built separately from the LUT-compatible colour engine.
 
-## Version 3: Gradelux looks
+## Version 4: film looks and print emulation
+
+### Colour space
+
+- **Input and output:** DaVinci Wide Gamut / DaVinci Intermediate only.
+- There is no input selector and no Rec.709 conversion.
+- Internally the image is decoded to linear light and processed in Rec.2020 primaries
+  (an exact rotation, undone before re-encoding).
+- Negative and extended-range values pass through with no 0–1 clamp.
+
+**Important when judging the looks:** FilmLab outputs scene-referred DWG/Intermediate. Always
+view it through an output transform: a CST to Rec.709 / Gamma 2.4 with DaVinci tone mapping,
+a DRT, or RCM's output space. Viewed directly, any DWG/Intermediate image, graded or not,
+looks like flat log footage.
+
+### Controls (Resolve shows them in this order)
+
+| Control | Range | Default | What it does |
+|---|---|---|---|
+| Film Look | dropdown (24) | Off | The 20 colour looks and 3 monochrome looks (the "negative" stage). Off bypasses it. |
+| Creative Intensity | 0–200% | 100% | Scales the look. 0% bypasses it exactly, 100% is the reference look, 200% is exaggerated but bounded. |
+| Film Print | dropdown (6) | None | None, Print 2383, Print 2393, Print 3513, Print 3510, Print 2383 Soft. Applied on top of the look. None bypasses it. |
+| Print Strength | 0–100% | 100% | Scales the print. 0% bypasses it exactly. |
+| Print Contrast | -100 to 100 | 0 | Multiplies the print's mid contrast by 0.78×–1.27× around 18% grey. The shoulder and toe keep their smooth shape. |
+| Print Density | -100 to 100 | 0 | Scales the print's colour density (saturation-driven and per-hue density) from 0× to 2×, and its dye coupling from 0.5× to 1.5×. This is density, not saturation. |
+| Print Saturation | -100 to 100 | 0 | Scales the print's overall chroma (0.71×–1.41×) while keeping its per-hue character, density and dye behaviour. |
+| Print Highlight Rolloff | -100 to 100 | 0 | Moves the print's shoulder. + rolls highlights off earlier and softer, − later and longer. |
+| Film Color Density | -100 to 100 | 0 | Adds to or removes the look's own colour density response. |
+| Film Color Separation | 0–100 | 50 | Hue clustering (above 50) or blending (below 50). Never folds hues. |
+| Film Highlight Warmth | -100 to 100 | 0 | Highlight colour temperature, brightness-neutral. |
+| Film Shadow Tone | -100 to 100 | 0 | Shadow colour (+ warm, − teal), brightness-neutral. On monochrome this acts as split toning. |
+| Film Density … Global Intensity | | | The six Version 1 controls, unchanged (bit-exact with v1). |
+
+The print controls do nothing while Film Print is None.
+
+### Processing order
+
+```
+DaVinci Intermediate -> linear
+  -> FILM LOOK  (scaled by Creative Intensity)
+  -> FILM PRINT (scaled by Print Strength, shaped by the four print controls)
+  -> film adjustments (Color Density, Separation, Highlight Warmth, Shadow Tone)
+  -> Version 1 controls (Film Density, Subtractive Saturation, Film Contrast, Shadow Depth, Highlight Roll-Off)
+  -> DaVinci Intermediate -> Global Intensity mix
+```
+
+- The print builds on whatever the look produced, so any of the 24 looks (including Off)
+  combines with any of the 6 print options.
+- Look and print are separate functions (`glx_look_apply`, `glx_print_apply`). Each is a
+  deterministic RGB → RGB transform.
+- Global Intensity mixes after re-encoding, so the fade is perceptually even in DaVinci
+  Intermediate.
+
+### What changed in the colour science (v3 → v4)
+
+v3 already worked on linear light, but its looks behaved like well-made filters: the tone
+curve flattened on both sides of grey, soft looks got softness from lifted blacks, and
+colour came mostly from saturation scaling. v4 changes the underlying models:
+
+1. **New sensitometric characteristic curve.**
+   - **Shadows:** below grey, contrast gives real black density (shadows sit up to
+     (γ−1)·W stops deeper), then the slope returns to 1. Detail survives instead of being
+     crushed or lifted.
+   - **Highlights:** above grey, a sigmoid shoulder `tanh(γe/U)·U` rolls highlights smoothly
+     toward U stops over grey, like a film shoulder.
+   - **Join and shape:** the two halves meet with matching slope and curvature at grey. The
+     curve never reverses and black stays black.
+   - **Soft looks** now get their softness from an earlier shoulder rather than lifted blacks.
+     Every look has mid contrast of at least 1.09; v3's softest were 0.81–0.95.
+2. **Dye coupling (new).** Colour is mixed in a log-density domain using differences between
+   channels, so greys are mathematically unchanged.
+   - **Negative couplings** model masking and inter-image effects: purer, denser colour.
+   - **Positive couplings** model unwanted dye absorption: softer, vintage colour (Fable,
+     Haze, Bloom, Print 3510).
+   - **Anchor:** prevents the strongest channel from brightening, so added colour comes from
+     density (darker weaker channels), as in subtractive film. It is applied as a gain:
+     black stays black and in-range colours never go negative.
+3. **Channel-dependent density curves.**
+   - **Per-channel response:** each channel can have its own contrast and shoulder, and part of
+     the curve ("kappa") is applied to each channel independently. This produces film's
+     nonlinear saturation: richer colour through the mids, softer colour in the shoulder.
+   - **Crossover order:** zone colour (shadow / midtone / highlight colour, crossover) is now
+     applied before the curve, so the shoulder compresses colour along with tone.
+4. **Neutral-locked prints.**
+   - **Colour only:** a print's per-channel curves and dye coupling act on colour only. Greys,
+     whites and black-and-white images stay exactly neutral (tested bit-exact), so prints never
+     add a colour cast.
+   - **Warmth without a cast:** "warm highlights" in a print means warm colours keep density
+     in the highlights while blues compress earlier. Whites stay white.
+5. **Natural skin.** Per-channel curves skew hues toward the strongest channel. On skin,
+   their share is reduced by 75%, and hue rotation, tints and per-hue colour are also
+   reduced. All protections use a wide, soft hue window, so gradients stay smooth and LUTs
+   stay accurate.
+6. **Cleaner whites.** Warm and cold looks (Ember, Dune, Sienna, Fable, Tundra) were eased so
+   whites read as white, with a red–blue difference of 0.17 stop at most.
+
+### The 23 looks (v4)
+
+"Slope" is mid contrast (1.00 = unchanged). "Black" is how much deeper the image sits 4 stops
+under grey (negative = denser blacks). Measured values, Creative Intensity 100%, no print.
+
+| # | Look | Slope | Black | Character |
+|---|---|---|---|---|
+| 01 | Pure | 1.23 | −0.75 | Polished clean film: firm, well-separated mids, dense detailed blacks, long clean shoulder, rich natural colour from dye density, neutral whites, skin hue within 1°. |
+| 02 | Ember | 1.23 | −0.85 | Cinematic warmth: amber light, warm mids, deep dense shadows, rich red density, olive-held greens. |
+| 03 | Slate | 1.27 | −0.88 | Cool cinema: blue-slate shadows, cool mids, muted teal greens, firm contrast. |
+| 04 | Solace | 1.10 | −0.19 | Gentle warmth with substance: creamy early shoulder, warm natural skin, real mid contrast. |
+| 05 | Chrome | 1.31 | −0.95 | Crisp and metallic: strong per-channel contrast, cool neutrals, steel blues and cyans. |
+| 06 | Dune | 1.16 | −0.54 | Sunlit earth: golden light, earthy shadows with depth, olive greens, terracotta reds. |
+| 07 | Noir | 1.37 | −1.29 | Dramatic and restrained: very deep blacks with detail, heavy shadow desaturation, dense muted colour. |
+| 08 | Bloom | 1.09 | −0.10 | Soft pastel with structure: delicate early shoulder, pink-tinged highlights, mint greens, light mauve veil. |
+| 09 | Haze | 1.09 | +0.11 | Atmospheric: cool veil and milky shoulder, muted colour softened by dye impurity, tonal shape kept. |
+| 10 | Vivid | 1.24 | −0.77 | Bold colour carried with density and dye masking: deep reds and blues, clear separation. |
+| 11 | Muse | 1.13 | −0.34 | Editorial: balanced contrast with depth, creamy whites, refined consolidated skin. |
+| 12 | Tundra | 1.15 | −0.34 | Cold: icy highlights and shadows, desaturated teal greens, crisp separation. |
+| 13 | Sienna | 1.23 | −0.80 | Burnt warmth: orange-turned reds, earthy dense colour, deep warm-neutral blacks. |
+| 14 | Velvet | 1.19 | −0.86 | Luxurious depth: very dense jewel tones, plum-tinged deep shadows, smooth shoulder. |
+| 15 | Cinder | 1.17 | −0.15 | Moody smoke: smoky desaturated shadows with a faint veil, subdued colour, warm highlights. |
+| 16 | Lumen | 1.10 | −0.33 | Luminous: radiant mids, lighter colour density so colours glow, clean blacks. |
+| 17 | Fable | 1.13 | +0.11 | Vintage print: faint cyan-green veil, warm yellowed mids, nostalgic colour from dye impurity. |
+| 18 | Moss | 1.17 | −0.63 | Organic forest: deep dense greens, muted olive yellows, earthy separation. |
+| 19 | Prism | 1.19 | −0.62 | Spectrum: strongest hue separation, broad rich colour with dye masking. |
+| 20 | Eclipse | 1.31 | −1.15 | Dark drama: very deep toe, powerful contrast, cool shadows against warm protected skin. |
+| 21 | Mono | 1.23 | −0.75 | Classic 35mm panchromatic: slightly red-sensitive, rich contrast, dense detailed blacks. |
+| 22 | Obsidian | 1.48 | −1.58 | Red-filter drama: dark skies and foliage, bright skin, very deep toe, brilliant whites. |
+| 23 | Silver | 1.09 | −0.06 | Soft vintage silver-gelatin: blue-leaning sensitivity, luminous early shoulder, gentle veil. |
+
+The mono looks output exactly R = G = B. Their channel mixes and filter responses are
+unchanged from v3; their curves now use the v4 characteristic curve.
+
+### The 5 film prints
+
+Creatively designed, print-film-inspired interpretations. They are not measured reproductions
+of real print stocks. Measured with no look (print alone); every print keeps whites and greys
+exactly neutral.
+
+| Print | Slope | Black | Highlights (+4 st) | Character |
+|---|---|---|---|---|
+| Print 2383 | 1.24 | −0.78 | −0.47 | Classic cinema print: pronounced contrast, strong rich blacks, dense highlights with a smooth roll-off. Blue layer shoulders early, so bright colours warm as they roll off. Dye masking gives dense, natural colour. |
+| Print 2393 | 1.36 | −1.12 | −0.54 | Punchier: higher contrast, deeper blacks, strongest per-layer response (midtone separation), richer colour density. |
+| Print 3513 | 1.10 | −0.35 | −0.61 | Gentle: softer contrast, long smooth shoulder, warm-leaning colour, natural skin, detailed blacks without wash. |
+| Print 3510 | 1.08 | −0.36 | −0.78 | Vintage: slightly soft contrast, early gentle shoulder, golden yellows, olive greens, teal-leaning blues, subdued colour from dye impurity, real shadow depth. |
+| Print 2383 Soft | 1.15 | −0.52 | −0.21 | 2383 colour response with a softer curve: lower contrast, later and gentler shoulder, lighter toe, controlled density. |
+
+Prints stack with the look's contrast. For example, Pure (1.23) + Print 2383 (1.24) gives about
+1.5 at grey: a full print-film contrast. For a gentler combination, use a soft look, a gentle
+print (3513, 3510, 2383 Soft), a lower Print Strength, or Print Contrast.
+
+### LUT configurations
+
+The look and print stages are independently callable and RGB-only. Three reference
+configurations can be sampled into LUTs:
+
+| Configuration | Settings |
+|---|---|
+| A. Look only | Film Look = look, Film Print = None |
+| B. Print only | Film Look = Off, Film Print = print |
+| C. Look + Print | Film Look = look, Film Print = print |
+
+In all three, Creative Intensity = 100%, Print Strength = 100%, the print controls are 0 and
+every other control is at its default. See `docs/LUT_PLAN.md` for the generator, domains,
+measured accuracy and validation.
+
+### Install (Resolve Studio)
+
+1. In Resolve, open **Project Settings → Color Management → Lookup Tables → Open LUT Folder**.
+   - macOS: `/Library/Application Support/Blackmagic Design/DaVinci Resolve/LUT/`
+   - Windows: `C:\ProgramData\Blackmagic Design\DaVinci Resolve\Support\LUT\`
+2. Copy `Gradelux_FilmLab_v4.dctl` into a `Gradelux` folder there, then click **Update Lists**.
+3. On a Color page node, add **ResolveFX Color → DCTL** and choose `Gradelux_FilmLab_v4`.
+4. Make sure the node receives DWG/Intermediate:
+   - **RCM:** set the timeline colour space to DaVinci WG/Intermediate.
+   - **Manual:** place it after a CST to DWG/Intermediate and before the output CST / DRT.
+
+The maths has been verified on a host compiler only. Compile and test it in Resolve Studio
+on macOS (Metal) and Windows (CUDA/OpenCL) before release.
+
+### Testing checklist (Version 4)
+
+**Bypass and identity**
+- [ ] Film Look Off + Film Print None, all defaults: toggling the node changes nothing (scopes).
+- [ ] Creative Intensity 0% equals Look Off; Print Strength 0% equals Print None.
+- [ ] Print controls do nothing while Film Print is None.
+- [ ] Global Intensity 0% returns the input with any settings.
+- [ ] Both dropdowns: every entry selects a different result (24 looks, 6 print options).
+
+**Neutrality and monochrome**
+- [ ] Grey Scale generator through each print alone: RGB parade channels identical.
+- [ ] Mono / Obsidian / Silver with every print: parade identical; each print changes only tone.
+- [ ] B&W footage (desaturated in a previous node) through any print: no colour appears.
+
+**Footage and lighting scenarios** (try each with Pure, a warm look, a cool look, a soft look,
+and each print)
+- [ ] **Daylight exteriors:** blue skies stay smooth (no banding); foliage density looks natural.
+- [ ] **Tungsten / practical-lit interiors:** warm sources roll off smoothly and hold colour; whites aren't contaminated.
+- [ ] **Mixed lighting:** no hue jumps where warm and cool light meet.
+- [ ] **Night and low light:** blacks are dense with detail; no noise boost or crushed floor; LEDs and neon don't clip or posterize.
+- [ ] **Overexposed highlights (sky, windows, lamps):** the shoulder is smooth, with no flat clip line and no hue shift as highlights compress.
+- [ ] **Underexposed footage (brought up first):** toe detail holds and noise stays neutral.
+- [ ] **High-key / white backgrounds:** whites stay white with prints; looks with warm or cool identity tint them only gently.
+- [ ] **Skin:** light, medium and deep skin in daylight, tungsten and shade. Natural with every look and print; no magenta, green or grey cast. Check the strongest pairs too (e.g. Velvet + 2393).
+- [ ] **Saturated products and costumes:** colours dense, not neon; no channel flattening.
+- [ ] **Gradients:** sky and backdrop gradients have no banding at Creative Intensity 100% and 200%.
+
+**Controls**
+- [ ] Each print control at −100 and +100 on every print: smooth and stable.
+- [ ] Creative Intensity 0 → 200% and Print Strength 0 → 100% sweep smoothly.
+- [ ] All existing v3 controls behave as before, with and without a look and print.
+
+**Performance**
+- [ ] UHD/4K playback with look + print active vs bypass, on macOS and Windows.
+- [ ] Render a clip and confirm it matches the viewer.
+
+**Preview without Resolve**
+```
+gcc -O2 -o look_preview tools/look_preview.c -lm
+./look_preview looks.raw && python3 tools/look_preview.py looks.raw looks.png
+./look_preview combos.raw 1:1 2:2 && python3 tools/look_preview.py combos.raw combos.png "Pure + 2383|Ember + 2393" 2
+```
+
+## Version 3 reference (looks without print)
 
 ### Colour space
 
@@ -363,6 +585,22 @@ DaVinci Intermediate 0.336. All controls pivot on that level.
 - [ ] Render a test clip and confirm the output matches the viewer.
 
 ## Maths tests
+
+`tests/math_test_v4.c` (Version 4) checks:
+- identity, and exact bypass of the look, the print and the print controls
+- every one of the 144 Look × Print combinations:
+  - monotonic, continuous ramps
+  - prints keep neutral input exactly neutral
+  - mono looks exactly neutral with every print
+  - no NaN/Inf; no negatives from in-range colours
+  - continuity around the hue circle
+- the hue map at 100% and 200% with Separation extremes, and with print controls at their extremes
+- slider extremes on every combination
+- minimum contrast per look; prints never tint white
+- skin hue per look and across all look + print pairs
+- all looks and all prints distinct
+
+Regression dumps confirm v4 matches v1 (Version 1 controls) and v3 (film adjustments) bit-for-bit.
 
 `tests/math_test_v3.c` (Version 3) checks:
 - identity at defaults, at 0% Global Intensity and at 0% Creative Intensity

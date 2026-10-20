@@ -1,22 +1,26 @@
 // =============================================================================
-//  Gradelux FilmLab — reference LUT generator / validator (Version 3)
+//  Gradelux FilmLab — reference LUT generator / validator (Version 4)
 // -----------------------------------------------------------------------------
-//  Compiles Gradelux_FilmLab_v3.dctl itself (through a small C shim) and
-//  samples its transform() with:
-//      Film Look = <look>, Creative Intensity = 100%, every other control at
-//      its default (Global Intensity 100%).
-//  That configuration IS the reference look: the DCTL's look engine with no
-//  user adjustments. Because the generator runs the same source code as the
-//  DCTL, a LUT can never drift from the DCTL.
+//  Compiles Gradelux_FilmLab_v4.dctl itself (through a small C shim) and
+//  samples its transform() in one of three reference configurations:
+//      A. Film Look only      : Look = <look>,  Print = None
+//      B. Film Print only     : Look = Off,     Print = <print>
+//      C. Film Look + Print   : Look = <look>,  Print = <print>
+//  with Creative Intensity 100%, Print Strength 100%, print controls 0 and
+//  every other control at its default (Global Intensity 100%). That IS the
+//  reference transform. Because the generator runs the same source code as
+//  the DCTL, a LUT can never drift from the DCTL.
 //
 //  BUILD
 //      gcc -O2 -o gradelux_lut tools/gradelux_lut.c -lm      (from repo root)
 //
 //  USAGE
 //      gradelux_lut list
-//      gradelux_lut cube     <look 1-23> <dwg|rec709> <33|65>  > file.cube
-//      gradelux_lut validate <look 1-23> <dwg|rec709> <33|65>
-//      gradelux_lut all      <dwg|rec709> <33|65> <output dir>
+//      gradelux_lut cube     <look 0-23> <print 0-5> <dwg|rec709> <33|65>  > file.cube
+//      gradelux_lut validate <look 0-23> <print 0-5> <dwg|rec709> <33|65>
+//      gradelux_lut all      <print 0-5> <dwg|rec709> <33|65> <output dir>
+//    look 0 = Off, print 0 = None (not both). "all" writes the 23 looks with
+//    the given print (0 = look-only LUTs).
 //
 //  PIPELINES
 //    dwg    : DaVinci Intermediate (DWG) in -> look -> DaVinci Intermediate out.
@@ -58,16 +62,21 @@ enum { GLX_LOOK_OFF, GLX_LOOK_PURE, GLX_LOOK_EMBER, GLX_LOOK_SLATE, GLX_LOOK_SOL
        GLX_LOOK_TUNDRA, GLX_LOOK_SIENNA, GLX_LOOK_VELVET, GLX_LOOK_CINDER, GLX_LOOK_LUMEN, GLX_LOOK_FABLE,
        GLX_LOOK_MOSS, GLX_LOOK_PRISM, GLX_LOOK_ECLIPSE, GLX_LOOK_MONO, GLX_LOOK_OBSIDIAN, GLX_LOOK_SILVER,
        GLX_LOOK_COUNT };
+enum { GLX_PRINT_NONE, GLX_PRINT_2383, GLX_PRINT_2393, GLX_PRINT_3513, GLX_PRINT_3510, GLX_PRINT_2383_SOFT,
+       GLX_PRINT_COUNT };
 static const char *LOOK_NAMES[] = { "Off", "Pure", "Ember", "Slate", "Solace", "Chrome", "Dune", "Noir",
     "Bloom", "Haze", "Vivid", "Muse", "Tundra", "Sienna", "Velvet", "Cinder", "Lumen", "Fable", "Moss",
     "Prism", "Eclipse", "Mono", "Obsidian", "Silver" };
+static const char *PRINT_NAMES[] = { "None", "Print2383", "Print2393", "Print3513", "Print3510", "Print2383Soft" };
 
-// UI globals: reference configuration (defaults; Film Look set per call)
-static int   ui_Look = 0;
-static float ui_CreativeIntensity = 100, ui_ColorDensity = 0, ui_Separation = 50, ui_HlWarmth = 0, ui_ShadowTone = 0;
+// UI globals: reference configuration (defaults; Film Look / Film Print set per call)
+static int   ui_Look = 0, ui_Print = 0;
+static float ui_CreativeIntensity = 100, ui_PrintStrength = 100, ui_PrintContrast = 0, ui_PrintDensity = 0,
+             ui_PrintSaturation = 0, ui_PrintRolloff = 0;
+static float ui_ColorDensity = 0, ui_Separation = 50, ui_HlWarmth = 0, ui_ShadowTone = 0;
 static float ui_Density = 0, ui_SubSat = 0, ui_Contrast = 0, ui_Shadow = 0, ui_Rolloff = 0, ui_Intensity = 100;
 
-#include "../Gradelux_FilmLab_v3.dctl"
+#include "../Gradelux_FilmLab_v4.dctl"
 
 // ---- Rec.709 <-> DWG (both D65; derived from primaries in double precision) --
 static void rec709_to_dwg(const double *i, double *o) {
@@ -81,9 +90,19 @@ static void dwg_to_rec709(const double *i, double *o) {
     o[2] = -0.1215391606 * i[0] - 0.3156758531 * i[1] + 1.4372150137 * i[2];
 }
 
-// Reference look on DaVinci Intermediate code values.
+// A configuration packs look and print: cfg = look * 16 + print.
+static int  cfg_look(int cfg)  { return cfg >> 4; }
+static int  cfg_print(int cfg) { return cfg & 15; }
+static void cfg_name(int cfg, char *buf, size_t len) {
+    int l = cfg_look(cfg), p = cfg_print(cfg);
+    if (l && p) snprintf(buf, len, "%s + %s", LOOK_NAMES[l], PRINT_NAMES[p]);
+    else if (l)  snprintf(buf, len, "%s", LOOK_NAMES[l]);
+    else         snprintf(buf, len, "%s", PRINT_NAMES[p]);
+}
+
+// Reference transform on DaVinci Intermediate code values.
 static void look_di(int look, const double *in, double *out) {
-    ui_Look = look;
+    ui_Look = cfg_look(look); ui_Print = cfg_print(look);
     float3 o = transform(0, 0, 0, 0, (float)in[0], (float)in[1], (float)in[2]);
     out[0] = o.x; out[1] = o.y; out[2] = o.z;
 }
@@ -113,8 +132,9 @@ static double *build(int look, int rec709, int n) {
 }
 
 static void write_cube(FILE *f, int look, int rec709, int n, const double *lut) {
-    fprintf(f, "TITLE \"Gradelux %s (%s)\"\n", LOOK_NAMES[look], rec709 ? "Rec.709 Gamma 2.4" : "DWG Intermediate");
-    fprintf(f, "# Gradelux FilmLab v3 reference look: %s, Creative Intensity 100%%\n", LOOK_NAMES[look]);
+    char name[128]; cfg_name(look, name, sizeof name);
+    fprintf(f, "TITLE \"Gradelux %s (%s)\"\n", name, rec709 ? "Rec.709 Gamma 2.4" : "DWG Intermediate");
+    fprintf(f, "# Gradelux FilmLab v4 reference transform: %s (Creative Intensity 100%%, Print Strength 100%%, print controls 0)\n", name);
     if (rec709)
         fprintf(f, "# Input and output: Rec.709 / Gamma 2.4 code values (output clipped to 0..1)\n");
     else
@@ -197,48 +217,57 @@ static void validate(int look, int rec709, int n) {
             set[k].maxe = fmax(set[k].maxe, e); set[k].sume += e; set[k].count++;
         }
     }
-    printf("%-9s %-6s %2d^3 :", LOOK_NAMES[look], rec709 ? "rec709" : "dwg", n);
+    char name[128]; cfg_name(look, name, sizeof name);
+    printf("%-22s %-6s %2d^3 :", name, rec709 ? "rec709" : "dwg", n);
     for (int k = 0; k < 5; k++)
         printf(" %s max %.4f mean %.5f |", set[k].name, set[k].maxe, set[k].sume / set[k].count);
     printf("\n");
     free(lut);
 }
 
-static int parse_look(const char *s) {
+static int parse_range(const char *s, int lo, int hi, const char *what) {
     int id = atoi(s);
-    if (id < 1 || id >= GLX_LOOK_COUNT) { fprintf(stderr, "look must be 1..23\n"); exit(1); }
+    if (id < lo || id > hi) { fprintf(stderr, "%s must be %d..%d\n", what, lo, hi); exit(1); }
     return id;
 }
 
 int main(int argc, char **argv) {
     if (argc >= 2 && !strcmp(argv[1], "list")) {
-        for (int i = 1; i < GLX_LOOK_COUNT; i++) printf("%2d %s\n", i, LOOK_NAMES[i]);
+        for (int i = 1; i < GLX_LOOK_COUNT; i++) printf("look  %2d %s\n", i, LOOK_NAMES[i]);
+        for (int i = 1; i < GLX_PRINT_COUNT; i++) printf("print %2d %s\n", i, PRINT_NAMES[i]);
         return 0;
     }
-    if (argc == 5 && (!strcmp(argv[1], "cube") || !strcmp(argv[1], "validate"))) {
-        int look = parse_look(argv[2]), rec = !strcmp(argv[3], "rec709"), n = atoi(argv[4]);
+    if (argc == 6 && (!strcmp(argv[1], "cube") || !strcmp(argv[1], "validate"))) {
+        int look = parse_range(argv[2], 0, GLX_LOOK_COUNT - 1, "look");
+        int pr   = parse_range(argv[3], 0, GLX_PRINT_COUNT - 1, "print");
+        int rec = !strcmp(argv[4], "rec709"), n = atoi(argv[5]);
+        if (!look && !pr) { fprintf(stderr, "choose a look, a print, or both\n"); return 1; }
         if (n < 2 || n > 129) { fprintf(stderr, "size must be 2..129\n"); return 1; }
-        if (!strcmp(argv[1], "validate")) { validate(look, rec, n); return 0; }
-        double *lut = build(look, rec, n);
-        write_cube(stdout, look, rec, n, lut);
+        int cfg = look * 16 + pr;
+        if (!strcmp(argv[1], "validate")) { validate(cfg, rec, n); return 0; }
+        double *lut = build(cfg, rec, n);
+        write_cube(stdout, cfg, rec, n, lut);
         free(lut);
         return 0;
     }
-    if (argc == 5 && !strcmp(argv[1], "all")) {
-        int rec = !strcmp(argv[2], "rec709"), n = atoi(argv[3]);
+    if (argc == 6 && !strcmp(argv[1], "all")) {
+        int pr = parse_range(argv[2], 0, GLX_PRINT_COUNT - 1, "print");
+        int rec = !strcmp(argv[3], "rec709"), n = atoi(argv[4]);
         for (int look = 1; look < GLX_LOOK_COUNT; look++) {
             char path[1024];
-            snprintf(path, sizeof path, "%s/Gradelux_%02d_%s_%s_%d.cube", argv[4], look, LOOK_NAMES[look],
-                     rec ? "Rec709" : "DWG", n);
+            snprintf(path, sizeof path, "%s/Gradelux_%02d_%s%s%s_%s_%d.cube", argv[5], look, LOOK_NAMES[look],
+                     pr ? "_" : "", pr ? PRINT_NAMES[pr] : "", rec ? "Rec709" : "DWG", n);
             FILE *f = fopen(path, "w");
             if (!f) { perror(path); return 1; }
-            double *lut = build(look, rec, n);
-            write_cube(f, look, rec, n, lut);
+            int cfg = look * 16 + pr;
+            double *lut = build(cfg, rec, n);
+            write_cube(f, cfg, rec, n, lut);
             fclose(f); free(lut);
             fprintf(stderr, "wrote %s\n", path);
         }
         return 0;
     }
-    fprintf(stderr, "usage: gradelux_lut list | cube <look> <dwg|rec709> <size> | validate <look> <dwg|rec709> <size> | all <dwg|rec709> <size> <dir>\n");
+    fprintf(stderr, "usage: gradelux_lut list | cube <look 0-23> <print 0-5> <dwg|rec709> <size>\n"
+                    "       | validate <look> <print> <dwg|rec709> <size> | all <print 0-5> <dwg|rec709> <size> <dir>\n");
     return 1;
 }
