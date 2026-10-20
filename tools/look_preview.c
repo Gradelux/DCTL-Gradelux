@@ -1,5 +1,5 @@
 // =============================================================================
-//  Gradelux FilmLab — look preview renderer (Version 8; -DFILMLAB_V4 for Version 4)
+//  Gradelux FilmLab — look preview renderer (Version 9; -DFILMLAB_V4 for Version 4)
 // -----------------------------------------------------------------------------
 //  Renders a synthetic test scene through any Film Look / Film Print
 //  combinations (reference configuration) using the DCTL source itself.
@@ -17,6 +17,7 @@
 //    ./look_preview combos.raw 1:0 1:1 1:2     # look 1 alone, with print 1, with print 2
 //    python3 tools/look_preview.py looks.raw preview.png "Off|Pure|..." [columns]
 // =============================================================================
+#ifdef FILMLAB_V4   // legacy Version 4 build: its own enumerations and controls
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -43,7 +44,6 @@ static int min(int a, int b) { return a < b ? a : b; }
 static int max(int a, int b) { return a > b ? a : b; }
 #define DEFINE_UI_PARAMS(...)
 #define DEFINE_UI_TOOLTIP(...)
-#ifdef FILMLAB_V4
 enum { GLX_LOOK_OFF, GLX_LOOK_PURE, GLX_LOOK_EMBER, GLX_LOOK_SLATE, GLX_LOOK_SOLACE, GLX_LOOK_CHROME,
        GLX_LOOK_DUNE, GLX_LOOK_NOIR, GLX_LOOK_BLOOM, GLX_LOOK_HAZE, GLX_LOOK_VIVID, GLX_LOOK_MUSE,
        GLX_LOOK_TUNDRA, GLX_LOOK_SIENNA, GLX_LOOK_VELVET, GLX_LOOK_CINDER, GLX_LOOK_LUMEN, GLX_LOOK_FABLE,
@@ -56,24 +56,6 @@ static const char *LOOK_NAMES[] = { "Off", "Pure", "Ember", "Slate", "Solace", "
     "Prism", "Eclipse", "Mono", "Obsidian", "Silver" };
 static const char *PRINT_NAMES[] = { "None", "Print2383", "Print2393", "Print3513", "Print3510", "Print2383Soft" };
 #define FILMLAB_SOURCE "../Gradelux_FilmLab_v4.dctl"
-#else   // Version 7 (13 film stocks)
-enum { GLX_LOOK_OFF, GLX_LOOK_VERONA_250D, GLX_LOOK_VERDANT_250D, GLX_LOOK_MIDNIGHT_800T, GLX_LOOK_AURELIA_400,
-       GLX_LOOK_SOLARA_200, GLX_LOOK_MOSS_250D, GLX_LOOK_CHROMA_100, GLX_LOOK_SILVERGRAIN_100,
-       GLX_LOOK_TUNGSTEN_500T, GLX_LOOK_HALCYON_400, GLX_LOOK_ARGENT_200, GLX_LOOK_NOCTURNE_800, GLX_LOOK_PASTELLE_400,
-       GLX_LOOK_COUNT };
-enum { GLX_PRINT_NONE, GLX_PRINT_CINECHROME_2383, GLX_PRINT_VELACHROME_2393, GLX_PRINT_LUMACHROME_3513,
-       GLX_PRINT_RETROCHROME_3510, GLX_PRINT_SILKCHROME_2383, GLX_PRINT_COUNT };
-enum { GLX_DIAG_NORMAL, GLX_DIAG_COLOR, GLX_DIAG_TONE, GLX_DIAG_FULL };
-static int ui_Diag = 0;
-static const char *LOOK_NAMES[] = { "Off", "Verona250D", "Verdant250D", "Midnight800T", "Aurelia400",
-                                    "Solara200", "Moss250D", "Chroma100", "Silvergrain100", "Tungsten500T", "Halcyon400", "Argent200",
-                                    "Nocturne800", "Pastelle400" };
-static const char *PRINT_NAMES[] = { "None", "Cinechrome2383", "Velachrome2393", "Lumachrome3513",
-                                     "Retrochrome3510", "Silkchrome2383" };
-#ifndef FILMLAB_SOURCE   /* Version 8 by default; -DFILMLAB_SOURCE='"../Gradelux_FilmLab_v7.dctl"' for 7 */
-#define FILMLAB_SOURCE "../Gradelux_FilmLab_v8.dctl"
-#endif
-#endif
 
 // UI globals: reference configuration (defaults; Film Look / Film Print set per tile)
 enum { GLX_SEC_OFF };
@@ -85,6 +67,14 @@ static float ui_CreativeIntensity = 100, ui_PrintStrength = 100, ui_PrintContras
              ui_PrintSaturation = 0, ui_PrintRolloff = 0;
 static float ui_ColorDensity = 0, ui_Separation = 50, ui_HlWarmth = 0, ui_ShadowTone = 0;
 static float ui_Density = 0, ui_SubSat = 0, ui_Contrast = 0, ui_Shadow = 0, ui_Rolloff = 0, ui_Intensity = 100;
+
+static void filmlab_reset(void) {}
+#else               // Version 9: shared shim (every control at its DCTL default)
+#include "filmlab_shim.h"
+#ifndef FILMLAB_SOURCE
+#define FILMLAB_SOURCE "../Gradelux_FilmLab_v9.dctl"
+#endif
+#endif
 
 #include FILMLAB_SOURCE
 
@@ -112,13 +102,33 @@ static void scene(int x,int y,float*o){
   r709_to_dwg(r,g,b,o);
 }
 int main(int argc, char **argv){
+    filmlab_reset();
   (void)LOOK_NAMES; (void)PRINT_NAMES;
   FILE*f=fopen(argc > 1 ? argv[1] : "looks.raw","wb");
   static float img[H][W][3];
   int tiles = (argc > 2) ? argc - 2 : GLX_LOOK_COUNT;
   for(int t=0;t<tiles;t++){
-    int look = t, pr = 0, sec = 0;      // tile spec  look:print[:secondary]
-    if (argc > 2) sscanf(argv[t + 2], "%d:%d:%d", &look, &pr, &sec);
+    int look = t, pr = 0, sec = 0;      // tile spec  look:print[:secondary][@key=value,...]
+    filmlab_reset();
+    if (argc > 2) {
+      sscanf(argv[t + 2], "%d:%d:%d", &look, &pr, &sec);
+#ifndef FILMLAB_V4
+      // Version 9 controls for previews: ev, temp, tint, shh, shs, mdh, mds, hlh, hls, bal, str, ci
+      const char *at = strchr(argv[t + 2], '@');
+      while (at && *at) {
+        char key[16]; float val;
+        if (sscanf(at + 1, "%15[a-z]=%f", key, &val) == 2) {
+          if (!strcmp(key, "ev")) ui_Exposure = val;       else if (!strcmp(key, "temp")) ui_Temperature = val;
+          else if (!strcmp(key, "tint")) ui_Tint = val;    else if (!strcmp(key, "shh")) ui_ShHue = val;
+          else if (!strcmp(key, "shs")) ui_ShSat = val;    else if (!strcmp(key, "mdh")) ui_MdHue = val;
+          else if (!strcmp(key, "mds")) ui_MdSat = val;    else if (!strcmp(key, "hlh")) ui_HlHue = val;
+          else if (!strcmp(key, "hls")) ui_HlSat = val;    else if (!strcmp(key, "bal")) ui_SplitBalance = val;
+          else if (!strcmp(key, "str")) ui_SplitStrength = val; else if (!strcmp(key, "ci")) ui_CreativeIntensity = val;
+        }
+        at = strchr(at + 1, ',');
+      }
+#endif
+    }
     ui_Look=look; ui_Print=pr; ui_SecLook=sec;
     for(int y=0;y<H;y++)for(int x=0;x<W;x++){ float o[3]; scene(x,y,o);
       float3 c=transform(0,0,0,0,glx_lin_to_di(o[0]),glx_lin_to_di(o[1]),glx_lin_to_di(o[2]));

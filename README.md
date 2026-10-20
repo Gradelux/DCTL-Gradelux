@@ -4,7 +4,8 @@ Film stock and print emulation engine for DaVinci Resolve Studio, written as a D
 
 | File | Contents |
 |---|---|
-| `Gradelux_FilmLab_v8.dctl` | **Version 8 (current):** Version 7 plus the 16 Cine16 profiles as an independent Secondary Film Look engine; Secondary Off = Version 7 bit-for-bit |
+| `Gradelux_FilmLab_v9.dctl` | **Version 9 (current):** 18 primary looks with middle-grey anchoring, 16 Cine16 secondary profiles, 5 prints, Exposure / Temperature / Tint, Split Toning |
+| `Gradelux_FilmLab_v8.dctl` | Version 8: Version 7 plus the 16 Cine16 profiles as an independent Secondary Film Look engine |
 | `Gradelux_FilmLab_v7.dctl` | Version 7: 13 film stocks (the 8 approved V6.1 stocks plus 5 new), the 5 prints, all controls, developer Stage View |
 | `Gradelux_FilmLab_v6_1.dctl` | Version 6.1: Version 6 with Moss 250D and Chroma 100 refined |
 | `Gradelux_FilmLab_v6.dctl` | Version 6: production foundation, 8 film stocks, the 5 prints, all controls, developer Stage View |
@@ -20,6 +21,9 @@ Film stock and print emulation engine for DaVinci Resolve Studio, written as a D
 | `tools/extract_cine16.py` | Generates the Cine16 secondary engine from the original file (verbatim code, prefixed names) |
 | `tests/runner.c`, `tests/cine16_regression.py` | Bit-for-bit comparison of v8 against the original Cine16 DCTL and FilmLab v7, including chained engines |
 | `docs/V8_CINE16_INTEGRATION.md` | Cine16 integration: code changes, behaviour notes, regression instructions |
+| `docs/V9_CHANGES.md` | Version 9 changelog, exposure-anchoring analysis, new controls, Cine16 notes, regression tests and Resolve checklist |
+| `tools/filmlab_shim.h` | Shared host shim (DCTL built-ins, dropdown IDs, every control at its default) for tools and tests |
+| `tests/math_test_v9.c`, `tests/v8_v9_report.py` | Version 9 test suite; documented V8 -> V9 differences and dropdown mapping check |
 | `tools/scenario_check.c` | Synthetic scenario checks (portrait, daylight, foliage, interior, night, saturated, high contrast) for every stock × print |
 | `docs/V7_TESTING.md` | V7 regression checklist: what was executed and what needs Resolve |
 | `tools/look_visibility.c` | Measures visible strength of each stock and a distinctness matrix between all stocks |
@@ -28,6 +32,48 @@ Film stock and print emulation engine for DaVinci Resolve Studio, written as a D
 | `docs/FilmLab_v4_*.png`, `docs/FilmLab_v3_look_preview.png` | Earlier versions, for comparison |
 
 Grain, halation, bloom, diffusion and film damage are intentionally not included.
+
+## Version 9: exposure anchoring, controls and new looks
+
+`Gradelux_FilmLab_v9.dctl` builds on Version 8. Full details:
+[`docs/V9_CHANGES.md`](docs/V9_CHANGES.md).
+
+- **Middle-grey anchoring.** Every primary look maps 18% grey to 18% grey at neutral
+  settings.
+  - Cause: a stock's former print-down density shifted the whole image (Nocturne by
+    −0.71 stops, Midnight −0.40, Pastelle +0.20).
+  - Fix: it is now a black density that acts only in the shadows, plus an exact neutral
+    grey anchor.
+  - Kept: contrast, toe, shoulder and colour.
+  - Changed for the 11 unchanged approved looks: midtones shift by at most 0.40 stops, with
+    hue change under 0.5°.
+- **Argent:** redesigned as the most contrast-heavy look, with deep blacks, bright defined
+  highlights and restrained metallic colour.
+- **Nocturne:** redesigned with no global darkening, an open toe, cool desaturated ambience
+  and warm practicals.
+- **New looks:** Patina, Opaline, Glacier, Terracotta, Velour (dropdown positions 14–18),
+  each at least ΔE 7.3 from every other look.
+- **Names without stock numbers** (Verona, …, Night, Daylight, Portrait, Chrome, Emerald,
+  Vivid). Dropdown positions are unchanged.
+- **Exposure** (±5 stops, scene-linear) and **Temperature / Tint** (chromatic adaptation)
+  run before the film engines. **Split Toning** (shadow / midtone / highlight hue and
+  saturation, Balance, Strength) runs after grading, before Global Intensity. All are exact
+  bypasses at their defaults.
+- **Unchanged:** Cine16 secondary profiles (still bit-identical to the original Cine16 DCTL),
+  prints, and existing controls. With Film Look Off, V9 matches V8 bit for bit.
+
+Tests executed on the host:
+- `tests/math_test_v9.c`
+- `tests/cine16_regression.py`
+- `tests/v8_v9_report.py`
+- `tools/scenario_check.c`
+- older regressions
+
+All pass. Not yet done: compiling in Resolve and checking the looks on real footage (checklist
+in the changelog). Keep the V8 file as a backup until V9 has been checked in Resolve.
+
+Previews: `docs/FilmLab_v9_looks.png`, `docs/FilmLab_v9_new_and_refined.png`,
+`docs/FilmLab_v9_controls.png`.
 
 ## Version 8: Cine16 Secondary Film Look
 

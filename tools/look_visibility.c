@@ -8,9 +8,10 @@
 //  full stock, its colour and tone stages, with stages removed, and over a
 //  print; plus dE between stocks (distinctness).
 //
-//    gcc -O2 -o look_visibility tools/look_visibility.c -lm && ./look_visibility   (Version 7)
+//    gcc -O2 -o look_visibility tools/look_visibility.c -lm && ./look_visibility   (Version 9)
 // =============================================================================
 #define HAS_SENS
+#ifdef FILMLAB_V4
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,7 +31,6 @@ static float3 make_float3(float a, float b, float c) { float3 r = {a, b, c}; ret
 #define _sinf sinf
 static float _clampf(float x, float a, float b) { return fminf(fmaxf(x, a), b); }
 #define DEFINE_UI_PARAMS(...)
-#ifdef FILMLAB_V4
 enum { GLX_LOOK_OFF, GLX_LOOK_PURE, GLX_LOOK_EMBER, GLX_LOOK_SLATE, GLX_LOOK_SOLACE, GLX_LOOK_CHROME,
        GLX_LOOK_DUNE, GLX_LOOK_NOIR, GLX_LOOK_BLOOM, GLX_LOOK_HAZE, GLX_LOOK_VIVID, GLX_LOOK_MUSE,
        GLX_LOOK_TUNDRA, GLX_LOOK_SIENNA, GLX_LOOK_VELVET, GLX_LOOK_CINDER, GLX_LOOK_LUMEN, GLX_LOOK_FABLE,
@@ -43,31 +43,20 @@ static const char *LOOK_NAMES[] = { "Off", "Pure", "Ember", "Slate", "Solace", "
     "Prism", "Eclipse", "Mono", "Obsidian", "Silver" };
 static const char *PRINT_NAMES[] = { "None", "Print2383", "Print2393", "Print3513", "Print3510", "Print2383Soft" };
 #define FILMLAB_SOURCE "../Gradelux_FilmLab_v4.dctl"
-#else   // Version 7 (13 film stocks)
-enum { GLX_LOOK_OFF, GLX_LOOK_VERONA_250D, GLX_LOOK_VERDANT_250D, GLX_LOOK_MIDNIGHT_800T, GLX_LOOK_AURELIA_400,
-       GLX_LOOK_SOLARA_200, GLX_LOOK_MOSS_250D, GLX_LOOK_CHROMA_100, GLX_LOOK_SILVERGRAIN_100,
-       GLX_LOOK_TUNGSTEN_500T, GLX_LOOK_HALCYON_400, GLX_LOOK_ARGENT_200, GLX_LOOK_NOCTURNE_800, GLX_LOOK_PASTELLE_400,
-       GLX_LOOK_COUNT };
-enum { GLX_PRINT_NONE, GLX_PRINT_CINECHROME_2383, GLX_PRINT_VELACHROME_2393, GLX_PRINT_LUMACHROME_3513,
-       GLX_PRINT_RETROCHROME_3510, GLX_PRINT_SILKCHROME_2383, GLX_PRINT_COUNT };
-enum { GLX_DIAG_NORMAL, GLX_DIAG_COLOR, GLX_DIAG_TONE, GLX_DIAG_FULL };
-static int ui_Diag = 0;
-static const char *LOOK_NAMES[] = { "Off", "Verona250D", "Verdant250D", "Midnight800T", "Aurelia400",
-                                    "Solara200", "Moss250D", "Chroma100", "Silvergrain100", "Tungsten500T", "Halcyon400", "Argent200",
-                                    "Nocturne800", "Pastelle400" };
-static const char *PRINT_NAMES[] = { "None", "Cinechrome2383", "Velachrome2393", "Lumachrome3513",
-                                     "Retrochrome3510", "Silkchrome2383" };
-#ifndef FILMLAB_SOURCE   /* Version 7 by default; -DFILMLAB_SOURCE='"../Gradelux_FilmLab_v6_1.dctl"' for 6.1 */
-#define FILMLAB_SOURCE "../Gradelux_FilmLab_v7.dctl"
-#endif
-#endif
-
 // UI globals: reference configuration (defaults; Film Look / Film Print set per tile)
 static int   ui_Look = 0, ui_Print = 0;
 static float ui_CreativeIntensity = 100, ui_PrintStrength = 100, ui_PrintContrast = 0, ui_PrintDensity = 0,
              ui_PrintSaturation = 0, ui_PrintRolloff = 0;
 static float ui_ColorDensity = 0, ui_Separation = 50, ui_HlWarmth = 0, ui_ShadowTone = 0;
 static float ui_Density = 0, ui_SubSat = 0, ui_Contrast = 0, ui_Shadow = 0, ui_Rolloff = 0, ui_Intensity = 100;
+
+static void filmlab_reset(void) {}
+#else   // Version 9 (18 film stocks; shared shim with every control at its default)
+#include "filmlab_shim.h"
+#ifndef FILMLAB_SOURCE
+#define FILMLAB_SOURCE "../Gradelux_FilmLab_v9.dctl"
+#endif
+#endif
 
 #include FILMLAB_SOURCE
 // ---- content: linear Rec.709 scene colours ----
@@ -116,7 +105,7 @@ static void report(const char*name,int slot,int ref){
   double s[3]={0},n[3]={0}, mx=0; for(int i=0;i<NC;i++){ double d=dE(LAB[slot][i],LAB[ref][i]); s[kind[i]]+=d; n[kind[i]]++; mx=fmax(mx,d);} 
   printf("  %-34s colours %5.2f  skin %5.2f  greys %5.2f  (max %5.1f)\n",name,s[0]/n[0],s[1]/n[1],s[2]/n[2],mx); }
 int main(int argc,char**argv){
-  build(); int nl=GLX_LOOK_COUNT;
+  filmlab_reset(); build(); int nl=GLX_LOOK_COUNT;
   eval_set(0,glx_look_clean(),0,0);   // Off
   printf("Visible change vs Off (mean CIELAB dE after a display transform; ~2 just noticeable, 10+ obvious)\n");
   for(int id=1; id<nl; id++){ GlxLook s=glx_look_scale(glx_look_get(id),1.0f);

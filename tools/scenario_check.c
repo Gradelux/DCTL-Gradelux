@@ -1,5 +1,5 @@
 // =============================================================================
-//  Gradelux FilmLab — synthetic scenario checks (Version 7)
+//  Gradelux FilmLab — synthetic scenario checks (Version 9)
 // -----------------------------------------------------------------------------
 //  Runs every film stock x every print through the DCTL's own maths on
 //  SYNTHETIC scene sets that stand in for the footage types a stock must
@@ -26,6 +26,7 @@
 //    gcc -O2 -o scenario_check tools/scenario_check.c -lm && ./scenario_check
 // =============================================================================
 #define HAS_SENS
+#ifdef FILMLAB_V4   // legacy Version 4 build: its own enumerations and controls
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -45,7 +46,6 @@ static float3 make_float3(float a, float b, float c) { float3 r = {a, b, c}; ret
 #define _sinf sinf
 static float _clampf(float x, float a, float b) { return fminf(fmaxf(x, a), b); }
 #define DEFINE_UI_PARAMS(...)
-#ifdef FILMLAB_V4
 enum { GLX_LOOK_OFF, GLX_LOOK_PURE, GLX_LOOK_EMBER, GLX_LOOK_SLATE, GLX_LOOK_SOLACE, GLX_LOOK_CHROME,
        GLX_LOOK_DUNE, GLX_LOOK_NOIR, GLX_LOOK_BLOOM, GLX_LOOK_HAZE, GLX_LOOK_VIVID, GLX_LOOK_MUSE,
        GLX_LOOK_TUNDRA, GLX_LOOK_SIENNA, GLX_LOOK_VELVET, GLX_LOOK_CINDER, GLX_LOOK_LUMEN, GLX_LOOK_FABLE,
@@ -58,24 +58,6 @@ static const char *LOOK_NAMES[] = { "Off", "Pure", "Ember", "Slate", "Solace", "
     "Prism", "Eclipse", "Mono", "Obsidian", "Silver" };
 static const char *PRINT_NAMES[] = { "None", "Print2383", "Print2393", "Print3513", "Print3510", "Print2383Soft" };
 #define FILMLAB_SOURCE "../Gradelux_FilmLab_v4.dctl"
-#else   // Version 7 (13 film stocks)
-enum { GLX_LOOK_OFF, GLX_LOOK_VERONA_250D, GLX_LOOK_VERDANT_250D, GLX_LOOK_MIDNIGHT_800T, GLX_LOOK_AURELIA_400,
-       GLX_LOOK_SOLARA_200, GLX_LOOK_MOSS_250D, GLX_LOOK_CHROMA_100, GLX_LOOK_SILVERGRAIN_100,
-       GLX_LOOK_TUNGSTEN_500T, GLX_LOOK_HALCYON_400, GLX_LOOK_ARGENT_200, GLX_LOOK_NOCTURNE_800, GLX_LOOK_PASTELLE_400,
-       GLX_LOOK_COUNT };
-enum { GLX_PRINT_NONE, GLX_PRINT_CINECHROME_2383, GLX_PRINT_VELACHROME_2393, GLX_PRINT_LUMACHROME_3513,
-       GLX_PRINT_RETROCHROME_3510, GLX_PRINT_SILKCHROME_2383, GLX_PRINT_COUNT };
-enum { GLX_DIAG_NORMAL, GLX_DIAG_COLOR, GLX_DIAG_TONE, GLX_DIAG_FULL };
-static int ui_Diag = 0;
-static const char *LOOK_NAMES[] = { "Off", "Verona250D", "Verdant250D", "Midnight800T", "Aurelia400",
-                                    "Solara200", "Moss250D", "Chroma100", "Silvergrain100", "Tungsten500T", "Halcyon400", "Argent200",
-                                    "Nocturne800", "Pastelle400" };
-static const char *PRINT_NAMES[] = { "None", "Cinechrome2383", "Velachrome2393", "Lumachrome3513",
-                                     "Retrochrome3510", "Silkchrome2383" };
-#ifndef FILMLAB_SOURCE   /* Version 7 by default; -DFILMLAB_SOURCE='"../Gradelux_FilmLab_v6_1.dctl"' for 6.1 */
-#define FILMLAB_SOURCE "../Gradelux_FilmLab_v7.dctl"
-#endif
-#endif
 
 
 // UI globals: reference configuration (Film Look / Film Print / Creative Intensity set per run)
@@ -84,6 +66,14 @@ static float ui_CreativeIntensity = 100, ui_PrintStrength = 100, ui_PrintContras
              ui_PrintSaturation = 0, ui_PrintRolloff = 0;
 static float ui_ColorDensity = 0, ui_Separation = 50, ui_HlWarmth = 0, ui_ShadowTone = 0;
 static float ui_Density = 0, ui_SubSat = 0, ui_Contrast = 0, ui_Shadow = 0, ui_Rolloff = 0, ui_Intensity = 100;
+static void filmlab_reset(void) {}
+#else               // Version 9: shared shim (every control at its DCTL default)
+#include "filmlab_shim.h"
+#ifndef FILMLAB_SOURCE
+#define FILMLAB_SOURCE "../Gradelux_FilmLab_v9.dctl"
+#endif
+#endif
+
 #include FILMLAB_SOURCE
 // ---- helpers ----
 static float3 to_work(const float*c){ return make_float3(0.6274040f*c[0]+0.3292820f*c[1]+0.0433136f*c[2],0.0690970f*c[0]+0.9195400f*c[1]+0.0113612f*c[2],0.0163916f*c[0]+0.0880132f*c[1]+0.8955950f*c[2]); }
@@ -95,7 +85,7 @@ static void disp(float3 d,double*l){ // linear DWG -> display-linear Rec.709 (vi
   for(int c=0;c<3;c++){ double v=fmax(x[c]*0.8,0); l[c]=fmin(fmax((v*(2.51*v+0.03))/(v*(2.43*v+0.59)+0.14),0),1);} }
 static double hue_of(float3 c){ return atan2((c.y-c.z)*0.70710678,(2*c.x-c.y-c.z)*0.40824829)*57.2957795; }
 static double hdiff(double a,double b){ double d=a-b; while(d>180)d-=360; while(d<-180)d+=360; return d; }
-static double Y(float3 d){ return 0.2722287*d.x+0.6740818*d.y+0.0536895*d.z; } // DWG luminance
+static double Y(float3 d){ return 0.27411851*d.x+0.8736319*d.y-0.14775041*d.z; } // DWG luminance (CIE Y)
 
 // ---- scene sets: series of samples in linear DWG; a series is an exposure ladder
 // (brightness must not reverse) or a hue sweep (hue must not jump) ----
@@ -144,6 +134,7 @@ static void build(void){
     ser++; }
 }
 int main(int argc,char**argv){
+    filmlab_reset();
   build(); int fails=0; const char*vb=getenv("VERBOSE"); int vlook = vb? atoi(vb) : -1;
   float ci = argc>1 ? (float)atof(argv[1]) : 100.0f;
   printf("Synthetic scenario checks at Creative Intensity %.0f%%, summed over all 6 print options\n",ci);

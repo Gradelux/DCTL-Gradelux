@@ -1,22 +1,25 @@
 #!/usr/bin/env python3
 # =============================================================================
-#  Gradelux FilmLab v8: Cine16 secondary engine regression
+#  Gradelux FilmLab v9: Cine16 secondary engine regression
 # -----------------------------------------------------------------------------
 #  Compares numerical RGB output, sample by sample, bit for bit (float32):
 #
-#   A. STANDALONE MATCH. The original Cine16 DCTL (reference/) against FilmLab v8
+#   A. STANDALONE MATCH. The original Cine16 DCTL (reference/) against FilmLab v9
 #      with Primary Film Look Off, Secondary Film Look = the same profile,
 #      Film Print None and every other FilmLab control neutral, for all 16
 #      profiles. Inputs: RGB patch grid, greyscale ramp, skin tones, saturated
 #      colours, extended-range values and random pixels. Run with the
 #      original defaults, random slider settings within the original ranges,
 #      slider extremes, and Show Skin Mask.
-#   B. OFF = V7. FilmLab v8 with Secondary Film Look Off (secondary sliders and
-#      the skin-mask switch set randomly) against FilmLab v7, for all 13 looks
-#      plus Off and all 6 print options.
-#   C. CHAINING. FilmLab v8 (Primary X + Secondary Y + Print Z) against the
-#      three engines run as separate programs: v7 (Look X, no print) ->
-#      original Cine16 (profile Y) -> v7 (Look Off, Print Z). This confirms
+#   B. SECONDARY OFF. (1) FilmLab v9 with Secondary Film Look Off and the
+#      secondary sliders / skin-mask switch set randomly against the same with
+#      the sliders at default, for all 18 looks + Off and all 6 print options
+#      (the secondary controls must be inert). (2) With Film Look Off, v9
+#      against v8 (Version 9 changes only the primary looks, so every print
+#      and Look-Off configuration must match v8 bit-for-bit).
+#   C. CHAINING. FilmLab v9 (Primary X + Secondary Y + Print Z) against the
+#      three engines run as separate programs: v9 (Look X, no print) ->
+#      original Cine16 (profile Y) -> v9 (Look Off, Print Z). This confirms
 #      the processing order and that each engine is unchanged in the chain.
 #   D. SANITY. Profile N against the wrong profile N+1 must differ, proving the
 #      comparison can detect a change.
@@ -28,11 +31,11 @@ import os, subprocess, sys, tempfile, random, math
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-PROFILES = ["Neutral", "Warm", "Cool", "Pastel", "Rich", "Golden", "Faded", "Reversal", "Night 500T",
-            "Daylight 250D", "Portrait 400", "Chrome 64", "Emerald 400", "Steel Chrome", "Vivid 50", "Cinema E"]
-LOOKS = ["Off", "Verona 250D", "Verdant 250D", "Midnight 800T", "Aurelia 400", "Solara 200", "Moss 250D",
-         "Chroma 100", "Silvergrain 100", "Tungsten 500T", "Halcyon 400", "Argent 200", "Nocturne 800",
-         "Pastelle 400"]
+PROFILES = ["Neutral", "Warm", "Cool", "Pastel", "Rich", "Golden", "Faded", "Reversal", "Night",
+            "Daylight", "Portrait", "Chrome", "Emerald", "Steel Chrome", "Vivid", "Cinema E"]
+LOOKS = ["Off", "Verona", "Verdant", "Midnight", "Aurelia", "Solara", "Moss", "Chroma", "Silvergrain",
+         "Tungsten", "Halcyon", "Argent", "Nocturne", "Pastelle", "Patina", "Opaline", "Glacier",
+         "Terracotta", "Velour"]
 DEFAULTS = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]                 # strength sep sat subtr bias tone skinprot
 RANGES = [(0, 1.5), (0, 2), (0, 2), (0, 2), (0, 2), (0, 1.5), (0, 1)]
 
@@ -48,7 +51,7 @@ def build(macro, name):
     exe = os.path.join(tmp, name)
     subprocess.check_call(['gcc', '-O2', '-w', '-D' + macro, '-o', exe, os.path.join(HERE, 'runner.c'), '-lm'])
     return exe
-RUN_C16, RUN_V7, RUN_V8 = build('RUN_CINE16', 'run_c16'), build('RUN_FILMLAB7', 'run_v7'), build('RUN_FILMLAB8', 'run_v8')
+RUN_C16, RUN_V8, RUN_FL = build('RUN_CINE16', 'run_c16'), build('RUN_FILMLAB8', 'run_v8'), build('RUN_FILMLAB9', 'run_v9')
 
 def run(exe, lines):
     out = subprocess.run([exe], input='\n'.join(lines) + '\n', capture_output=True, text=True, check=True).stdout
@@ -110,7 +113,7 @@ def compare(a, b):
     return mism, mx
 
 # ---- A. standalone match -------------------------------------------------------
-print('A. STANDALONE MATCH: original Cine16 DCTL vs FilmLab v8 (Primary Off, Secondary = profile, Print None)')
+print('A. STANDALONE MATCH: original Cine16 DCTL vs FilmLab v9 (Primary Off, Secondary = profile, Print None)')
 print('   counts are samples whose RGB output differs in any bit (float32)\n')
 cats = list(SETS) + ['random sliders', 'slider extremes', 'show skin mask']
 print('   %-14s' % 'profile' + ''.join(' %15s' % c for c in cats))
@@ -122,7 +125,7 @@ for p, name in enumerate(PROFILES):
         pts = SETS[cat]
         la = ['%d %s 0 %s %s %s' % (p, ' '.join(hx(v) for v in DEFAULTS), hx(r), hx(g), hx(b)) for r, g, b in pts]
         lb = ['0 %d 0 %s 0 %s %s %s' % (p + 1, ' '.join(hx(v) for v in DEFAULTS), hx(r), hx(g), hx(b)) for r, g, b in pts]
-        m, mx = compare(run(RUN_C16, la), run(RUN_V8, lb)); row.append((m, len(pts), mx))
+        m, mx = compare(run(RUN_C16, la), run(RUN_FL, lb)); row.append((m, len(pts), mx))
     # random sliders within the original ranges, on random inputs from all sets
     la, lb = [], []
     for i in range(4000):
@@ -130,7 +133,7 @@ for p, name in enumerate(PROFILES):
         cat, (r, g, b) = ALL[rng.randrange(len(ALL))]
         la.append('%d %s 0 %s %s %s' % (p, ' '.join(sl), hx(r), hx(g), hx(b)))
         lb.append('0 %d 0 %s 0 %s %s %s' % (p + 1, ' '.join(sl), hx(r), hx(g), hx(b)))
-    m, mx = compare(run(RUN_C16, la), run(RUN_V8, lb)); row.append((m, len(la), mx))
+    m, mx = compare(run(RUN_C16, la), run(RUN_FL, lb)); row.append((m, len(la), mx))
     # slider extremes: every slider at its min or max (128 corners) on a subset
     la, lb = [], []
     sub = SETS['rgb patches'][::37] + SETS['skin tones'][::7] + SETS['extended range'][::97]
@@ -139,45 +142,55 @@ for p, name in enumerate(PROFILES):
         for r, g, b in sub:
             la.append('%d %s 0 %s %s %s' % (p, ' '.join(sl), hx(r), hx(g), hx(b)))
             lb.append('0 %d 0 %s 0 %s %s %s' % (p + 1, ' '.join(sl), hx(r), hx(g), hx(b)))
-    m, mx = compare(run(RUN_C16, la), run(RUN_V8, lb)); row.append((m, len(la), mx))
+    m, mx = compare(run(RUN_C16, la), run(RUN_FL, lb)); row.append((m, len(la), mx))
     # Show Skin Mask
     pts = SETS['skin tones'] + SETS['rgb patches'][::5]
     la = ['%d %s 1 %s %s %s' % (p, ' '.join(hx(v) for v in DEFAULTS), hx(r), hx(g), hx(b)) for r, g, b in pts]
     lb = ['0 %d 0 %s 1 %s %s %s' % (p + 1, ' '.join(hx(v) for v in DEFAULTS), hx(r), hx(g), hx(b)) for r, g, b in pts]
-    m, mx = compare(run(RUN_C16, la), run(RUN_V8, lb)); row.append((m, len(pts), mx))
+    m, mx = compare(run(RUN_C16, la), run(RUN_FL, lb)); row.append((m, len(pts), mx))
     print('   %-14s' % name + ''.join(' %8d/%-6d' % (m, n) for m, n, mx in row))
     totalA += sum(m for m, n, mx in row)
 nA = 16 * (sum(len(v) for v in SETS.values()) + 4000 + 128 * len(sub) + len(pts))
 print('\n   total differing samples: %d of %d  -> %s\n' % (totalA, nA, 'BIT-IDENTICAL' if totalA == 0 else 'DIFFERENCES FOUND'))
 fails += totalA
 
-# ---- B. secondary Off = v7 ----------------------------------------------------
-print('B. SECONDARY OFF: FilmLab v8 (Secondary Off, secondary sliders random) vs FilmLab v7')
+# ---- B. secondary Off -----------------------------------------------------------
+print('B. SECONDARY OFF: (1) secondary controls inert when Off; (2) with Film Look Off, v9 = v8')
+D = ' '.join(hx(v) for v in DEFAULTS)
 la, lb = [], []
 pts = SETS['rgb patches'][::3] + SETS['grey ramp'][::4] + SETS['skin tones'] + SETS['saturated'][::3] + SETS['extended range'][::5]
 for look in range(len(LOOKS)):
     for pr in range(6):
         for r, g, b in pts:
             sl = [hx(rng.uniform(lo, hi)) for lo, hi in RANGES]
-            la.append('%d %d %s %s %s' % (look, pr, hx(r), hx(g), hx(b)))
+            la.append('%d 0 %d %s 0 %s %s %s' % (look, pr, D, hx(r), hx(g), hx(b)))
             lb.append('%d 0 %d %s %d %s %s %s' % (look, pr, ' '.join(sl), rng.randrange(2), hx(r), hx(g), hx(b)))
-m, mx = compare(run(RUN_V7, la), run(RUN_V8, lb))
-print('   %d looks x 6 print options x %d inputs = %d samples; differing: %d -> %s\n'
-      % (len(LOOKS), len(pts), len(la), m, 'BIT-IDENTICAL' if m == 0 else 'DIFFERENCES FOUND'))
-fails += m
+m1, mx = compare(run(RUN_FL, la), run(RUN_FL, lb))
+print('   (1) %d looks x 6 print options x %d inputs = %d samples; differing: %d -> %s'
+      % (len(LOOKS), len(pts), len(la), m1, 'BIT-IDENTICAL' if m1 == 0 else 'DIFFERENCES FOUND'))
+la = []
+for sec in range(17):
+    for pr in range(6):
+        for r, g, b in pts[::2]:
+            sl = [hx(rng.uniform(lo, hi)) for lo, hi in RANGES]
+            la.append('0 %d %d %s 0 %s %s %s' % (sec, pr, ' '.join(sl), hx(r), hx(g), hx(b)))
+m2, mx = compare(run(RUN_V8, la), run(RUN_FL, la))
+print('   (2) Film Look Off, 17 secondary options x 6 print options, random secondary sliders: %d samples; differing: %d -> %s\n'
+      % (len(la), m2, 'BIT-IDENTICAL' if m2 == 0 else 'DIFFERENCES FOUND'))
+fails += m1 + m2
 
 # ---- C. chaining ----------------------------------------------------------------
-print('C. CHAINING: v8 (Primary + Secondary + Print) vs v7 primary -> original Cine16 -> v7 print, as separate programs')
+print('C. CHAINING: v9 (Primary + Secondary + Print) vs v9 primary -> original Cine16 -> v9 print, as separate programs')
 pts = SETS['rgb patches'][::11] + SETS['skin tones'][::3] + SETS['saturated'][::9] + SETS['grey ramp'][::16]
 combos = [(0, 6, 0), (1, 6, 0), (1, 6, 1)]                                   # the three requested combinations
-combos += [(rng.randrange(14), rng.randrange(1, 17), rng.randrange(6)) for _ in range(60)]
+combos += [(rng.randrange(len(LOOKS)), rng.randrange(1, 17), rng.randrange(6)) for _ in range(60)]
 totC, nC = 0, 0
 for look, sec, pr in combos:
-    s1 = run(RUN_V7, ['%d 0 %s %s %s' % (look, hx(r), hx(g), hx(b)) for r, g, b in pts])
-    s2 = run(RUN_C16, ['%d %s 0 %s %s %s' % (sec - 1, ' '.join(hx(v) for v in DEFAULTS), x[0].hex(), x[1].hex(), x[2].hex()) for x in s1])
-    s3 = run(RUN_V7, ['0 %d %s %s %s' % (pr, x[0].hex(), x[1].hex(), x[2].hex()) for x in s2])
-    v8 = run(RUN_V8, ['%d %d %d %s 0 %s %s %s' % (look, sec, pr, ' '.join(hx(v) for v in DEFAULTS), hx(r), hx(g), hx(b)) for r, g, b in pts])
-    m, mx = compare(s3, v8); totC += m; nC += len(pts)
+    s1 = run(RUN_FL, ['%d 0 0 %s 0 %s %s %s' % (look, D, hx(r), hx(g), hx(b)) for r, g, b in pts])
+    s2 = run(RUN_C16, ['%d %s 0 %s %s %s' % (sec - 1, D, x[0].hex(), x[1].hex(), x[2].hex()) for x in s1])
+    s3 = run(RUN_FL, ['0 0 %d %s 0 %s %s %s' % (pr, D, x[0].hex(), x[1].hex(), x[2].hex()) for x in s2])
+    v9 = run(RUN_FL, ['%d %d %d %s 0 %s %s %s' % (look, sec, pr, D, hx(r), hx(g), hx(b)) for r, g, b in pts])
+    m, mx = compare(s3, v9); totC += m; nC += len(pts)
     if (look, sec, pr) in combos[:3]:
         print('   Primary %-13s / Secondary %-8s / Print %-15s : %d of %d differ'
               % (LOOKS[look], PROFILES[sec - 1], ['None', 'Cinechrome 2383', 'Velachrome 2393', 'Lumachrome 3513',
@@ -187,14 +200,14 @@ print('   total: %d of %d samples differ -> %s\n' % (totC, nC, 'BIT-IDENTICAL' i
 fails += totC
 
 # ---- D. sanity: the comparison must detect a wrong profile ---------------------
-print('D. SANITY: original profile N vs v8 profile N+1 (deliberately wrong) must differ')
+print('D. SANITY: original profile N vs v9 profile N+1 (deliberately wrong) must differ')
 pts = SETS['rgb patches'][::7] + SETS['skin tones']
 bad = 0
 for p in range(16):
     q = (p + 1) % 16
     la = ['%d %s 0 %s %s %s' % (p, ' '.join(hx(v) for v in DEFAULTS), hx(r), hx(g), hx(b)) for r, g, b in pts]
     lb = ['0 %d 0 %s 0 %s %s %s' % (q + 1, ' '.join(hx(v) for v in DEFAULTS), hx(r), hx(g), hx(b)) for r, g, b in pts]
-    m, mx = compare(run(RUN_C16, la), run(RUN_V8, lb))
+    m, mx = compare(run(RUN_C16, la), run(RUN_FL, lb))
     if m == 0: bad += 1
     print('   %-13s vs %-13s: %4d of %d differ (max %.4f DI)' % (PROFILES[p], PROFILES[q], m, len(pts), mx))
 print('   -> %s\n' % ('comparison detects profile changes' if bad == 0 else 'WARNING: %d wrong pairs not detected' % bad))

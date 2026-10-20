@@ -10,14 +10,19 @@
 //    gcc -O2 -DRUN_CINE16  -o run_c16 runner.c -lm   original Cine16 DCTL (reference/)
 //    gcc -O2 -DRUN_FILMLAB7 -o run_v7 runner.c -lm   Gradelux_FilmLab_v7.dctl
 //    gcc -O2 -DRUN_FILMLAB8 -o run_v8 runner.c -lm   Gradelux_FilmLab_v8.dctl
+//    gcc -O2 -DRUN_FILMLAB9 -o run_v9 runner.c -lm   Gradelux_FilmLab_v9.dctl (every Version 9 control at its default)
 //
 //  Input: one sample per line, whitespace-separated:
 //    RUN_CINE16  : profile strength sep sat subtr bias tone skinprot showskin  R G B
 //    RUN_FILMLAB7: look print                                                  R G B
-//    RUN_FILMLAB8: look secondary print strength sep sat subtr bias tone skinprot showskin  R G B
+//    RUN_FILMLAB8 / RUN_FILMLAB9: look secondary print strength sep sat subtr bias tone skinprot showskin  R G B
 //  (R G B: DaVinci Intermediate code values, decimal or hex float.) Every
 //  other control stays at its default. Output: "R G B" per line, %a.
 // =============================================================================
+#if defined(RUN_FILMLAB9)
+#include "../tools/filmlab_shim.h"
+#include "../Gradelux_FilmLab_v9.dctl"
+#else
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -79,9 +84,13 @@ static float ui_SecStrength = 1, ui_SecSep = 1, ui_SecSat = 1, ui_SecSubtr = 1, 
 #include "../Gradelux_FilmLab_v7.dctl"
 #endif
 #endif
+#endif   /* RUN_FILMLAB9 */
 
 int main(void)
 {
+#if defined(RUN_FILMLAB9)
+    filmlab_reset();
+#endif
     char line[1024];
     while (fgets(line, sizeof line, stdin)) {
         char *s = line, *e;
@@ -94,7 +103,7 @@ int main(void)
         p_subtr = (float)v[4]; p_bias = (float)v[5]; p_tone = (float)v[6]; p_skinprot = (float)v[7];
         p_showskin = (int)v[8];
         float3 o = transform(0, 0, 0, 0, (float)v[9], (float)v[10], (float)v[11]);
-#elif defined(RUN_FILMLAB8)
+#elif defined(RUN_FILMLAB8) || defined(RUN_FILMLAB9)
         if (n != 14) { fprintf(stderr, "bad line (%d values)\n", n); return 1; }
         ui_Look = (int)v[0]; ui_SecLook = (int)v[1]; ui_Print = (int)v[2];
         ui_SecStrength = (float)v[3]; ui_SecSep = (float)v[4]; ui_SecSat = (float)v[5]; ui_SecSubtr = (float)v[6];

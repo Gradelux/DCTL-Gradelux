@@ -1,5 +1,5 @@
 // =============================================================================
-//  Gradelux FilmLab — reference LUT generator / validator (Version 8; -DFILMLAB_V4 for Version 4)
+//  Gradelux FilmLab — reference LUT generator / validator (Version 9; -DFILMLAB_V4 for Version 4)
 // -----------------------------------------------------------------------------
 //  Compiles Gradelux_FilmLab_v8.dctl (or v4 with -DFILMLAB_V4) itself (through a small C shim) and
 //  samples its transform() in one of three reference configurations:
@@ -43,6 +43,7 @@
 //  .cube format: TITLE, LUT_3D_SIZE N, then N^3 lines "R G B", red index
 //  varying fastest, blue slowest; no DOMAIN lines (default 0..1).
 // =============================================================================
+#ifdef FILMLAB_V4   // legacy Version 4 build: its own enumerations and controls
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -69,7 +70,6 @@ static int min(int a, int b) { return a < b ? a : b; }
 static int max(int a, int b) { return a > b ? a : b; }
 #define DEFINE_UI_PARAMS(...)
 #define DEFINE_UI_TOOLTIP(...)
-#ifdef FILMLAB_V4
 enum { GLX_LOOK_OFF, GLX_LOOK_PURE, GLX_LOOK_EMBER, GLX_LOOK_SLATE, GLX_LOOK_SOLACE, GLX_LOOK_CHROME,
        GLX_LOOK_DUNE, GLX_LOOK_NOIR, GLX_LOOK_BLOOM, GLX_LOOK_HAZE, GLX_LOOK_VIVID, GLX_LOOK_MUSE,
        GLX_LOOK_TUNDRA, GLX_LOOK_SIENNA, GLX_LOOK_VELVET, GLX_LOOK_CINDER, GLX_LOOK_LUMEN, GLX_LOOK_FABLE,
@@ -82,25 +82,6 @@ static const char *LOOK_NAMES[] = { "Off", "Pure", "Ember", "Slate", "Solace", "
     "Prism", "Eclipse", "Mono", "Obsidian", "Silver" };
 static const char *PRINT_NAMES[] = { "None", "Print2383", "Print2393", "Print3513", "Print3510", "Print2383Soft" };
 #define FILMLAB_SOURCE "../Gradelux_FilmLab_v4.dctl"
-#else   // Version 7 (13 film stocks)
-enum { GLX_LOOK_OFF, GLX_LOOK_VERONA_250D, GLX_LOOK_VERDANT_250D, GLX_LOOK_MIDNIGHT_800T, GLX_LOOK_AURELIA_400,
-       GLX_LOOK_SOLARA_200, GLX_LOOK_MOSS_250D, GLX_LOOK_CHROMA_100, GLX_LOOK_SILVERGRAIN_100,
-       GLX_LOOK_TUNGSTEN_500T, GLX_LOOK_HALCYON_400, GLX_LOOK_ARGENT_200, GLX_LOOK_NOCTURNE_800, GLX_LOOK_PASTELLE_400,
-       GLX_LOOK_COUNT };
-enum { GLX_PRINT_NONE, GLX_PRINT_CINECHROME_2383, GLX_PRINT_VELACHROME_2393, GLX_PRINT_LUMACHROME_3513,
-       GLX_PRINT_RETROCHROME_3510, GLX_PRINT_SILKCHROME_2383, GLX_PRINT_COUNT };
-enum { GLX_DIAG_NORMAL, GLX_DIAG_COLOR, GLX_DIAG_TONE, GLX_DIAG_FULL };
-static int ui_Diag = 0;
-static const char *LOOK_NAMES[] = { "Off", "Verona250D", "Verdant250D", "Midnight800T", "Aurelia400",
-                                    "Solara200", "Moss250D", "Chroma100", "Silvergrain100", "Tungsten500T", "Halcyon400", "Argent200",
-                                    "Nocturne800", "Pastelle400" };
-static const char *PRINT_NAMES[] = { "None", "Cinechrome2383", "Velachrome2393", "Lumachrome3513",
-                                     "Retrochrome3510", "Silkchrome2383" };
-#ifndef FILMLAB_SOURCE   /* Version 8 by default (with the Cine16 secondary engine) */
-#define FILMLAB_SOURCE "../Gradelux_FilmLab_v8.dctl"
-#define HAS_SECONDARY 1
-#endif
-#endif
 
 #ifndef HAS_SECONDARY
 #define HAS_SECONDARY 0
@@ -123,6 +104,15 @@ static float ui_CreativeIntensity = 100, ui_PrintStrength = 100, ui_PrintContras
 static float ui_ColorDensity = 0, ui_Separation = 50, ui_HlWarmth = 0, ui_ShadowTone = 0;
 static float ui_Density = 0, ui_SubSat = 0, ui_Contrast = 0, ui_Shadow = 0, ui_Rolloff = 0, ui_Intensity = 100;
 
+static void filmlab_reset(void) {}
+#else               // Version 9: shared shim (every control at its DCTL default)
+#include "filmlab_shim.h"
+#ifndef FILMLAB_SOURCE
+#define FILMLAB_SOURCE "../Gradelux_FilmLab_v9.dctl"
+#endif
+#define HAS_SECONDARY 1
+#endif
+
 #include FILMLAB_SOURCE
 
 // ---- Rec.709 <-> DWG (both D65; derived from primaries in double precision) --
@@ -137,10 +127,11 @@ static void dwg_to_rec709(const double *i, double *o) {
     o[2] = -0.1215391606 * i[0] - 0.3156758531 * i[1] + 1.4372150137 * i[2];
 }
 
-// A configuration packs look, print and secondary: cfg = secondary * 256 + look * 16 + print.
-static int  cfg_look(int cfg)  { return (cfg >> 4) & 15; }
+// A configuration packs look, print and secondary: cfg = secondary * 1024 + look * 16 + print
+// (print 0..15, look 0..63, secondary 0..).
+static int  cfg_look(int cfg)  { return (cfg >> 4) & 63; }
 static int  cfg_print(int cfg) { return cfg & 15; }
-static int  cfg_sec(int cfg)   { return cfg >> 8; }
+static int  cfg_sec(int cfg)   { return cfg >> 10; }
 static void cfg_name(int cfg, char *buf, size_t len) {
     int l = cfg_look(cfg), p = cfg_print(cfg), s = cfg_sec(cfg);
     buf[0] = 0;
@@ -284,7 +275,15 @@ static int parse_range(const char *s, int lo, int hi, const char *what) {
     return id;
 }
 
+// Names without spaces, for file names.
+static const char *fname(const char *n) {
+    static char buf[4][64]; static int k = 0; char *o = buf[k = (k + 1) & 3]; int j = 0;
+    for (int i = 0; n[i] && j < 63; i++) if (n[i] != ' ') o[j++] = n[i];
+    o[j] = 0; return o;
+}
+
 int main(int argc, char **argv) {
+    filmlab_reset();
     if (argc >= 2 && !strcmp(argv[1], "list")) {
         for (int i = 1; i < GLX_LOOK_COUNT; i++) printf("look  %2d %s\n", i, LOOK_NAMES[i]);
         for (int i = 1; i < GLX_PRINT_COUNT; i++) printf("print %2d %s\n", i, PRINT_NAMES[i]);
@@ -298,7 +297,7 @@ int main(int argc, char **argv) {
         int rec = !strcmp(argv[4], "rec709"), n = atoi(argv[5]);
         if (!look && !pr && !sec) { fprintf(stderr, "choose a look, a secondary, a print, or a combination\n"); return 1; }
         if (n < 2 || n > 129) { fprintf(stderr, "size must be 2..129\n"); return 1; }
-        int cfg = sec * 256 + look * 16 + pr;
+        int cfg = sec * 1024 + look * 16 + pr;
         if (!strcmp(argv[1], "validate")) { validate(cfg, rec, n); return 0; }
         double *lut = build(cfg, rec, n);
         write_cube(stdout, cfg, rec, n, lut);
@@ -310,8 +309,8 @@ int main(int argc, char **argv) {
         int rec = !strcmp(argv[3], "rec709"), n = atoi(argv[4]);
         for (int look = 1; look < GLX_LOOK_COUNT; look++) {
             char path[1024];
-            snprintf(path, sizeof path, "%s/Gradelux_%02d_%s%s%s_%s_%d.cube", argv[5], look, LOOK_NAMES[look],
-                     pr ? "_" : "", pr ? PRINT_NAMES[pr] : "", rec ? "Rec709" : "DWG", n);
+            snprintf(path, sizeof path, "%s/Gradelux_%02d_%s%s%s_%s_%d.cube", argv[5], look, fname(LOOK_NAMES[look]),
+                     pr ? "_" : "", pr ? fname(PRINT_NAMES[pr]) : "", rec ? "Rec709" : "DWG", n);
             FILE *f = fopen(path, "w");
             if (!f) { perror(path); return 1; }
             int cfg = look * 16 + pr;
@@ -326,11 +325,11 @@ int main(int argc, char **argv) {
         int rec = !strcmp(argv[2], "rec709"), n = atoi(argv[3]);
         for (int sec = 1; sec < GLX_SEC_COUNT; sec++) {
             char path[1024];
-            snprintf(path, sizeof path, "%s/Gradelux_S%02d_%s_%s_%d.cube", argv[4], sec, SEC_NAMES[sec],
+            snprintf(path, sizeof path, "%s/Gradelux_S%02d_%s_%s_%d.cube", argv[4], sec, fname(SEC_NAMES[sec]),
                      rec ? "Rec709" : "DWG", n);
             FILE *f = fopen(path, "w");
             if (!f) { perror(path); return 1; }
-            int cfg = sec * 256;
+            int cfg = sec * 1024;
             double *lut = build(cfg, rec, n);
             write_cube(f, cfg, rec, n, lut);
             fclose(f); free(lut);
