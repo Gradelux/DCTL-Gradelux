@@ -1,94 +1,85 @@
 // =============================================================================
-//  GRADELUX FILMLAB  —  v1.0.0
-//  Film-style colour grading foundation for DaVinci Resolve (DCTL)
-// -----------------------------------------------------------------------------
+//  GRADELUX FILMLAB  —  Version 1.0
+//  Film emulation & grading engine for DaVinci Resolve Studio (DCTL)
+//  (c) Gradelux. All rights reserved.
+// =============================================================================
 //
-//  PIPELINE OVERVIEW
-//  -----------------
-//    1. Decode the input signal to LINEAR LIGHT using the exact inverse of the
-//       selected transfer function (DaVinci Intermediate, BT.1886 gamma 2.4,
-//       or the BT.709 camera OETF).
-//    2. Convert the linear signal into the common WORKING SPACE:
-//       linear DaVinci Wide Gamut (DWG primaries, D65 white, linear transfer).
-//       DWG fully contains Rec.709, so Rec.709 sources arrive with positive
-//       values only and nothing is clipped by the working space itself.
-//    3. Apply the FilmLab operators (all defined on linear light, pivoting
-//       around 18% grey):
-//         a. Subtractive Saturation   (colour)
-//         b. Film Density             (colour-dependent brightness)
-//         c. Film Contrast            (tone, hue-preserving)
-//         d. Shadow Depth             (tone, toe)
-//         e. Highlight Roll-Off       (tone, shoulder)
-//    4. Convert back from linear DWG to the INPUT gamut and re-encode with the
-//       INPUT transfer function. The node's output is therefore in the same
-//       colour space as its input, so it drops into any node tree.
+//  COLOUR SPACE CONTRACT
+//  ---------------------
+//    Input  : DaVinci Wide Gamut / DaVinci Intermediate
+//    Output : DaVinci Wide Gamut / DaVinci Intermediate
 //
-//  INPUT MODES
-//  -----------
-//    DaVinci Wide Gamut / Intermediate   scene-referred log (Resolve's own
-//                                         wide-gamut timeline space).
-//    Rec.709 / Gamma 2.4 (Display)       display-referred video. Decoded with
-//                                         the BT.1886 EOTF (pure 2.4 power,
-//                                         black = 0) to DISPLAY-linear light.
-//                                         It is NOT treated as scene-linear:
-//                                         no inverse camera curve and no
-//                                         inverse tone-mapping is assumed.
-//    Rec.709 (Scene) / BT.709 OETF       scene-referred Rec.709, encoded with
-//                                         the camera OETF of ITU-R BT.709
-//                                         (Resolve: "Rec.709 (Scene)").
-//                                         Decoded to SCENE-linear light.
+//    No colour space conversion is performed. Place FilmLab after the input
+//    CST (or inside an RCM timeline set to DWG/Intermediate) and before the
+//    output CST / DRT.
 //
-//    In every mode, 18% grey sits at (or very near) linear 0.18 in the
-//    working space: scene-referred modes by definition, and in the display
-//    mode because code value ~0.49 (where a well-exposed grey card normally
-//    lands) decodes to 0.49^2.4 = 0.18 display-linear. All operators pivot
-//    on 0.18, so the same slider value produces a comparable look in each mode.
+//  PROCESSING MODEL
+//  ----------------
+//    1. Decode DaVinci Intermediate -> linear DWG (exact published curve).
+//    2. Rotate linear DWG -> linear Rec.2020 primaries (internal only).
+//       DWG's blue primary is imaginary, which gives DWG luminance a
+//       negative blue weight and lets ratio-based saturation push colours
+//       toward non-physical chromaticities. Rec.2020 has real primaries,
+//       all-positive luminance weights and still covers nearly every real
+//       surface colour, so it is a safer space for the colour operators.
+//       Colours outside Rec.2020 (negative components) are handled safely
+//       and the rotation is exactly undone in step 5.
+//    3. Colour stage (operates on chromaticity relationships):
+//         Film Density            brightness of colour, chroma unchanged
+//         Subtractive Saturation  chroma, luminance largely preserved
+//    4. Tone stage (one ratio-preserving gain per pixel -> no hue shifts):
+//         Film Contrast           S-curve in stops around 18% grey
+//         Shadow Depth            toe below ~ -2 stops
+//         Highlight Roll-Off      shoulder above ~ +1.5 stops
+//    5. Rotate back to linear DWG and encode to DaVinci Intermediate.
+//    6. Global Intensity mixes the result with the untouched input in
+//       DaVinci Intermediate (perceptually even fade, like node opacity).
+//
+//    Every operator is either a single positive gain applied to all three
+//    channels, or a sign-preserving power on channel ratios bounded to
+//    (0, 1]. Neither can flip the sign of a channel, push a channel past the
+//    pixel's brightest channel, or move a neutral off the neutral axis.
 //
 //  SIGNED / EXTENDED VALUES
 //  ------------------------
-//    No operator clamps. Negative values (out-of-gamut colours, noise below
-//    black) and values above 1.0 (DWG highlights up to ~100 linear, Rec.709
-//    super-whites) are carried through and round-trip exactly:
-//      - DaVinci Intermediate: its linear toe segment is valid for negatives.
-//      - Gamma 2.4 and BT.709 OETF: mirrored about zero (odd extension).
-//      - Tone operators act on a positive norm; gains are finite everywhere.
+//    No 0–1 clamp is applied to image data. Negatives (out-of-gamut colours,
+//    sensor noise) and highlights far above 1.0 linear pass through. The
+//    DaVinci Intermediate linear segment is valid for negative values, so
+//    decode/encode are exact inverses over the full signed range.
 //
 //  IDENTITY
 //  --------
-//    With all controls at default (or Global Intensity at 0) the node returns
-//    its input bit-for-bit. Mathematically the full decode -> DWG -> process ->
-//    encode chain is also an exact inverse pair (matrices are exact inverses
-//    computed in double precision).
+//    All controls at default, or Global Intensity at 0%, returns the input
+//    bit-for-bit (the processing path is skipped).
 //
-//  COLOUR MANAGEMENT
-//  -----------------
-//    Set "Input Color Space" to match whatever signal actually enters the node:
-//      - RCM / ACES-free managed timeline in DaVinci WG/Intermediate -> DWG/DI
-//      - Managed timeline set to Rec.709 Gamma 2.4                   -> 709 Display
-//      - Managed timeline set to Rec.709 (Scene)                     -> 709 Scene
-//      - Manual (YRGB) workflow: place after a CST node and choose the mode
-//        that matches that CST's output.
+//  ARCHITECTURE
+//  ------------
+//    GlxControls : the user's slider values, normalised.
+//    GlxProfile  : the characteristic constants of the engine (curve widths,
+//                  knees, strengths, skin hue...). V1 ships one neutral
+//                  "Gradelux Base" profile; future film profiles will be
+//                  additional GlxProfile builders selected from a menu, with
+//                  no change to the operators themselves.
+//    Operators   : one __DEVICE__ function per control, each stateless.
 // =============================================================================
 
 
 // -----------------------------------------------------------------------------
-//  USER INTERFACE
+//  USER INTERFACE  (in pipeline order: colour -> tone -> output)
+//  Sliders use a -100..100 / 0..100 scale; all defaults are neutral.
 // -----------------------------------------------------------------------------
-DEFINE_UI_PARAMS(p_InputSpace, Input Color Space, DCTLUI_COMBO_BOX, 0, { GLX_IN_DWG_DI, GLX_IN_709_DISPLAY, GLX_IN_709_SCENE }, { "DaVinci Wide Gamut / Intermediate", "Rec.709 / Gamma 2.4 (Display)", "Rec.709 (Scene) / BT.709 OETF" })
-DEFINE_UI_PARAMS(p_Density,     Film Density,           DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.01)
-DEFINE_UI_PARAMS(p_SubSat,      Subtractive Saturation, DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.01)
-DEFINE_UI_PARAMS(p_Contrast,    Film Contrast,          DCTLUI_SLIDER_FLOAT, 1.0,  0.5, 2.0, 0.01)
-DEFINE_UI_PARAMS(p_Rolloff,     Highlight Roll-Off,     DCTLUI_SLIDER_FLOAT, 0.0,  0.0, 1.0, 0.01)
-DEFINE_UI_PARAMS(p_ShadowDepth, Shadow Depth,           DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.01)
-DEFINE_UI_PARAMS(p_Intensity,   Global Intensity,       DCTLUI_SLIDER_FLOAT, 1.0,  0.0, 1.0, 0.01)
+DEFINE_UI_PARAMS(ui_Density,   Film Density,           DCTLUI_SLIDER_FLOAT,   0.0, -100.0, 100.0, 1.0)
+DEFINE_UI_PARAMS(ui_SubSat,    Subtractive Saturation, DCTLUI_SLIDER_FLOAT,   0.0, -100.0, 100.0, 1.0)
+DEFINE_UI_PARAMS(ui_Contrast,  Film Contrast,          DCTLUI_SLIDER_FLOAT,   0.0, -100.0, 100.0, 1.0)
+DEFINE_UI_PARAMS(ui_Shadow,    Shadow Depth,           DCTLUI_SLIDER_FLOAT,   0.0, -100.0, 100.0, 1.0)
+DEFINE_UI_PARAMS(ui_Rolloff,   Highlight Roll-Off,     DCTLUI_SLIDER_FLOAT,   0.0,    0.0, 100.0, 1.0)
+DEFINE_UI_PARAMS(ui_Intensity, Global Intensity,       DCTLUI_SLIDER_FLOAT, 100.0,    0.0, 100.0, 1.0)
 
 
 // -----------------------------------------------------------------------------
-//  CONSTANTS
+//  DAVINCI INTERMEDIATE  (Blackmagic Design, "DaVinci Wide Gamut -
+//  DaVinci Intermediate" white paper)
 // -----------------------------------------------------------------------------
-
-// DaVinci Intermediate (Blackmagic Design, "DaVinci Wide Gamut - DaVinci
-// Intermediate" white paper). Log segment + linear segment below LIN_CUT.
 #define DI_A        0.0075f
 #define DI_B        7.0f
 #define DI_C        0.07329248f
@@ -96,247 +87,378 @@ DEFINE_UI_PARAMS(p_Intensity,   Global Intensity,       DCTLUI_SLIDER_FLOAT, 1.0
 #define DI_LIN_CUT  0.00262409f
 #define DI_LOG_CUT  0.02740668f
 
-// ITU-R BT.709 camera OETF. Full-precision alpha/beta (rather than the
-// rounded 1.099 / 0.018) make the two segments meet exactly, so the curve
-// and its inverse are continuous and round-trip cleanly.
-#define BT709_ALPHA 1.09929682680944f
-#define BT709_BETA  0.018053968510807f   // linear breakpoint
-#define BT709_VCUT  0.081242858298635f   // = 4.5 * BETA (encoded breakpoint)
-
-// BT.1886 reference EOTF with black at 0 reduces to a pure 2.4 power.
-#define DISPLAY_GAMMA 2.4f
-
-// Photometric anchor shared by all operators.
-#define MID_GREY 0.18f
-
-// Operator tuning (not user-facing; chosen for stable, film-like behaviour).
-#define SAT_TOE        0.001f   // offset for subtractive sat (~ -7.5 stops)
-#define DENSITY_TOE    0.001f   // offset for density chroma measure
-#define DENSITY_STOPS  1.0f     // max darkening of a fully saturated colour
-#define CONTRAST_TOE   0.01f    // contrast fades to a linear gain below ~-4 stops
-#define SHADOW_KNEE    0.04f    // toe centre (~ -2.2 stops below grey)
-#define SHADOW_STOPS   1.0f     // max lift / deepen of the deepest shadows
-#define ROLLOFF_KNEE   1.0f     // shoulder starts 1 stop above grey
-#define ROLLOFF_SCALE  0.5f     // compression rate at Roll-Off = 1
-
-
-// -----------------------------------------------------------------------------
-//  TRANSFER FUNCTIONS
-// -----------------------------------------------------------------------------
-
-// DaVinci Intermediate -> linear. The linear segment (V <= LOG_CUT) also
-// covers negative code values, so signed data is handled natively.
-__DEVICE__ float di_to_linear(float v)
+__DEVICE__ float glx_di_to_lin(float v)
 {
-    return (v <= DI_LOG_CUT) ? v / DI_M
-                             : _exp2f(v / DI_C - DI_B) - DI_A;
+    return (v <= DI_LOG_CUT) ? v / DI_M : _exp2f(v / DI_C - DI_B) - DI_A;
 }
 
-// Linear -> DaVinci Intermediate (exact inverse of the above).
-__DEVICE__ float linear_to_di(float x)
+__DEVICE__ float glx_lin_to_di(float x)
 {
-    return (x <= DI_LIN_CUT) ? x * DI_M
-                             : (_log2f(x + DI_A) + DI_B) * DI_C;
-}
-
-// Rec.709 display code value -> display-linear light (BT.1886, Lb = 0).
-// Odd (mirrored) extension keeps negatives and super-whites invertible.
-__DEVICE__ float g24_to_linear(float v)
-{
-    float a = _powf(_fabs(v), DISPLAY_GAMMA);
-    return (v < 0.0f) ? -a : a;
-}
-
-__DEVICE__ float linear_to_g24(float x)
-{
-    float a = _powf(_fabs(x), 1.0f / DISPLAY_GAMMA);
-    return (x < 0.0f) ? -a : a;
-}
-
-// Rec.709 scene code value -> scene-linear (inverse BT.709 OETF).
-__DEVICE__ float bt709oetf_to_linear(float v)
-{
-    float a = _fabs(v);
-    float l = (a < BT709_VCUT) ? a / 4.5f
-                               : _powf((a + (BT709_ALPHA - 1.0f)) / BT709_ALPHA, 1.0f / 0.45f);
-    return (v < 0.0f) ? -l : l;
-}
-
-// Scene-linear -> Rec.709 scene code value (BT.709 OETF).
-__DEVICE__ float linear_to_bt709oetf(float x)
-{
-    float a = _fabs(x);
-    float v = (a < BT709_BETA) ? a * 4.5f
-                               : BT709_ALPHA * _powf(a, 0.45f) - (BT709_ALPHA - 1.0f);
-    return (x < 0.0f) ? -v : v;
+    return (x <= DI_LIN_CUT) ? x * DI_M : (_log2f(x + DI_A) + DI_B) * DI_C;
 }
 
 
 // -----------------------------------------------------------------------------
-//  GAMUT MATRICES  (both D65 — no chromatic adaptation needed)
+//  COLORIMETRY
 // -----------------------------------------------------------------------------
-//  Derived from the primaries:
-//    DWG     R(0.8000, 0.3130)  G(0.1682, 0.9877)  B(0.0790, -0.1155)
-//    Rec.709 R(0.6400, 0.3300)  G(0.3000, 0.6000)  B(0.1500,  0.0600)
-//    White   D65 (0.3127, 0.3290)
-//  M_709_to_DWG = inverse(NPM_DWG) * NPM_709, computed in double precision;
-//  M_DWG_to_709 is its exact inverse. Rows sum to 1, so neutrals stay neutral.
-
-__DEVICE__ float3 rec709_to_dwg(float r, float g, float b)
+//  Matrices derived from the primaries (both D65, so no chromatic adaptation):
+//    DWG      R(0.8000, 0.3130)  G(0.1682, 0.9877)  B(0.0790, -0.1155)
+//    Rec.2020 R(0.7080, 0.2920)  G(0.1700, 0.7970)  B(0.1310,  0.0460)
+//  Computed in double precision; one is the exact inverse of the other and
+//  every row sums to 1, so neutrals map to identical neutrals.
+__DEVICE__ float3 glx_dwg_to_work(float r, float g, float b)
 {
-    return make_float3(0.5627674560f * r + 0.3235165887f * g + 0.1137159553f * b,
-                       0.0777546353f * r + 0.7495773462f * g + 0.1726680186f * b,
-                       0.0646691999f * r + 0.1919986920f * g + 0.7433321080f * b);
+    return make_float3( 1.1303021813f * r - 0.0203928523f * g - 0.1099093290f * b,
+                       -0.0255470571f * r + 1.3108493176f * g - 0.2853022605f * b,
+                       -0.0925986068f * r - 0.1646530216f * g + 1.2572516284f * b);
 }
 
-__DEVICE__ float3 dwg_to_rec709(float r, float g, float b)
+__DEVICE__ float3 glx_work_to_dwg(float r, float g, float b)
 {
-    return make_float3( 1.8986148993f * r - 0.7921761834f * g - 0.1064387159f * b,
-                       -0.1689487865f * r + 1.4889757541f * g - 0.3200269676f * b,
-                       -0.1215391606f * r - 0.3156758531f * g + 1.4372150137f * b);
+    return make_float3(0.8921121209f * r + 0.0243691759f * g + 0.0835187032f * b,
+                       0.0326166018f * r + 0.7861375169f * g + 0.1812458813f * b,
+                       0.0699770512f * r + 0.1047494919f * g + 0.8252734569f * b);
+}
+
+//  Relative luminance Y of linear Rec.2020 (ITU-R BT.2020 / BT.2100):
+//  middle row of the RGB -> XYZ matrix. Weights are positive and sum to 1.
+#define WORK_YR 0.2627002120f
+#define WORK_YG 0.6779980715f
+#define WORK_YB 0.0593017165f
+
+#define GLX_MID_GREY 0.18f
+#define GLX_EPS      1.0e-6f
+#define GLX_INV_SQRT6 0.4082482905f
+#define GLX_INV_SQRT2 0.7071067812f
+
+__DEVICE__ float glx_luma(float r, float g, float b)
+{
+    return WORK_YR * r + WORK_YG * g + WORK_YB * b;
+}
+
+__DEVICE__ float glx_max3(float a, float b, float c) { return _fmaxf(a, _fmaxf(b, c)); }
+__DEVICE__ float glx_min3(float a, float b, float c) { return _fminf(a, _fminf(b, c)); }
+
+// Hermite smoothstep on [e0, e1] (works for e0 > e1 as well).
+__DEVICE__ float glx_smooth(float e0, float e1, float x)
+{
+    float t = _clampf((x - e0) / (e1 - e0), 0.0f, 1.0f);
+    return t * t * (3.0f - 2.0f * t);
+}
+
+// Tone norm: average of max(RGB) and luminance, with luminance limited to
+// [0, max]. Pure max-RGB makes saturated colours behave as if very bright;
+// pure luminance lets a saturated colour's strongest channel run far above
+// the curve. The hybrid stays between 0.5*max and max, is continuous, and
+// tracks perceived brightness.
+__DEVICE__ float glx_tone_norm(float r, float g, float b)
+{
+    float m = glx_max3(r, g, b);
+    float y = _clampf(glx_luma(r, g, b), 0.0f, _fmaxf(m, 0.0f));
+    return 0.5f * (m + y);
 }
 
 
 // -----------------------------------------------------------------------------
-//  OPERATOR HELPERS
+//  PROFILE  —  engine characteristics (future film profiles plug in here)
 // -----------------------------------------------------------------------------
+typedef struct {
+    // Film Density
+    float densityStops;      // darkening of a fully saturated colour at 100
+    float densityToe;        // linear level below which density fades out
+    float skinHueA;          // unit vector of the skin hue in the opponent
+    float skinHueB;          //   plane (see glx_density)
+    float skinCosInner;      // cos of half-width of full protection
+    float skinCosOuter;      // cos of half-width where protection ends
+    float skinProtect;       // 0..1 fraction of density removed on skin
+    // Subtractive Saturation
+    float satRange;          // exponent range in stops of density scale
+    float satToe;            // offset that stabilises near-black noise
+    float satLumaKeep;       // 0..1 how much luminance is restored
+    // Film Contrast
+    float contrastRange;     // log2 of max slope at grey (at +/-100)
+    float contrastWidth;     // half-width (stops) of the S-curve's action
+    float contrastToe;       // linear offset that keeps black slope finite
+    // Shadow Depth
+    float shadowKnee;        // linear level where the toe is 50% engaged
+    float shadowStops;       // max change of the deepest shadows (stops)
+    // Highlight Roll-Off
+    float rolloffKnee;       // shoulder start, stops above 18% grey
+    float rolloffRate;       // compression rate at 100
+} GlxProfile;
 
-// Subtractive saturation on one channel.
-// Film builds colour by ADDING dye density, never by adding light. Here each
-// channel's density relative to the brightest channel is scaled:
-//     D_i' = s * D_i   where D_i = -log(c_i / c_max)
-// which in linear light is  c_i' = c_max * (c_i / c_max)^s.
-// The brightest channel is untouched, weaker channels get denser (darker),
-// so saturation rises while brightness falls — the subtractive signature.
-// s < 1 does the reverse. Neutrals (all channels equal) are unchanged.
-// A tiny toe offset keeps near-black noise from being amplified. Channels
-// at or below the offset (negative / out-of-gamut) pass through unchanged,
-// which is continuous with the power branch at r = 0.
-__DEVICE__ float subtractive_channel(float c, float m, float s)
+// "Gradelux Base": neutral reference characteristic.
+// Skin hue: sRGB skin references (pale to deep) converted to linear
+// Rec.2020 cluster at 21–30 deg in the opponent plane; centre 25 deg.
+// Pure red sits at ~4.5 deg, outside the protection window.
+__DEVICE__ GlxProfile glx_profile_base(void)
 {
-    float r = (c + SAT_TOE) / m;           // m = c_max + SAT_TOE  (> 0)
-    return (r > 0.0f) ? m * _powf(r, s) - SAT_TOE : c;
+    GlxProfile p;
+    p.densityStops  = 0.75f;
+    p.densityToe    = 0.01f;
+    p.skinHueA      = 0.9063077870f;   // cos 25 deg
+    p.skinHueB      = 0.4226182617f;   // sin 25 deg
+    p.skinCosInner  = 0.9925461516f;   // +/- 7 deg  : full protection
+    p.skinCosOuter  = 0.9396926208f;   // +/- 20 deg : no protection
+    p.skinProtect   = 0.7f;
+    p.satRange      = 0.75f;           // ratio exponent 0.59 .. 1.68
+    p.satToe        = 0.001f;
+    p.satLumaKeep   = 0.75f;
+    p.contrastRange = 0.6f;            // slope at grey 0.66 .. 1.52
+    p.contrastWidth = 2.5f;
+    p.contrastToe   = 0.01f;
+    p.shadowKnee    = 0.04f;           // ~ -2.2 stops below grey
+    p.shadowStops   = 1.0f;
+    p.rolloffKnee   = 1.5f;            // ~0.51 linear
+    p.rolloffRate   = 0.4f;            // asymptote K + 2.5 stops at 100
+    return p;
 }
 
 
 // -----------------------------------------------------------------------------
-//  MAIN
+//  CONTROLS
 // -----------------------------------------------------------------------------
-__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+typedef struct {
+    float density;     // -1..1
+    float subSat;      // -1..1
+    float contrast;    // -1..1
+    float shadow;      // -1..1
+    float rolloff;     //  0..1
+    float intensity;   //  0..1
+} GlxControls;
+
+
+// =============================================================================
+//  OPERATORS  (linear working space in, linear working space out)
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+//  FILM DENSITY
+// -----------------------------------------------------------------------------
+//  On film, saturated colours are formed by more dye and print denser than a
+//  neutral of the same exposure; digital colour stays bright and "thin".
+//  Density lowers the brightness of coloured pixels with ONE gain on all three
+//  channels, so hue and saturation ratios are untouched — the colour becomes
+//  deeper, not more saturated.
+//
+//    sat    = (max - min) / (max + toe)        0 neutral .. 1 pure colour
+//    w_sat  = smoothstep(sat)                  low-chroma colours barely move
+//    w_lum  = n / (n + toe)                    fades out toward black
+//    w_skin = 1 - protect * skinMask(hue)      skin keeps its natural density
+//    gain   = 2^(-density * stops * w_sat * w_lum * w_skin)
+//
+//  Hue is measured without trig: the chroma vector (rgb minus its mean) is
+//  projected to an orthonormal opponent plane and compared to the skin hue
+//  by cosine similarity.
+__DEVICE__ float3 glx_density(float r, float g, float b, float amount, GlxProfile p)
 {
-    // ---- Effective parameters (Global Intensity scales every control) -------
-    float I = _clampf(p_Intensity, 0.0f, 1.0f);
+    float mx = glx_max3(r, g, b);
+    if (mx <= 0.0f) return make_float3(r, g, b);
+    float mn = glx_min3(r, g, b);
 
-    float density  = p_Density * I;
-    float satExp   = _exp2f(p_SubSat * I);              // 0.5 .. 2.0
-    float contrast = 1.0f + (p_Contrast - 1.0f) * I;    // 0.5 .. 2.0
-    float rolloff  = p_Rolloff * I * ROLLOFF_SCALE;
-    float shadow   = p_ShadowDepth * I;
+    float sat  = _clampf((mx - mn) / (mx + p.densityToe), 0.0f, 1.0f);
+    float wSat = sat * sat * (3.0f - 2.0f * sat);
+    float wLum = mx / (mx + p.densityToe);
 
-    int doSat      = (p_SubSat      != 0.0f);
-    int doDensity  = (density       != 0.0f);
-    int doContrast = (contrast      != 1.0f);
-    int doShadow   = (shadow        != 0.0f);
-    int doRolloff  = (rolloff       >  0.0f);
+    // Opponent plane: a = red–cyan, b = green–blue (orthonormal basis).
+    float oa  = (2.0f * r - g - b) * GLX_INV_SQRT6;
+    float ob  = (g - b) * GLX_INV_SQRT2;
+    float len = _sqrtf(oa * oa + ob * ob) + GLX_EPS;
+    float cosH = (oa * p.skinHueA + ob * p.skinHueB) / len;
+    float skin = glx_smooth(p.skinCosOuter, p.skinCosInner, cosH);
+    float wSkin = 1.0f - p.skinProtect * skin;
 
-    // Neutral settings: exact identity, no round-trip at all.
-    if (I <= 0.0f || !(doSat || doDensity || doContrast || doShadow || doRolloff))
-        return make_float3(p_R, p_G, p_B);
+    float gain = _exp2f(-amount * p.densityStops * wSat * wLum * wSkin);
+    return make_float3(r * gain, g * gain, b * gain);
+}
 
-    // ---- 1. Decode to linear light, 2. convert to linear DWG ----------------
-    float3 w;
-    if (p_InputSpace == GLX_IN_DWG_DI) {
-        w = make_float3(di_to_linear(p_R), di_to_linear(p_G), di_to_linear(p_B));
-    } else if (p_InputSpace == GLX_IN_709_DISPLAY) {
-        w = rec709_to_dwg(g24_to_linear(p_R), g24_to_linear(p_G), g24_to_linear(p_B));
-    } else {
-        w = rec709_to_dwg(bt709oetf_to_linear(p_R), bt709oetf_to_linear(p_G), bt709oetf_to_linear(p_B));
+// -----------------------------------------------------------------------------
+//  SUBTRACTIVE SATURATION
+// -----------------------------------------------------------------------------
+//  Subtractive colour adds saturation by adding dye to the channels that
+//  should be weaker, never by adding light. Each channel's density relative
+//  to the brightest channel is scaled:
+//  The density of the weakest channel relative to the brightest is scaled:
+//      D_min = -log(c_min / c_max),   D_min' = k * D_min
+//      =>  c_min' = c_min * (c_min / c_max)^(k - 1),   k = 2^(amount * range)
+//  (computed with a small toe in the ratio so near-black noise is not
+//  amplified, and sign-preserving for out-of-gamut negatives).
+//
+//  The brightest channel is kept, and every channel is then re-placed at
+//  the same relative position between min and max:
+//      f_i  = (c_i - c_min) / (c_max - c_min)
+//      c_i' = c_min' + f_i * (c_max - c_min')
+//  The fraction f of the middle channel is what defines RGB hue, so hue is
+//  held fixed while saturation changes — a plain per-channel power would
+//  rotate hues by up to ~12 deg. Since the min/max ratio stays in (0, 1],
+//  no channel can change sign or exceed the brightest channel, so saturation
+//  cannot clip. Already-saturated colours (ratio near 0) change little, so
+//  the effect eases off instead of running away.
+//
+//  Pure subtractive saturation also darkens; to keep natural luminance
+//  relationships, satLumaKeep of the luminance change is restored with one
+//  ratio-preserving gain (the remainder is the subtle film darkening).
+__DEVICE__ float3 glx_subtractive_sat(float r, float g, float b, float amount, GlxProfile p)
+{
+    float mx = glx_max3(r, g, b);
+    float mn = glx_min3(r, g, b);
+    float range = mx - mn;
+    if (mx <= 0.0f || range <= GLX_EPS * mx) return make_float3(r, g, b);  // black / neutral
+
+    float km1 = _exp2f(amount * p.satRange) - 1.0f;
+    float t   = _fminf((_fabs(mn) + p.satToe) / (mx + p.satToe), 1.0f);
+    float mn1 = mn * _powf(t, km1);
+
+    float s  = (mx - mn1) / range;            // f_i * (max - min') = (c_i - min) * s
+    float y0 = glx_luma(r, g, b);
+    float r1 = mn1 + (r - mn) * s;
+    float g1 = mn1 + (g - mn) * s;
+    float b1 = mn1 + (b - mn) * s;
+
+    // Partial luminance restore. The toe keeps the ratio finite and smooth
+    // near black / for out-of-gamut colours; limited to +/-2 stops.
+    float y1 = glx_luma(r1, g1, b1);
+    float lg = _log2f((_fmaxf(y0, 0.0f) + p.satToe) / (_fmaxf(y1, 0.0f) + p.satToe));
+    float gain = _exp2f(_clampf(lg, -2.0f, 2.0f) * p.satLumaKeep);
+    return make_float3(r1 * gain, g1 * gain, b1 * gain);
+}
+
+// -----------------------------------------------------------------------------
+//  TONE CURVES  (operate on a scalar norm; return the new norm)
+// -----------------------------------------------------------------------------
+
+//  FILM CONTRAST — S-curve in stops about 18% grey:
+//      s  = log2((n + t) / (0.18 + t))              stops from grey
+//      s' = s + (c - 1) * W * tanh(s / W)           c = 2^(amount * range)
+//      n' = n * 2^(s' - s)
+//  Slope in stops is c at grey and eases back to 1 beyond about +/-W stops,
+//  so mids gain or lose contrast while the extremes are never clipped or
+//  flattened. Applying it as a gain keeps black at 0, and the toe offset t
+//  keeps the gain finite near black. d(ln n')/d(ln n) >= min(c, 1) > 0, so
+//  the curve is strictly monotonic for every slider value.
+__DEVICE__ float glx_tanh(float x)
+{
+    // Overflow-safe tanh: e = 2^(-2|x|/ln2) in (0, 1].
+    float e = _exp2f(-2.8853900818f * _fabs(x));
+    float t = (1.0f - e) / (1.0f + e);
+    return (x < 0.0f) ? -t : t;
+}
+
+__DEVICE__ float glx_contrast(float n, float amount, GlxProfile p)
+{
+    float c = _exp2f(amount * p.contrastRange);
+    float s = _log2f((n + p.contrastToe) / (GLX_MID_GREY + p.contrastToe));
+    float shift = (c - 1.0f) * p.contrastWidth * glx_tanh(s / p.contrastWidth);
+    return n * _exp2f(shift);
+}
+
+//  SHADOW DEPTH — smooth toe:
+//      T(n)  = 1 / (1 + (n / knee)^4)          ~1 in deep shadow, ~0 at grey
+//      gain  = 2^(-amount * stops * (T(n) - T(0.18)))
+//  Normalising by T(0.18) holds 18% grey exactly. Positive deepens shadow
+//  density, negative lifts it. The gain is finite and > 0 at black, so
+//  nothing is crushed to a hard floor, and since |n T'(n)| <= 1 and
+//  stops * ln2 < 1 the curve stays monotonic over the full slider range.
+__DEVICE__ float glx_shadow(float n, float amount, GlxProfile p)
+{
+    float u  = n / p.shadowKnee;
+    float u2 = u * u;
+    float T  = 1.0f / (1.0f + u2 * u2);
+    float ug = GLX_MID_GREY / p.shadowKnee;
+    float ug2 = ug * ug;
+    float Tg = 1.0f / (1.0f + ug2 * ug2);
+    return n * _exp2f(-amount * p.shadowStops * (T - Tg));
+}
+
+//  HIGHLIGHT ROLL-OFF — rational shoulder in stops above the knee K:
+//      x  = log2(n / 0.18) - K
+//      x' = x / (1 + a x)     for x > 0,   a = amount * rate
+//  Slope is exactly 1 at the knee (seamless join) and falls smoothly toward
+//  0, approaching K + 1/a stops: highlights compress but keep separation
+//  (strictly monotonic) and never hit a hard clip.
+__DEVICE__ float glx_rolloff(float n, float amount, GlxProfile p)
+{
+    float a = amount * p.rolloffRate;
+    float x = _log2f(n / GLX_MID_GREY) - p.rolloffKnee;
+    if (x <= 0.0f) return n;
+    return n * _exp2f(-(a * x * x) / (1.0f + a * x));
+}
+
+
+// =============================================================================
+//  ENGINE
+// =============================================================================
+__DEVICE__ float3 glx_process_linear(float r, float g, float b, GlxControls k, GlxProfile p)
+{
+    // ---- Colour stage --------------------------------------------------------
+    if (k.density != 0.0f) {
+        float3 c = glx_density(r, g, b, k.density, p);
+        r = c.x; g = c.y; b = c.z;
     }
-    float r = w.x, g = w.y, b = w.z;
-
-    // ---- 3a. Subtractive Saturation -----------------------------------------
-    if (doSat) {
-        float m = _fmaxf(r, _fmaxf(g, b)) + SAT_TOE;
-        if (m > SAT_TOE) {   // brightest channel above black
-            r = subtractive_channel(r, m, satExp);
-            g = subtractive_channel(g, m, satExp);
-            b = subtractive_channel(b, m, satExp);
-        }
+    if (k.subSat != 0.0f) {
+        float3 c = glx_subtractive_sat(r, g, b, k.subSat, p);
+        r = c.x; g = c.y; b = c.z;
     }
 
-    // ---- 3b. Film Density ----------------------------------------------------
-    // On film, saturated colours are carried by more dye and so print DENSER
-    // (darker) than a neutral of the same exposure. Density scales all three
-    // channels by one gain, so hue and saturation ratios are preserved and
-    // only brightness changes, in proportion to chroma:
-    //     chroma = (max - min) / max      0 = neutral, 1 = fully saturated
-    //     gain   = 2^(-density * DENSITY_STOPS * chroma)
-    // Positive values = denser/richer colour; negative = thinner, brighter.
-    if (doDensity) {
-        float cmax = _fmaxf(r, _fmaxf(g, b));
-        if (cmax > 0.0f) {
-            float cmin   = _fminf(r, _fminf(g, b));
-            float chroma = _clampf((cmax - cmin) / (cmax + DENSITY_TOE), 0.0f, 1.0f);
-            float gain   = _exp2f(-density * DENSITY_STOPS * chroma);
-            r *= gain; g *= gain; b *= gain;
-        }
-    }
-
-    // ---- 3c-e. Tone: contrast, toe, shoulder --------------------------------
-    // Tone is evaluated on the max-RGB norm and applied as one gain to all
-    // channels, so the curve never skews hue or saturation (those belong to
-    // the colour controls above). Every gain is finite and > 0, so black stays
-    // black, the curve stays monotonic and nothing is clipped.
-    float n = _fmaxf(r, _fmaxf(g, b));
-    if (n > 0.0f) {
-        float n0 = n;
-
-        // Film Contrast: log-domain contrast pivoting on 18% grey,
-        //     n' = n * ((n + t) / (0.18 + t))^(contrast - 1)
-        // Above the toe offset t this is a pure power about grey (constant
-        // slope in stops, like a film gamma). Below it the gain tends to a
-        // constant, so slope at black stays finite and noise is not blown up.
-        if (doContrast)
-            n *= _powf((n + CONTRAST_TOE) / (MID_GREY + CONTRAST_TOE), contrast - 1.0f);
-
-        // Shadow Depth: a toe weight T(n) = 1 / (1 + (n/knee)^4) is ~1 in deep
-        // shadow and ~0 by mid grey. Gain = 2^(-depth * stops * (T - T_grey)),
-        // normalised so 18% grey is exactly fixed. Positive deepens shadows,
-        // negative lifts them; black (0) stays at 0. Monotonic for |depth|<=1.
-        if (doShadow) {
-            float u  = n / SHADOW_KNEE;
-            float u2 = u * u;
-            float T  = 1.0f / (1.0f + u2 * u2);
-            float ug = MID_GREY / SHADOW_KNEE;
-            float ug2 = ug * ug;
-            float Tg = 1.0f / (1.0f + ug2 * ug2);
-            n *= _exp2f(-shadow * SHADOW_STOPS * (T - Tg));
-        }
-
-        // Highlight Roll-Off: in stops above grey, s = log2(n / 0.18). Above
-        // the knee K a rational shoulder is applied:
-        //     s' = K + (s - K) / (1 + a (s - K))
-        // Slope is 1 at the knee (C1-smooth join), falls continuously and
-        // asymptotes at K + 1/a stops, so highlights compress without ever
-        // hard-clipping. Applied as the gain 2^(s' - s).
-        if (doRolloff) {
-            float s = _log2f(n / MID_GREY);
-            float x = s - ROLLOFF_KNEE;
-            if (x > 0.0f)
-                n *= _exp2f(-(rolloff * x * x) / (1.0f + rolloff * x));
-        }
-
+    // ---- Tone stage ----------------------------------------------------------
+    // Contrast and shadow use the perceptual hybrid norm. Roll-off uses
+    // max(RGB) so no single channel can escape the shoulder in saturated
+    // highlights. Every step is a gain on all channels: hue is preserved.
+    float n0 = glx_tone_norm(r, g, b);
+    if (n0 > 0.0f && (k.contrast != 0.0f || k.shadow != 0.0f)) {
+        float n = n0;
+        if (k.contrast != 0.0f) n = glx_contrast(n, k.contrast, p);
+        if (k.shadow   != 0.0f) n = glx_shadow(n, k.shadow, p);
         float gain = n / n0;
         r *= gain; g *= gain; b *= gain;
     }
 
-    // ---- 4. Back to the input colour space -----------------------------------
-    if (p_InputSpace == GLX_IN_DWG_DI)
-        return make_float3(linear_to_di(r), linear_to_di(g), linear_to_di(b));
+    float m0 = glx_max3(r, g, b);
+    if (m0 > 0.0f && k.rolloff > 0.0f) {
+        float gain = glx_rolloff(m0, k.rolloff, p) / m0;
+        r *= gain; g *= gain; b *= gain;
+    }
 
-    float3 o = dwg_to_rec709(r, g, b);
-    if (p_InputSpace == GLX_IN_709_DISPLAY)
-        return make_float3(linear_to_g24(o.x), linear_to_g24(o.y), linear_to_g24(o.z));
+    return make_float3(r, g, b);
+}
 
-    return make_float3(linear_to_bt709oetf(o.x), linear_to_bt709oetf(o.y), linear_to_bt709oetf(o.z));
+
+// =============================================================================
+//  ENTRY POINT
+// =============================================================================
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+    GlxControls k;
+    k.density   = _clampf(ui_Density   * 0.01f, -1.0f, 1.0f);
+    k.subSat    = _clampf(ui_SubSat    * 0.01f, -1.0f, 1.0f);
+    k.contrast  = _clampf(ui_Contrast  * 0.01f, -1.0f, 1.0f);
+    k.shadow    = _clampf(ui_Shadow    * 0.01f, -1.0f, 1.0f);
+    k.rolloff   = _clampf(ui_Rolloff   * 0.01f,  0.0f, 1.0f);
+    k.intensity = _clampf(ui_Intensity * 0.01f,  0.0f, 1.0f);
+
+    // Exact identity: neutral controls or 0% intensity skip all processing.
+    int active = (k.density != 0.0f) || (k.subSat != 0.0f) || (k.contrast != 0.0f)
+              || (k.shadow  != 0.0f) || (k.rolloff > 0.0f);
+    if (!active || k.intensity <= 0.0f)
+        return make_float3(p_R, p_G, p_B);
+
+    GlxProfile p = glx_profile_base();
+
+    // DaVinci Intermediate -> linear DWG -> linear working (Rec.2020 primaries)
+    float3 w = glx_dwg_to_work(glx_di_to_lin(p_R), glx_di_to_lin(p_G), glx_di_to_lin(p_B));
+
+    w = glx_process_linear(w.x, w.y, w.z, k, p);
+
+    // linear working -> linear DWG -> DaVinci Intermediate
+    float3 o = glx_work_to_dwg(w.x, w.y, w.z);
+    float oR = glx_lin_to_di(o.x);
+    float oG = glx_lin_to_di(o.y);
+    float oB = glx_lin_to_di(o.z);
+
+    // Global Intensity: mix in DaVinci Intermediate, where equal steps are
+    // roughly equal perceptual steps, so the fade from 0% to 100% is even.
+    float t = k.intensity;
+    return make_float3(p_R + (oR - p_R) * t,
+                       p_G + (oG - p_G) * t,
+                       p_B + (oB - p_B) * t);
 }
