@@ -15,3 +15,5 @@ look_visibility
 *.raw
 *.cube
 tests/math_test_v6_1
+tests/math_test_v7
+scenario_check

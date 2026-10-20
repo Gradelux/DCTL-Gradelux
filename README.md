@@ -4,7 +4,8 @@ Film stock and print emulation engine for DaVinci Resolve Studio, written as a D
 
 | File | Contents |
 |---|---|
-| `Gradelux_FilmLab_v6_1.dctl` | **Version 6.1 (current):** Version 6 with Moss 250D and Chroma 100 refined; everything else bit-identical |
+| `Gradelux_FilmLab_v7.dctl` | **Version 7 (current):** 13 film stocks (the 8 approved V6.1 stocks, bit-identical, plus 5 new), the 5 prints, all controls, developer Stage View |
+| `Gradelux_FilmLab_v6_1.dctl` | Version 6.1: Version 6 with Moss 250D and Chroma 100 refined |
 | `Gradelux_FilmLab_v6.dctl` | Version 6: production foundation, 8 film stocks, the 5 prints, all controls, developer Stage View |
 | `Gradelux_FilmLab_v5_diagnostic.dctl` | Version 5 diagnostic build: the 3 stocks v6 is built on |
 | `Gradelux_FilmLab_v5.dctl` | Version 5 first prototype: 4 stocks (superseded by the diagnostic build) |
@@ -14,12 +15,77 @@ Film stock and print emulation engine for DaVinci Resolve Studio, written as a D
 | `tools/look_preview.c`, `tools/look_preview.py` | Contact-sheet renderer for any stock / print combination |
 | `docs/LUT_PLAN.md` | Plan for the standalone LUTs (DWG and Rec.709) |
 | `docs/V5_DIAGNOSIS.md`, `docs/FilmLab_v5_diagnostic.png` | Why the first v5 looks were weak, the fixes, and a preview |
+| `tools/scenario_check.c` | Synthetic scenario checks (portrait, daylight, foliage, interior, night, saturated, high contrast) for every stock × print |
+| `docs/V7_TESTING.md` | V7 regression checklist: what was executed and what needs Resolve |
 | `tools/look_visibility.c` | Measures visible strength of each stock and a distinctness matrix between all stocks |
 | `docs/FilmLab_v6_looks.png`, `docs/FilmLab_v6_prints.png` | The 8 v6 stocks, and stock + print pairs |
 | `docs/FilmLab_v5_prototype.png` | The first 4 prototype stocks |
 | `docs/FilmLab_v4_*.png`, `docs/FilmLab_v3_look_preview.png` | Earlier versions, for comparison |
 
 Grain, halation, bloom, diffusion and film damage are intentionally not included.
+
+## Version 7: thirteen film stocks
+
+`Gradelux_FilmLab_v7.dctl` adds five stocks after Silvergrain 100, so existing dropdown
+positions don't move:
+- **09** Tungsten 500T
+- **10** Halcyon 400
+- **11** Argent 200
+- **12** Nocturne 800
+- **13** Pastelle 400
+
+The eight approved stocks are untouched. So are the prints, every control and default, the
+developer Stage View, and every shared function. Only new stock definitions were added.
+
+### Changelog
+
+- Five new stock definitions and five appended dropdown entries. No other code change.
+- `tests/math_test_v7.c`:
+  - V6.1 vs V7 bit-for-bit comparison of the eight approved stocks.
+  - Monochrome stocks detected by definition, not dropdown position.
+- `tools/scenario_check.c`: synthetic scenario checks.
+- Tools (`look_visibility`, `look_preview`, `gradelux_lut`) list 13 stocks and default to V7.
+- Previews: `docs/FilmLab_v7_looks.png`, `docs/FilmLab_v7_new_with_prints.png`.
+
+### The five new stocks
+
+Measured at 100%, no print. Columns:
+- **Mid contrast:** slope at grey.
+- **Blacks:** shift 4 stops under grey.
+- **Highlights:** shift 4 stops over grey.
+- **Colour:** display colourfulness vs the source.
+
+| Stock | Mid contrast | Blacks | Highlights | Colour | Identity |
+|---|---|---|---|---|---|
+| **Tungsten 500T** | 1.31 | −1.10 | −0.48 (long shoulder) | 1.08× | Balanced tungsten negative. Neutral midtones, cool-neutral ambient shadows, warm amber highlights and practicals. Strong dye density: deep reds and rich deep blues; yellows lean amber, reds slightly orange. Natural greens and skin. Lighter and more natural than Midnight. |
+| **Halcyon 400** | 1.48 | −1.77 | −0.37 (clean, bright) | 0.84× | Cool modern stock with a steel-blue identity: blue shadows, cool mids, neutral highlights. Blues and cyans carry the colour; greens muted and cool; yellows and oranges restrained; crisp contrast. Skin keeps a natural hue (+1°) but reads slightly paler. |
+| **Argent 200** | 1.53 | −1.98 (wide toe keeps detail) | −1.39 (silvery) | 0.40× | Bleach-bypass-inspired: strong contrast and midtone separation, dense open blacks, restrained silvery highlights. Colour heavily reduced but present; warm hues reduced more than cool, so it reads metallic and slightly cool. |
+| **Nocturne 800** | 1.50 | −2.44 (deepest) | −1.26 | 0.87× | Dark, dense night film: printed down further than Midnight. Shadows go to near-colourless blue-black; mids lean warm; amber and red practicals stay rich (amber chroma 60 vs 61 Off, red 78 vs 70) while blue and magenta neon are held down (33 vs 38, 66 vs 82). Midnight stays the blue/cyan night look. |
+| **Pastelle 400** | 1.28 | −0.47 (soft but not milky) | −0.35 (long, creamy) | 0.87× | Airy, 400H-inspired: printed slightly up. The pastel comes from hue and density, not low saturation: mint greens lightened by density, pale skies, pink/peach skin (up to −7° toward pink on the lightest skin), cool shadows, cream highlights. Global saturation near normal. |
+
+**Distinctness:** every new stock is at least ΔE 8.0 from every other stock on its own:
+- Tungsten: Verdant 8.0, Chroma 8.1
+- Halcyon: Verdant 8.7
+- Argent: 14.2
+- Nocturne: Midnight 9.3
+- Pastelle: Aurelia 8.2
+
+Visible change vs Off ranges from ΔE 10.2 (Tungsten) to 23.8 (Argent). Each new stock differs in
+contrast shape, print-down density, zone width, shadow/mid/highlight colour, per-hue
+rotation/saturation/density and dye coupling, not just in saturation and contrast.
+
+### Verification
+
+All of the following were run on the host through the C shim, not in Resolve.
+- **Eight approved stocks:** bit-identical to V6.1 over 257,464 outputs (fixed grid ×
+  6 print options × 4 Stage Views, plus 100,000 random settings of every control).
+- **Older regressions:** V1, film adjustment, print and V5-diagnostic regressions are
+  bit-exact.
+- **Full test (`./math_test_v7`):** passes for all 13 stocks × 6 print options.
+- **Synthetic scenario checks:** pass at 100%.
+
+Compiling in Resolve and judging the stocks on real footage still need to be done; see
+[`docs/V7_TESTING.md`](docs/V7_TESTING.md) for the checklist.
 
 ## Version 6.1: Moss 250D and Chroma 100 refinement
 

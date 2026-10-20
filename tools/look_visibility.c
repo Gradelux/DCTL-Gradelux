@@ -8,7 +8,7 @@
 //  full stock, its colour and tone stages, with stages removed, and over a
 //  print; plus dE between stocks (distinctness).
 //
-//    gcc -O2 -o look_visibility tools/look_visibility.c -lm && ./look_visibility   (Version 6.1)
+//    gcc -O2 -o look_visibility tools/look_visibility.c -lm && ./look_visibility   (Version 7)
 // =============================================================================
 #define HAS_SENS
 #include <math.h>
@@ -43,19 +43,22 @@ static const char *LOOK_NAMES[] = { "Off", "Pure", "Ember", "Slate", "Solace", "
     "Prism", "Eclipse", "Mono", "Obsidian", "Silver" };
 static const char *PRINT_NAMES[] = { "None", "Print2383", "Print2393", "Print3513", "Print3510", "Print2383Soft" };
 #define FILMLAB_SOURCE "../Gradelux_FilmLab_v4.dctl"
-#else   // Version 6 (8 film stocks)
+#else   // Version 7 (13 film stocks)
 enum { GLX_LOOK_OFF, GLX_LOOK_VERONA_250D, GLX_LOOK_VERDANT_250D, GLX_LOOK_MIDNIGHT_800T, GLX_LOOK_AURELIA_400,
-       GLX_LOOK_SOLARA_200, GLX_LOOK_MOSS_250D, GLX_LOOK_CHROMA_100, GLX_LOOK_SILVERGRAIN_100, GLX_LOOK_COUNT };
+       GLX_LOOK_SOLARA_200, GLX_LOOK_MOSS_250D, GLX_LOOK_CHROMA_100, GLX_LOOK_SILVERGRAIN_100,
+       GLX_LOOK_TUNGSTEN_500T, GLX_LOOK_HALCYON_400, GLX_LOOK_ARGENT_200, GLX_LOOK_NOCTURNE_800, GLX_LOOK_PASTELLE_400,
+       GLX_LOOK_COUNT };
 enum { GLX_PRINT_NONE, GLX_PRINT_CINECHROME_2383, GLX_PRINT_VELACHROME_2393, GLX_PRINT_LUMACHROME_3513,
        GLX_PRINT_RETROCHROME_3510, GLX_PRINT_SILKCHROME_2383, GLX_PRINT_COUNT };
 enum { GLX_DIAG_NORMAL, GLX_DIAG_COLOR, GLX_DIAG_TONE, GLX_DIAG_FULL };
 static int ui_Diag = 0;
 static const char *LOOK_NAMES[] = { "Off", "Verona250D", "Verdant250D", "Midnight800T", "Aurelia400",
-                                    "Solara200", "Moss250D", "Chroma100", "Silvergrain100" };
+                                    "Solara200", "Moss250D", "Chroma100", "Silvergrain100", "Tungsten500T", "Halcyon400", "Argent200",
+                                    "Nocturne800", "Pastelle400" };
 static const char *PRINT_NAMES[] = { "None", "Cinechrome2383", "Velachrome2393", "Lumachrome3513",
                                      "Retrochrome3510", "Silkchrome2383" };
-#ifndef FILMLAB_SOURCE   /* Version 6.1 by default; -DFILMLAB_SOURCE='"../Gradelux_FilmLab_v6.dctl"' for 6.0 */
-#define FILMLAB_SOURCE "../Gradelux_FilmLab_v6_1.dctl"
+#ifndef FILMLAB_SOURCE   /* Version 7 by default; -DFILMLAB_SOURCE='"../Gradelux_FilmLab_v6_1.dctl"' for 6.1 */
+#define FILMLAB_SOURCE "../Gradelux_FilmLab_v7.dctl"
 #endif
 #endif
 
