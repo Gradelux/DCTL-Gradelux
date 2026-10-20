@@ -4,16 +4,53 @@ Film stock and print emulation engine for DaVinci Resolve Studio, written as a D
 
 | File | Contents |
 |---|---|
-| `Gradelux_FilmLab_v5.dctl` | **Version 5 prototype (current):** the first 4 renamed film stocks, the 5 renamed film prints, and all controls |
+| `Gradelux_FilmLab_v5_diagnostic.dctl` | **Version 5 diagnostic build (current):** 3 redesigned stocks, a Diagnostic View selector, the 5 prints and all controls |
+| `Gradelux_FilmLab_v5.dctl` | Version 5 first prototype: 4 stocks (superseded by the diagnostic build) |
 | `Gradelux_FilmLab_v4.dctl` | Version 4: the previous 23 looks and the prints under their old names |
 | `Gradelux_FilmLab_v3.dctl`, `_v2`, `Gradelux_FilmLab.dctl` | Earlier versions |
 | `tools/gradelux_lut.c` | Reference `.cube` generator and LUT accuracy validator (v5 by default; `-DFILMLAB_V4` for v4) |
 | `tools/look_preview.c`, `tools/look_preview.py` | Contact-sheet renderer for any stock / print combination |
 | `docs/LUT_PLAN.md` | Plan for the standalone LUTs (DWG and Rec.709) |
-| `docs/FilmLab_v5_prototype.png` | The 4 prototype stocks, the prints, and stock + print pairs |
+| `docs/V5_DIAGNOSIS.md`, `docs/FilmLab_v5_diagnostic.png` | Why the first v5 looks were weak, the fixes, and a preview |
+| `tools/look_visibility.c` | Measures visible strength and distinctness of the stocks |
+| `docs/FilmLab_v5_prototype.png` | The first 4 prototype stocks |
 | `docs/FilmLab_v4_*.png`, `docs/FilmLab_v3_look_preview.png` | Earlier versions, for comparison |
 
 Grain, halation, bloom, diffusion and film damage are intentionally not included.
+
+## Version 5 diagnostic build (current for look development)
+
+`Gradelux_FilmLab_v5_diagnostic.dctl` is a temporary look-development build.
+
+- **Film Look:** Off, Verona 250D, Verdant 250D, Midnight 800T, redesigned to be strong and
+  clearly distinct.
+- **Diagnostic View (new dropdown):**
+
+  | Option | What you see |
+  |---|---|
+  | Normal | Full product behaviour. This is what LUTs sample. |
+  | Film Color Only | The stock's colour stages only. |
+  | Film Tone Only | The stock's characteristic curve and print density, applied without any hue change. |
+  | Full Film Look | The stock alone, with print, film adjustments, grading controls and Global Intensity bypassed. |
+
+- **Unchanged:** all controls and the five prints. Bypass with everything off is still exact.
+- **Regressions:** v1 controls, v3 film adjustments and v4 prints match bit-for-bit.
+
+The diagnosis of why the first prototype was too subtle, and the before/after measurements,
+are in `docs/V5_DIAGNOSIS.md`. A preview is in `docs/FilmLab_v5_diagnostic.png`.
+
+| Stock | Character |
+|---|---|
+| Verona 250D | Rich daylight colour negative (Kodak-inspired): strong photographic contrast printed slightly down, dense shadows, creamy shoulder, warm golden mids and skin, dense reds, and a signature yellow-green rendering (greens toward yellow-olive, yellows toward gold). |
+| Verdant 250D | Cool cinematic colour negative (Fuji-inspired): strong but natural contrast, cyan-green shadow density, slightly cool mids, emerald/teal greens kept rich, controlled crimson-leaning reds, lemon yellows, deep cyans and blues. |
+| Midnight 800T | Dramatic night film (tungsten-film-inspired): deep blacks with a long toe, punchy contrast printed down, blue-cyan shadows against rich warm tungsten highlights, neon held in check, teal greens, sodium-orange yellows. |
+
+These are original Gradelux creative interpretations, not measured reproductions of Kodak,
+Fujifilm or any other manufacturer's films.
+
+`tests/math_test_v5_diagnostic.c` runs the full suite on every stock × print combination,
+plus checks of the Diagnostic View. `tools/look_visibility.c` reports the visible strength and
+distinctness of the stocks.
 
 ## Version 5 prototype: Gradelux film stocks
 
