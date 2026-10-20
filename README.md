@@ -1,15 +1,185 @@
 # Gradelux FilmLab
 
-Film emulation and grading engine for DaVinci Resolve Studio, written as a DCTL.
+Cinematic look engine and film grading tools for DaVinci Resolve Studio, written as a DCTL.
 
 | File | Contents |
 |---|---|
-| `Gradelux_FilmLab_v2.dctl` | **Version 2 (current):** film emulation engine with 11 Film Stock options and 5 film controls, plus all six Version 1 controls |
+| `Gradelux_FilmLab_v3.dctl` | **Version 3 (current):** 23 Gradelux looks (20 colour, 3 black-and-white), Creative Intensity, the film adjustment controls and all Version 1 grading controls |
+| `Gradelux_FilmLab_v2.dctl` | Version 2: 10 film-stock profiles |
 | `Gradelux_FilmLab.dctl` | Version 1: the six core controls only |
+| `tools/gradelux_lut.c` | Reference `.cube` generator and LUT accuracy validator (uses the v3 DCTL source) |
+| `tools/look_preview.c`, `tools/look_preview.py` | Renders a test scene through every look into a contact sheet |
+| `docs/LUT_PLAN.md` | Plan for the 46 standalone LUTs (23 DWG + 23 Rec.709) |
+| `docs/FilmLab_v3_look_preview.png` | Contact sheet of all looks on a synthetic test scene |
 
-Grain, halation, bloom and print-specific emulation are planned for later versions.
+Grain, halation, bloom and film damage are intentionally not included. They will be built
+separately from the LUT-compatible colour engine.
 
-## Version 2: film emulation
+## Version 3: Gradelux looks
+
+### Colour space
+
+- **Input and output:** DaVinci Wide Gamut / DaVinci Intermediate only.
+- There is no input selector and no Rec.709 conversion.
+- Internally the image is decoded to linear light and the maths runs in Rec.2020 primaries
+  (exact rotation, undone before re-encoding).
+- Negative and extended-range values pass through with no 0–1 clamp.
+
+### Controls (Resolve shows them in this order)
+
+| Control | Range | Default | What it does |
+|---|---|---|---|
+| Film Look | dropdown (24) | Off | Off, the 20 colour looks, and the 3 monochrome looks. Off bypasses the look engine completely. |
+| Creative Intensity | 0–200% | 100% | Scales the selected look. 0% = bypass, 100% = the reference look (identical to its LUT), 200% = exaggerated but bounded. |
+| Film Color Density | -100 to 100 | 0 | Adds to or removes the look's own colour density response. No effect with Off or a monochrome look. |
+| Film Color Separation | 0–100 | 50 | Hue clustering. Above 50 colour families separate more distinctly; below 50 they blend. Never folds hues. |
+| Film Highlight Warmth | -100 to 100 | 0 | Highlight colour temperature (+ amber, − cool), brightness-neutral. |
+| Film Shadow Tone | -100 to 100 | 0 | Shadow colour (+ warm amber, − teal), brightness-neutral. On monochrome looks this acts as split toning. |
+| Film Density … Global Intensity | | | The six Version 1 controls, unchanged (see below). |
+
+Film Stock Strength from v2 is replaced by Creative Intensity.
+
+### Processing order
+
+```
+DaVinci Intermediate -> linear -> LOOK (scaled by Creative Intensity) -> film adjustments
+  -> V1 grading controls -> DaVinci Intermediate -> Global Intensity mix
+```
+
+The look engine depends only on the pixel's RGB, the Film Look and Creative Intensity. It
+uses no image position, neighbouring pixels, time or randomness. With every other control
+at default, the DCTL output is exactly the reference look. That is what the LUTs sample.
+
+Global Intensity mixes after re-encoding. It must mix in DaVinci Intermediate to give an even
+perceptual fade, and this is the only change from the suggested processing order.
+
+### The 23 looks
+
+All looks keep 18% grey at the same brightness (within ±0.02 stop), so switching looks
+doesn't change exposure. They are original Gradelux designs inspired by film aesthetics, not
+reproductions of any photographic product.
+
+"Slope" is mid contrast: 1.00 is unchanged, higher is punchier.
+
+**Colour looks**
+
+| # | Look | Slope | Character |
+|---|---|---|---|
+| 01 | Pure | 1.17 | Polished clean cinema. Firm contrast, deep but detailed blacks, long clean shoulder, richer natural colour, neutral whites. Skin hue moves under 1°. |
+| 02 | Ember | 1.19 | Cinematic warmth. Amber highlights, warm mids, deep shadows, rich dense reds; greens held back toward olive. |
+| 03 | Slate | 1.27 | Cool cinema. Blue shadows, cool mids, muted teal greens, firm contrast, restrained saturation. |
+| 04 | Solace | 0.90 | Gentle warmth. Soft contrast, creamy compressed highlights, warm natural skin, a whisper of warm fade. |
+| 05 | Chrome | 1.29 | Crisp and metallic. High per-channel contrast, cool neutrals, steel blues and cyans, controlled warm colours. |
+| 06 | Dune | 1.04 | Sunlit earth. Golden highlights, earthy warm shadows, olive greens, terracotta reds, dusty blues. |
+| 07 | Noir | 1.34 | Dramatic and restrained. Deep blacks, strong contrast, heavy shadow desaturation, dense muted colour. |
+| 08 | Bloom | 0.85 | Soft pastel. Lifted mauve blacks, pink-tinged highlights, mint greens, lavender blues, light colour density. |
+| 09 | Haze | 0.81 | Atmospheric. The most faded blacks (cool), soft contrast, milky shoulder, muted colour throughout. |
+| 10 | Vivid | 1.21 | Bold colour. Strong saturation carried with density, deep reds and blues, clear separation, vibrant contrast. |
+| 11 | Muse | 1.07 | Editorial. Balanced contrast, creamy whites, refined consolidated skin, softened greens and blues. |
+| 12 | Tundra | 1.10 | Cold. Icy blue highlights and shadows, desaturated teal greens, pale cool fade. |
+| 13 | Sienna | 1.19 | Burnt warmth. Orange-turned reds, earthy dense colour, warm mids, rich contrast, olive greens. |
+| 14 | Velvet | 1.15 | Luxurious depth. Very dense jewel tones (subtractive saturation), plum-tinged deep shadows, smooth long shoulder. |
+| 15 | Cinder | 1.10 | Moody smoke. Grey, desaturated shadows with a soft fade, subdued colour, subtle warm highlights. |
+| 16 | Lumen | 0.95 | Luminous and airy. Open shadows, late shoulder, lighter colour density so colours glow, radiant mids. |
+| 17 | Fable | 1.02 | Vintage print. Faded cyan-green blacks, warm yellowed mids and highlights, nostalgic softened colour. |
+| 18 | Moss | 1.11 | Organic forest. Deep dense greens, muted olive yellows, green-tinged shadows, earthy separation. |
+| 19 | Prism | 1.14 | Spectrum. The strongest hue separation, broad rich saturation across every hue, clean contrast. |
+| 20 | Eclipse | 1.29 | Dark drama. Deep toe, powerful contrast, strong cool shadows against warm protected skin, dense teal greens. |
+
+**Monochrome looks.** Each has its own channel mix, colour-filter response and tone curve.
+Output is exactly neutral (R = G = B).
+
+| # | Look | Slope | Character |
+|---|---|---|---|
+| 21 | Mono | 1.17 | Classic 35mm panchromatic. Slightly red-sensitive (skin about 0.2 stop brighter than luminance), rich contrast, smooth shoulder, detailed blacks. |
+| 22 | Obsidian | 1.43 | Red-filter drama. Skies and foliage go dark (blue −1.7 stops), skin and reds bright (+0.6 / +1.1), very deep toe, brilliant whites with a short shoulder. |
+| 23 | Silver | 0.91 | Soft vintage silver-gelatin. Blue-leaning sensitivity (luminous skies, slightly deeper skin), low contrast, lifted toe, long luminous shoulder, gentle fade. |
+
+**Monochrome and Creative Intensity:** output = mono rendering + (1 − intensity) × the
+original colour detail.
+- At 0% the image is untouched.
+- At 50% it is half-desaturated over a half-strength mono rendering.
+- From 100% it is fully monochrome. Above 100% the channel mix and curve are exaggerated,
+  and the image stays neutral.
+
+### How the looks are built
+
+Every colour look is a set of about 60 numbers fed into one engine:
+
+1. **Colour response.** Hue-dependent rotation, saturation and density across six smoothly
+   blended hue zones. On top of that:
+   - overall saturation, with separate saturation in shadows, midtones and highlights
+   - saturation-driven density and hue separation
+   - a soft gamut limit, so in-range colours never go negative or clip
+   - skin protection (reduced rotation, saturation and density changes on skin)
+2. **Subtractive saturation.** The Version 1 hue-preserving operator, driven by the look.
+3. **Tone.** The look's contrast, toe and shoulder, partly applied per channel for film-like
+   colour response, plus channel crossover and shadow / midtone / highlight colour.
+   The colour shifts are brightness-neutral and reduced on skin.
+4. **Fade.** A smooth, optionally tinted black lift for faded or milky blacks.
+
+Creative Intensity scales all of these numbers together. It then keeps each one inside a
+range where the maths is proven smooth and order-preserving. Tone curves stay monotonic,
+and the hue map can't fold, even at 200%.
+
+### Install (Resolve Studio)
+
+1. In Resolve, open **Project Settings → Color Management → Lookup Tables → Open LUT Folder**.
+   - macOS: `/Library/Application Support/Blackmagic Design/DaVinci Resolve/LUT/`
+   - Windows: `C:\ProgramData\Blackmagic Design\DaVinci Resolve\Support\LUT\`
+2. Create a `Gradelux` folder there and copy `Gradelux_FilmLab_v3.dctl` into it.
+3. Click **Update Lists** (or restart Resolve).
+4. On the Color page, add **ResolveFX Color → DCTL** to a node and choose `Gradelux_FilmLab_v3`.
+5. Make sure the node receives DWG/Intermediate:
+   - **RCM:** set the timeline colour space to DaVinci WG/Intermediate.
+   - **Manual:** place the node after a CST to DWG/Intermediate and before your output CST/DRT.
+
+The maths has been verified on a host compiler only. Compile and test it in Resolve Studio
+on macOS (Metal) and Windows (CUDA/OpenCL) before release.
+
+### Testing checklist (Version 3)
+
+**Identity and bypass**
+- [ ] Film Look Off with every control at default: toggling the node changes nothing (check scopes).
+- [ ] Creative Intensity 0% with any look: identical to Off.
+- [ ] Global Intensity 0%: identical to the input with any settings.
+- [ ] The dropdown shows exactly 24 entries, and each selects a different look.
+
+**Each look (use a colour chart, a grey ramp, skin tones and real footage)**
+- [ ] Pure on/off shows a clear improvement in contrast, richness and separation without an obvious cast.
+- [ ] 18% grey stays at the same level when switching looks (waveform).
+- [ ] Grey ramp: smooth, no banding, kinks or reversals at the toe or shoulder.
+- [ ] Skin: natural on light, medium and deep skin, with no green, grey or magenta cast.
+- [ ] Highlights: smooth shoulder; bright saturated lights don't flatten or posterize.
+- [ ] Shadows: lifts and fades are smooth, with no crushed floor or noise boost.
+- [ ] Mono / Obsidian / Silver: RGB parade channels identical; each renders skies, skin and foliage differently.
+
+**Creative Intensity**
+- [ ] Sweep 0 → 200% on each look: smooth, no sudden jumps.
+- [ ] At 200%, gradients and skin still hold together (strong, not broken).
+- [ ] Monochrome looks: 0 → 100% fades colour out smoothly; fully neutral from 100%.
+
+**Controls with every look**
+- [ ] Film Color Density, Separation, Highlight Warmth and Shadow Tone at both extremes: smooth and stable.
+- [ ] The Version 1 controls behave as in v1 and v2.
+- [ ] Out-of-gamut sources (LEDs, neon): no black pixels or speckles.
+
+**Performance**
+- [ ] UHD/4K playback at timeline frame rate with a look active vs bypass, on both platforms.
+- [ ] Render a clip and confirm it matches the viewer.
+
+**Preview without Resolve**
+```
+gcc -O2 -o look_preview tools/look_preview.c -lm && ./look_preview looks.raw
+python3 tools/look_preview.py looks.raw preview.png
+```
+
+### LUTs
+
+See `docs/LUT_PLAN.md` for the plan to produce the 46 standalone LUTs. It covers the sampling
+domain, transfer functions, matrices, clipping behaviour, measured accuracy, and validation.
+
+## Version 2 reference (film stocks)
 
 ### Controls (Resolve shows them in this order)
 
@@ -193,6 +363,21 @@ DaVinci Intermediate 0.336. All controls pivot on that level.
 - [ ] Render a test clip and confirm the output matches the viewer.
 
 ## Maths tests
+
+`tests/math_test_v3.c` (Version 3) checks:
+- identity at defaults, at 0% Global Intensity and at 0% Creative Intensity
+- that the look fades continuously to zero
+- for all 23 looks at 100% and 200%:
+  - monotonic, continuous neutral ramps
+  - no NaN/Inf
+  - no negatives from in-range colours
+  - exact R = G = B for monochrome looks
+  - the hue map never folding, and the output staying continuous around the hue circle
+- skin hue shifts, a minimum strength per look, and all looks distinct
+- extreme slider sweeps with every look
+
+It also builds regression dumps: v3 with Look Off equals v1 bit-for-bit, and v3's film
+adjustments match v2. Build commands are at the top of the file.
 
 `tests/math_test_v2.c` (Version 2) checks:
 - identity at defaults, at 0% Global Intensity, and the exact bypass at 0% Stock Strength
