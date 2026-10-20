@@ -4,6 +4,7 @@ tests/math_test_v3
 tests/math_test_v4
 tests/math_test_v5
 tests/math_test_v5_diag
+tests/math_test_v6
 tests/dump_v1
 tests/dump_v2
 tests/v1.txt

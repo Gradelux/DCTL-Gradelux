@@ -4,7 +4,8 @@ Film stock and print emulation engine for DaVinci Resolve Studio, written as a D
 
 | File | Contents |
 |---|---|
-| `Gradelux_FilmLab_v5_diagnostic.dctl` | **Version 5 diagnostic build (current):** 3 redesigned stocks, a Diagnostic View selector, the 5 prints and all controls |
+| `Gradelux_FilmLab_v6.dctl` | **Version 6 (current production foundation):** 8 film stocks, the 5 prints, all controls, developer Stage View |
+| `Gradelux_FilmLab_v5_diagnostic.dctl` | Version 5 diagnostic build: the 3 stocks v6 is built on |
 | `Gradelux_FilmLab_v5.dctl` | Version 5 first prototype: 4 stocks (superseded by the diagnostic build) |
 | `Gradelux_FilmLab_v4.dctl` | Version 4: the previous 23 looks and the prints under their old names |
 | `Gradelux_FilmLab_v3.dctl`, `_v2`, `Gradelux_FilmLab.dctl` | Earlier versions |
@@ -12,13 +13,102 @@ Film stock and print emulation engine for DaVinci Resolve Studio, written as a D
 | `tools/look_preview.c`, `tools/look_preview.py` | Contact-sheet renderer for any stock / print combination |
 | `docs/LUT_PLAN.md` | Plan for the standalone LUTs (DWG and Rec.709) |
 | `docs/V5_DIAGNOSIS.md`, `docs/FilmLab_v5_diagnostic.png` | Why the first v5 looks were weak, the fixes, and a preview |
-| `tools/look_visibility.c` | Measures visible strength and distinctness of the stocks |
+| `tools/look_visibility.c` | Measures visible strength of each stock and a distinctness matrix between all stocks |
+| `docs/FilmLab_v6_looks.png`, `docs/FilmLab_v6_prints.png` | The 8 v6 stocks, and stock + print pairs |
 | `docs/FilmLab_v5_prototype.png` | The first 4 prototype stocks |
 | `docs/FilmLab_v4_*.png`, `docs/FilmLab_v3_look_preview.png` | Earlier versions, for comparison |
 
 Grain, halation, bloom, diffusion and film damage are intentionally not included.
 
-## Version 5 diagnostic build (current for look development)
+## Version 6: production foundation (8 film stocks)
+
+`Gradelux_FilmLab_v6.dctl` is built on the Version 5 diagnostic build.
+
+- **Original three stocks:** Verona 250D, Verdant 250D and Midnight 800T are unchanged
+  (verified bit-for-bit against the diagnostic build over 30,000 random settings, including
+  prints, controls and stage views).
+- **New stocks:** Aurelia 400, Solara 200, Moss 250D, Chroma 100 and Silvergrain 100.
+- **Unchanged:** prints, print controls, film adjustments, grading controls, DWG/Intermediate
+  in and out, and exact bypass. Regressions against v1, v3 and v4 are bit-exact.
+
+**Film Look dropdown:** Off, Verona 250D, Verdant 250D, Midnight 800T, Aurelia 400,
+Solara 200, Moss 250D, Chroma 100, Silvergrain 100.
+
+**Developer section:** "Dev - Stage View" is the last control (Normal, Film Color Only, Film
+Tone Only, Full Film Look). At Normal, its default, it has no effect, and LUTs sample Normal.
+For monochrome stocks, Color Only shows the spectral mix and Tone Only shows the curve on the
+colour image.
+
+### How the eight stocks differ
+
+Measured at 100%, no print. Columns:
+- **Mid contrast:** slope at grey.
+- **Blacks:** shift 4 stops under grey.
+- **Highlights:** shift 4 stops over grey.
+- **Whites:** red–blue lean, in stops.
+- **Skin:** hue shift / saturation.
+
+| Stock | Mid contrast | Blacks | Highlights | Whites | Skin | Identity |
+|---|---|---|---|---|---|---|
+| **Verona 250D** | 1.37 | −1.41 | −0.82 | +0.23 warm | −2.6° / 1.22× | Rich Kodak-inspired daylight negative: strong photographic contrast printed slightly down, dense shadows, creamy shoulder, warm golden mids and skin, dense reds, signature yellow-green (greens to yellow-olive, yellows to gold). |
+| **Verdant 250D** | 1.31 | −1.11 | −0.73 | −0.04 neutral-cool | +0.5° / 0.91× | Fuji-inspired cinema: strong natural contrast, cyan-green shadows, cool mids, rich emerald/teal greens, controlled crimson reds, deep cyans and blues. |
+| **Midnight 800T** | 1.44 | −1.91 | −1.10 | +0.31 tungsten | −2.3° / 1.08× | Dramatic night film: deepest blacks, printed down, blue-cyan shadows against warm tungsten light, neon kept in check, teal greens, sodium-orange yellows. |
+| **Aurelia 400** | 1.17 | −0.39 | **−1.34** | +0.12 cream | +4.6° / 0.91× | Portra-inspired portrait film: gentle, finished contrast, the earliest and creamiest shoulder (highlights turn to cream), warm pastel mids that skin receives, strong highlight desaturation, coral reds, muted olive greens, soft teal blues. |
+| **Solara 200** | 1.15 | +0.10 (lifted) | −0.96 | **+0.36 golden** | +3.7° / 1.21× | Gold-inspired consumer film: the warmest stock, golden from shadows to highlights (warm shadows, unlike Verona), a faint warm lift in the blacks, softer contrast, bright rich yellows, orange-leaning reds, yellow-green foliage, muted blues. |
+| **Moss 250D** | 1.21 | −0.86 | −0.53 (longest shoulder) | −0.04 neutral-cool | −0.4° / **0.66×** | Eterna-inspired, restrained and elegant: the least saturated colour stock (softened by dye impurity, not masking), cool cyan-green relationships kept subtle, smooth contrast with a deep toe, natural skin. |
+| **Chroma 100** | **1.48** | −1.63 | −1.22 | neutral | −3.1° / **1.29×** | Ektar / slide-inspired: a different tonal family (steepest mids, hard toe, early shoulder), shadows that *gain* colour (reversal-film behaviour), strong masking and density, pure deep reds and blues, punchy greens, cyans toward blue, neutral greys. |
+| **Silvergrain 100** | 1.11 | +0.16 (lifted, rich) | −1.23 | neutral (exact) | — | Soft vintage black-and-white, not a desaturation. Blue-leaning early-panchromatic sensitivity: blues render up to +0.95 stop over luminance and skies lighter, while reds, deep skin and foliage render 0.2–0.4 stop deeper. Delicate mids, smooth early shoulder, lifted but rich blacks. |
+
+Visible difference between stocks (mean CIELAB ΔE through a display transform; about 2 is
+barely visible, 10+ obvious): every new stock is at least **ΔE 9.1** from every other stock.
+The closest pair overall is Verdant vs Midnight (8.7), two of the original three. Pairs stay
+distinct over a print (8.8–51). Run `tools/look_visibility.c` for the full matrix.
+
+### What keeps the looks differentiated
+
+- **Different families, not one curve with small tweaks.**
+  - The colour negatives differ in contrast (1.15–1.44), print-down density, toe depth,
+    shoulder position (2.8–4.2 stops), zone width and skin share.
+  - Chroma 100 uses reversal-film behaviour: shadows gain chroma (newly allowed by the
+    engine), with the steepest curve and hard toe.
+  - Silvergrain uses the monochrome engine with its own spectral mix and filter response.
+- **Each stock owns its colour axes.**
+  - Greens: yellow-olive (Verona, Solara), emerald/teal (Verdant), muted olive (Aurelia),
+    subtle cyan-green (Moss), punchy (Chroma).
+  - Shadows: neutral-warm (Verona), cyan-green (Verdant, Moss), blue-cyan (Midnight),
+    golden (Solara), clean (Chroma).
+  - Highlights: cream (Aurelia), golden (Solara), tungsten (Midnight), clean (Chroma).
+- **Separation was measured and enforced.** Close pairs were pushed apart along their intended
+  identities, not by adding saturation:
+  - Verona vs Solara: ΔE 6.8 → 9.6. Solara became softer, golden and lifted; Verona stays
+    dense and contrasty.
+  - Aurelia vs Moss: ΔE 6.6 → 9.1. Aurelia keeps mid colour and goes warm and creamy; Moss
+    goes cooler and quieter.
+- **Prints don't erase identity.** Stocks remain ΔE 8.8–51 apart over Cinechrome 2383, and
+  prints act only on colour, never on greys.
+- **Engine extensions (no effect on existing stocks):**
+  - shadow saturation may be negative (reversal film)
+  - monochrome stocks honour print-down density
+  - the developer view handles monochrome stocks
+
+### Tests
+
+`tests/math_test_v6.c` runs on all 8 stocks × 6 print options. It checks:
+- identity and bypass
+- prints neutral on greys and B&W
+- Silvergrain exactly neutral with every print
+- monotonic, continuous ramps; no NaN/Inf; no negatives from in-range colours
+- the hue map; slider extremes
+- skin per stock (≤ 4.6°) and across all stock × print pairs (worst 6.6°, mean 3.1°)
+- developer view behaviour
+
+Regression dumps:
+- original three stocks = v5 diagnostic build
+- Version 1 controls = v1
+- film adjustments = v3
+- prints = v4
+
+## Version 5 diagnostic build (reference)
 
 `Gradelux_FilmLab_v5_diagnostic.dctl` is a temporary look-development build.
 

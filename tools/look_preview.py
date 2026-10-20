@@ -7,7 +7,8 @@
 import numpy as np, sys
 from PIL import Image, ImageDraw
 W, H = 320, 200
-LOOKS = ["Off", "Verona 250D", "Aurelia 400", "Verdant 250D", "Midnight 800T"]   # Version 5 prototype
+LOOKS = ["Off", "Verona 250D", "Verdant 250D", "Midnight 800T", "Aurelia 400", "Solara 200", "Moss 250D",
+         "Chroma 100", "Silvergrain 100"]   # Version 6
 labels = sys.argv[3].split('|') if len(sys.argv) > 3 else [f"{i:02d} {n}" for i, n in enumerate(LOOKS)]
 cols = int(sys.argv[4]) if len(sys.argv) > 4 else 6
 raw = np.fromfile(sys.argv[1], dtype=np.float32).reshape(len(labels), H, W, 3)

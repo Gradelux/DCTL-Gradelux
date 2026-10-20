@@ -8,13 +8,8 @@
 //  full stock, its colour and tone stages, with stages removed, and over a
 //  print; plus dE between stocks (distinctness).
 //
-//    gcc -O2 -DDIAGBUILD -o look_visibility tools/look_visibility.c -lm && ./look_visibility
-//    (default source: Gradelux_FilmLab_v5_diagnostic.dctl; without -DDIAGBUILD
-//     and with -DSRC_PATH='"../Gradelux_FilmLab_v5.dctl"' -DHAS_SENS for v5)
+//    gcc -O2 -o look_visibility tools/look_visibility.c -lm && ./look_visibility   (Version 6)
 // =============================================================================
-#ifndef SRC_PATH
-#define SRC_PATH "../Gradelux_FilmLab_v5_diagnostic.dctl"
-#endif
 #define HAS_SENS
 #include <math.h>
 #include <stdio.h>
@@ -35,18 +30,33 @@ static float3 make_float3(float a, float b, float c) { float3 r = {a, b, c}; ret
 #define _sinf sinf
 static float _clampf(float x, float a, float b) { return fminf(fmaxf(x, a), b); }
 #define DEFINE_UI_PARAMS(...)
-#ifdef DIAGBUILD
-enum { GLX_LOOK_OFF, GLX_LOOK_VERONA_250D, GLX_LOOK_VERDANT_250D, GLX_LOOK_MIDNIGHT_800T, GLX_LOOK_COUNT };
-enum { GLX_DIAG_NORMAL, GLX_DIAG_COLOR, GLX_DIAG_TONE, GLX_DIAG_FULL };
-static const char *LOOK_NAMES[] = { "Off", "Verona250D", "Verdant250D", "Midnight800T" };
-static int ui_Diag = 0;
-#else
-enum { GLX_LOOK_OFF, GLX_LOOK_VERONA_250D, GLX_LOOK_AURELIA_400, GLX_LOOK_VERDANT_250D, GLX_LOOK_MIDNIGHT_800T, GLX_LOOK_COUNT };
-static const char *LOOK_NAMES[] = { "Off", "Verona250D", "Aurelia400", "Verdant250D", "Midnight800T" };
-#endif
+#ifdef FILMLAB_V4
+enum { GLX_LOOK_OFF, GLX_LOOK_PURE, GLX_LOOK_EMBER, GLX_LOOK_SLATE, GLX_LOOK_SOLACE, GLX_LOOK_CHROME,
+       GLX_LOOK_DUNE, GLX_LOOK_NOIR, GLX_LOOK_BLOOM, GLX_LOOK_HAZE, GLX_LOOK_VIVID, GLX_LOOK_MUSE,
+       GLX_LOOK_TUNDRA, GLX_LOOK_SIENNA, GLX_LOOK_VELVET, GLX_LOOK_CINDER, GLX_LOOK_LUMEN, GLX_LOOK_FABLE,
+       GLX_LOOK_MOSS, GLX_LOOK_PRISM, GLX_LOOK_ECLIPSE, GLX_LOOK_MONO, GLX_LOOK_OBSIDIAN, GLX_LOOK_SILVER,
+       GLX_LOOK_COUNT };
+enum { GLX_PRINT_NONE, GLX_PRINT_2383, GLX_PRINT_2393, GLX_PRINT_3513, GLX_PRINT_3510, GLX_PRINT_2383_SOFT,
+       GLX_PRINT_COUNT };
+static const char *LOOK_NAMES[] = { "Off", "Pure", "Ember", "Slate", "Solace", "Chrome", "Dune", "Noir",
+    "Bloom", "Haze", "Vivid", "Muse", "Tundra", "Sienna", "Velvet", "Cinder", "Lumen", "Fable", "Moss",
+    "Prism", "Eclipse", "Mono", "Obsidian", "Silver" };
+static const char *PRINT_NAMES[] = { "None", "Print2383", "Print2393", "Print3513", "Print3510", "Print2383Soft" };
+#define FILMLAB_SOURCE "../Gradelux_FilmLab_v4.dctl"
+#else   // Version 6 (8 film stocks)
+enum { GLX_LOOK_OFF, GLX_LOOK_VERONA_250D, GLX_LOOK_VERDANT_250D, GLX_LOOK_MIDNIGHT_800T, GLX_LOOK_AURELIA_400,
+       GLX_LOOK_SOLARA_200, GLX_LOOK_MOSS_250D, GLX_LOOK_CHROMA_100, GLX_LOOK_SILVERGRAIN_100, GLX_LOOK_COUNT };
 enum { GLX_PRINT_NONE, GLX_PRINT_CINECHROME_2383, GLX_PRINT_VELACHROME_2393, GLX_PRINT_LUMACHROME_3513,
        GLX_PRINT_RETROCHROME_3510, GLX_PRINT_SILKCHROME_2383, GLX_PRINT_COUNT };
-static const char *PRINT_NAMES[] = { "None", "Cinechrome2383", "Velachrome2393", "Lumachrome3513", "Retrochrome3510", "Silkchrome2383" };
+enum { GLX_DIAG_NORMAL, GLX_DIAG_COLOR, GLX_DIAG_TONE, GLX_DIAG_FULL };
+static int ui_Diag = 0;
+static const char *LOOK_NAMES[] = { "Off", "Verona250D", "Verdant250D", "Midnight800T", "Aurelia400",
+                                    "Solara200", "Moss250D", "Chroma100", "Silvergrain100" };
+static const char *PRINT_NAMES[] = { "None", "Cinechrome2383", "Velachrome2393", "Lumachrome3513",
+                                     "Retrochrome3510", "Silkchrome2383" };
+#define FILMLAB_SOURCE "../Gradelux_FilmLab_v6.dctl"
+#endif
+
 // UI globals: reference configuration (defaults; Film Look / Film Print set per tile)
 static int   ui_Look = 0, ui_Print = 0;
 static float ui_CreativeIntensity = 100, ui_PrintStrength = 100, ui_PrintContrast = 0, ui_PrintDensity = 0,
@@ -54,7 +64,7 @@ static float ui_CreativeIntensity = 100, ui_PrintStrength = 100, ui_PrintContras
 static float ui_ColorDensity = 0, ui_Separation = 50, ui_HlWarmth = 0, ui_ShadowTone = 0;
 static float ui_Density = 0, ui_SubSat = 0, ui_Contrast = 0, ui_Shadow = 0, ui_Rolloff = 0, ui_Intensity = 100;
 
-#include SRC_PATH
+#include FILMLAB_SOURCE
 // ---- content: linear Rec.709 scene colours ----
 static float s2l(float c){ c/=255.f; return c<=0.04045f? c/12.92f : powf((c+0.055f)/1.055f,2.4f); }
 static const unsigned char MAC[18][3]={{115,82,68},{194,150,130},{98,122,157},{87,108,67},{133,128,177},{103,189,170},
@@ -86,21 +96,17 @@ static double dE(const double*a,const double*b){ return sqrt((a[0]-b[0])*(a[0]-b
 // stage toggles
 enum { ST_SENS=1, ST_COLOR=2, ST_SUBSAT=4, ST_TONE=8, ST_DYE=16, ST_FADE=32, ST_ALL=63 };
 static float3 look_stages(float3 c, GlxLook s, int mask){
+  // Uses the DCTL's own stage function, so every stock family (colour and
+  // monochrome) is measured exactly as the DCTL renders it.
   GlxProfile p=glx_profile_base();
-#ifdef HAS_SENS
-  if((mask&ST_SENS) && glx_has_sens(s)) c=glx_sensitivity(c.x,c.y,c.z,s,p);
-#endif
-  if(mask&ST_COLOR) c=glx_film_color(c.x,c.y,c.z,s,0.0f,p);
-  if((mask&ST_SUBSAT) && s.subSat!=0.0f) c=glx_subtractive_sat(c.x,c.y,c.z,s.subSat,p);
-  if(mask&ST_TONE) c=glx_film_tone(c.x,c.y,c.z,s,0,0,p);
-  if((mask&ST_DYE) && glx_has_dye(s)) c=glx_dye(c.x,c.y,c.z,s);
-  if((mask&ST_FADE) && s.fade>0) c=make_float3(glx_fade_ch(c.x,s.fade*s.fR),glx_fade_ch(c.y,s.fade*s.fG),glx_fade_ch(c.z,s.fade*s.fB));
-  return c; }
+  int parts = ((mask & ST_COLOR) ? 1 : 0) | ((mask & ST_TONE) ? 2 : 0);
+  return glx_look_apply_parts(c.x,c.y,c.z,s,p,parts); }
 static double LAB[8][NMAX][3];
 static void eval_set(int slot, GlxLook s, int mask, int print){
   GlxProfile p=glx_profile_base(); GlxLook pr = print? glx_look_scale(glx_print_get(print),1.0f) : glx_look_clean();
   for(int i=0;i<NC;i++){ float3 w=to_work(C709[i]); float3 o = mask? look_stages(w,s,mask) : w;
-    if(print) o=glx_print_apply(o.x,o.y,o.z,pr,p); to_lab(o,LAB[slot][i]); } }
+    if(print) o=glx_print_apply(o.x,o.y,o.z,pr,p);
+    to_lab(o,LAB[slot][i]); } }
 static void report(const char*name,int slot,int ref){
   double s[3]={0},n[3]={0}, mx=0; for(int i=0;i<NC;i++){ double d=dE(LAB[slot][i],LAB[ref][i]); s[kind[i]]+=d; n[kind[i]]++; mx=fmax(mx,d);} 
   printf("  %-34s colours %5.2f  skin %5.2f  greys %5.2f  (max %5.1f)\n",name,s[0]/n[0],s[1]/n[1],s[2]/n[2],mx); }
@@ -113,13 +119,16 @@ int main(int argc,char**argv){
     eval_set(1,s,ST_ALL,0); report("full look",1,0);
     eval_set(2,s,ST_SENS|ST_COLOR|ST_SUBSAT|ST_DYE|ST_FADE,0); report("colour stages only (no tone)",2,0);
     eval_set(3,s,ST_TONE,0); report("tone stage only",3,0);
-    eval_set(4,s,ST_ALL&~ST_SENS,0); report("  without sensitivity overlap",4,0);
-    eval_set(5,s,ST_ALL&~ST_DYE,0); report("  without dye coupling",5,0);
     eval_set(6,s,ST_ALL,1); eval_set(7,glx_look_clean(),0,1); report("look + print 2383 vs print alone",6,7);
   }
-  printf("Distinctness between looks (mean dE, full looks)\n");
-  for(int a=1;a<nl;a++) for(int b=a+1;b<nl;b++){ eval_set(1,glx_look_scale(glx_look_get(a),1.0f),ST_ALL,0); eval_set(2,glx_look_scale(glx_look_get(b),1.0f),ST_ALL,0);
-    double s=0; for(int i=0;i<NC;i++) s+=dE(LAB[1][i],LAB[2][i]); printf("  %-14s vs %-14s %5.2f\n",LOOK_NAMES[a],LOOK_NAMES[b],s/NC); 
-    eval_set(1,glx_look_scale(glx_look_get(a),1.0f),ST_ALL,1); eval_set(2,glx_look_scale(glx_look_get(b),1.0f),ST_ALL,1);
-    s=0; for(int i=0;i<NC;i++) s+=dE(LAB[1][i],LAB[2][i]); printf("  %-14s vs %-14s %5.2f  (both + print 2383)\n",LOOK_NAMES[a],LOOK_NAMES[b],s/NC);}
+  printf("Distinctness between looks (mean dE, full looks; lower-left: alone, upper-right: both over print 1)\n%-15s","");
+  for(int b=1;b<nl;b++) printf(" %8.8s",LOOK_NAMES[b]);
+  printf("\n");
+  static double M[32][32][2];
+  for(int a=1;a<nl;a++) for(int b=a+1;b<nl;b++) for(int pr=0;pr<2;pr++){
+    eval_set(1,glx_look_scale(glx_look_get(a),1.0f),ST_ALL,pr); eval_set(2,glx_look_scale(glx_look_get(b),1.0f),ST_ALL,pr);
+    double s=0; for(int i=0;i<NC;i++) s+=dE(LAB[1][i],LAB[2][i]); M[a][b][pr]=M[b][a][pr]=s/NC; }
+  double mn=1e9; int ma=0,mb=0;
+  for(int a=1;a<nl;a++){ printf("%-15s",LOOK_NAMES[a]); for(int b=1;b<nl;b++){ if(a==b) printf(" %8s","-"); else printf(" %8.2f", a>b? M[a][b][0] : M[a][b][1]); if(a<b && M[a][b][0]<mn){mn=M[a][b][0];ma=a;mb=b;} } printf("\n"); }
+  printf("Closest pair: %s vs %s, dE %.2f\n",LOOK_NAMES[ma],LOOK_NAMES[mb],mn);
   return 0; }

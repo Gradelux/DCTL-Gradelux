@@ -1,7 +1,7 @@
 // =============================================================================
-//  Gradelux FilmLab — reference LUT generator / validator (Version 5; -DFILMLAB_V4 for Version 4)
+//  Gradelux FilmLab — reference LUT generator / validator (Version 6; -DFILMLAB_V4 for Version 4)
 // -----------------------------------------------------------------------------
-//  Compiles Gradelux_FilmLab_v5.dctl (or v4 with -DFILMLAB_V4) itself (through a small C shim) and
+//  Compiles Gradelux_FilmLab_v6.dctl (or v4 with -DFILMLAB_V4) itself (through a small C shim) and
 //  samples its transform() in one of three reference configurations:
 //      A. Film Look only      : Look = <look>,  Print = None
 //      B. Film Print only     : Look = Off,     Print = <print>
@@ -70,15 +70,18 @@ static const char *LOOK_NAMES[] = { "Off", "Pure", "Ember", "Slate", "Solace", "
     "Prism", "Eclipse", "Mono", "Obsidian", "Silver" };
 static const char *PRINT_NAMES[] = { "None", "Print2383", "Print2393", "Print3513", "Print3510", "Print2383Soft" };
 #define FILMLAB_SOURCE "../Gradelux_FilmLab_v4.dctl"
-#else   // Version 5 (prototype: 4 film stocks, renamed prints)
-enum { GLX_LOOK_OFF, GLX_LOOK_VERONA_250D, GLX_LOOK_AURELIA_400, GLX_LOOK_VERDANT_250D, GLX_LOOK_MIDNIGHT_800T,
-       GLX_LOOK_COUNT };
+#else   // Version 6 (8 film stocks)
+enum { GLX_LOOK_OFF, GLX_LOOK_VERONA_250D, GLX_LOOK_VERDANT_250D, GLX_LOOK_MIDNIGHT_800T, GLX_LOOK_AURELIA_400,
+       GLX_LOOK_SOLARA_200, GLX_LOOK_MOSS_250D, GLX_LOOK_CHROMA_100, GLX_LOOK_SILVERGRAIN_100, GLX_LOOK_COUNT };
 enum { GLX_PRINT_NONE, GLX_PRINT_CINECHROME_2383, GLX_PRINT_VELACHROME_2393, GLX_PRINT_LUMACHROME_3513,
        GLX_PRINT_RETROCHROME_3510, GLX_PRINT_SILKCHROME_2383, GLX_PRINT_COUNT };
-static const char *LOOK_NAMES[] = { "Off", "Verona250D", "Aurelia400", "Verdant250D", "Midnight800T" };
+enum { GLX_DIAG_NORMAL, GLX_DIAG_COLOR, GLX_DIAG_TONE, GLX_DIAG_FULL };
+static int ui_Diag = 0;
+static const char *LOOK_NAMES[] = { "Off", "Verona250D", "Verdant250D", "Midnight800T", "Aurelia400",
+                                    "Solara200", "Moss250D", "Chroma100", "Silvergrain100" };
 static const char *PRINT_NAMES[] = { "None", "Cinechrome2383", "Velachrome2393", "Lumachrome3513",
                                      "Retrochrome3510", "Silkchrome2383" };
-#define FILMLAB_SOURCE "../Gradelux_FilmLab_v5.dctl"
+#define FILMLAB_SOURCE "../Gradelux_FilmLab_v6.dctl"
 #endif
 
 // UI globals: reference configuration (defaults; Film Look / Film Print set per call)
