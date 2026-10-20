@@ -16,6 +16,9 @@
 //    ./look_preview looks.raw                  # all looks
 //    ./look_preview combos.raw 1:0 1:1 1:2     # look 1 alone, with print 1, with print 2
 //    python3 tools/look_preview.py looks.raw preview.png "Off|Pure|..." [columns]
+//  Version 10 (LUT looks 19-21 with APPLY_LUT emulated from luts/*.cube), from tools/:
+//    python3 v10_luts.py strip ../build/Gradelux_FilmLab_v10_host.dctl
+//    gcc -O2 -DFILMLAB_V10 '-DFILMLAB_SOURCE="../build/Gradelux_FilmLab_v10_host.dctl"' -o look_preview_v10 look_preview.c -lm
 // =============================================================================
 #ifdef FILMLAB_V4   // legacy Version 4 build: its own enumerations and controls
 #include <math.h>

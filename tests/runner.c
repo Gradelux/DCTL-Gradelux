@@ -14,6 +14,10 @@
 //    gcc -O2 -DRUN_FILMLAB91 -o run_v91 runner.c -lm Gradelux_FilmLab_v9_1.dctl (same line format; the
 //                                                    secondary sliders other than strength are ignored:
 //                                                    Version 9.1 fixes them at 1.00)
+//    gcc -O2 -DRUN_FILMLAB10 -o run_v10 runner.c -lm Version 10 host copy (build/Gradelux_FilmLab_v10_host.dctl,
+//                                                    from tools/v10_luts.py strip); same line format,
+//                                                    print must be 0 (Version 10 has no prints); looks
+//                                                    19-21 are the LUT looks (APPLY_LUT emulated)
 //
 //  Input: one sample per line, whitespace-separated:
 //    RUN_CINE16  : profile strength sep sat subtr bias tone skinprot showskin  R G B
@@ -22,7 +26,12 @@
 //  (R G B: DaVinci Intermediate code values, decimal or hex float.) Every
 //  other control stays at its default. Output: "R G B" per line, %a.
 // =============================================================================
-#if defined(RUN_FILMLAB91)
+#if defined(RUN_FILMLAB10)
+#define RUN_FILMLAB9
+#define FILMLAB_V10
+#include "../tools/filmlab_shim.h"
+#include "../build/Gradelux_FilmLab_v10_host.dctl"
+#elif defined(RUN_FILMLAB91)
 #define RUN_FILMLAB9
 #include "../tools/filmlab_shim.h"
 #include "../Gradelux_FilmLab_v9_1.dctl"
@@ -113,6 +122,9 @@ int main(void)
 #elif defined(RUN_FILMLAB8) || defined(RUN_FILMLAB9)
         if (n != 14) { fprintf(stderr, "bad line (%d values)\n", n); return 1; }
         ui_Look = (int)v[0]; ui_SecLook = (int)v[1]; ui_Print = (int)v[2];
+#if defined(RUN_FILMLAB10)
+        if (ui_Print != 0) { fprintf(stderr, "Version 10 has no film prints\n"); return 1; }
+#endif
         ui_SecStrength = (float)v[3]; ui_SecSep = (float)v[4]; ui_SecSat = (float)v[5]; ui_SecSubtr = (float)v[6];
         ui_SecBias = (float)v[7]; ui_SecTone = (float)v[8]; ui_SecSkinProt = (float)v[9]; ui_SecShowSkin = (int)v[10];
         float3 o = transform(0, 0, 0, 0, (float)v[11], (float)v[12], (float)v[13]);

@@ -28,6 +28,9 @@
 #    cd tests && FILMLAB=9.1 python3 cine16_regression.py     (FilmLab v9.1: only Secondary Strength
 #       remains adjustable, so slider variation covers strength only; the skin-mask
 #       view no longer exists)
+#    cd tests && FILMLAB=10 python3 cine16_regression.py      (FilmLab v10: as v9.1, no prints (print
+#       option None only), and the three LUT looks Vista / Lux / Laguna take part in
+#       B and C with Resolve's APPLY_LUT emulated by tools/filmlab_shim.h)
 #  Exit status 0 only if every comparison is bit-identical.
 # =============================================================================
 import os, subprocess, sys, tempfile, random, math
@@ -54,10 +57,17 @@ def build(macro, name):
     exe = os.path.join(tmp, name)
     subprocess.check_call(['gcc', '-O2', '-w', '-D' + macro, '-o', exe, os.path.join(HERE, 'runner.c'), '-lm'])
     return exe
-V91 = os.environ.get('FILMLAB', '9') == '9.1'
-FLNAME = 'v9.1' if V91 else 'v9'
+V10 = os.environ.get('FILMLAB', '9') == '10'
+V91 = os.environ.get('FILMLAB', '9') == '9.1' or V10        # v10 keeps the v9.1 secondary controls
+FLNAME = 'v10' if V10 else 'v9.1' if V91 else 'v9'
+NPR = 1 if V10 else 6                                          # print options (v10: None only)
+if V10:
+    LOOKS = LOOKS + ["Vista", "Lux", "Laguna"]
+    subprocess.check_call([sys.executable, '-I', os.path.join(HERE, '..', 'tools', 'v10_luts.py'), 'strip',
+                           os.path.join(HERE, '..', 'build', 'Gradelux_FilmLab_v10_host.dctl')])
 RUN_C16, RUN_V8 = build('RUN_CINE16', 'run_c16'), build('RUN_FILMLAB8', 'run_v8')
-RUN_FL = build('RUN_FILMLAB91', 'run_v91') if V91 else build('RUN_FILMLAB9', 'run_v9')
+RUN_FL = (build('RUN_FILMLAB10', 'run_v10') if V10 else build('RUN_FILMLAB91', 'run_v91') if V91
+          else build('RUN_FILMLAB9', 'run_v9'))
 def rand_sliders():
     # v9.1 keeps only Secondary Strength; the other six stay at the original defaults
     if V91: return [hx(rng.uniform(*RANGES[0]))] + [hx(v) for v in DEFAULTS[1:]]
@@ -170,30 +180,35 @@ D = ' '.join(hx(v) for v in DEFAULTS)
 la, lb = [], []
 pts = SETS['rgb patches'][::3] + SETS['grey ramp'][::4] + SETS['skin tones'] + SETS['saturated'][::3] + SETS['extended range'][::5]
 for look in range(len(LOOKS)):
-    for pr in range(6):
+    for pr in range(NPR):
         for r, g, b in pts:
             sl = rand_sliders()
             la.append('%d 0 %d %s 0 %s %s %s' % (look, pr, D, hx(r), hx(g), hx(b)))
             lb.append('%d 0 %d %s %d %s %s %s' % (look, pr, ' '.join(sl), rng.randrange(2), hx(r), hx(g), hx(b)))
 m1, mx = compare(run(RUN_FL, la), run(RUN_FL, lb))
-print('   (1) %d looks x 6 print options x %d inputs = %d samples; differing: %d -> %s'
-      % (len(LOOKS), len(pts), len(la), m1, 'BIT-IDENTICAL' if m1 == 0 else 'DIFFERENCES FOUND'))
+print('   (1) %d looks x %d print options x %d inputs = %d samples; differing: %d -> %s'
+      % (len(LOOKS), NPR, len(pts), len(la), m1, 'BIT-IDENTICAL' if m1 == 0 else 'DIFFERENCES FOUND'))
 la = []
 for sec in range(17):
-    for pr in range(6):
+    for pr in range(NPR):
         for r, g, b in pts[::2]:
             sl = rand_sliders()
             la.append('0 %d %d %s 0 %s %s %s' % (sec, pr, ' '.join(sl), hx(r), hx(g), hx(b)))
 m2, mx = compare(run(RUN_V8, la), run(RUN_FL, la))
-print('   (2) Film Look Off, 17 secondary options x 6 print options, random secondary sliders: %d samples; differing: %d -> %s\n'
-      % (len(la), m2, 'BIT-IDENTICAL' if m2 == 0 else 'DIFFERENCES FOUND'))
+print('   (2) Film Look Off, 17 secondary options x %d print options, random secondary sliders: %d samples; differing: %d -> %s\n'
+      % (NPR, len(la), m2, 'BIT-IDENTICAL' if m2 == 0 else 'DIFFERENCES FOUND'))
 fails += m1 + m2
 
 # ---- C. chaining ----------------------------------------------------------------
-print('C. CHAINING: %s (Primary + Secondary + Print) vs %s primary -> original Cine16 -> %s print, as separate programs' % (FLNAME, FLNAME, FLNAME))
+if V10:
+    print('C. CHAINING: v10 (Primary + Secondary) vs v10 primary -> original Cine16, as separate programs (third stage: v10 all Off = identity)')
+else:
+    print('C. CHAINING: %s (Primary + Secondary + Print) vs %s primary -> original Cine16 -> %s print, as separate programs' % (FLNAME, FLNAME, FLNAME))
 pts = SETS['rgb patches'][::11] + SETS['skin tones'][::3] + SETS['saturated'][::9] + SETS['grey ramp'][::16]
-combos = [(0, 6, 0), (1, 6, 0), (1, 6, 1)]                                   # the three requested combinations
-combos += [(rng.randrange(len(LOOKS)), rng.randrange(1, 17), rng.randrange(6)) for _ in range(60)]
+combos = [(0, 6, 0), (1, 6, 0), (1, 6, 1 if NPR > 1 else 0)]                # the three requested combinations
+combos += [(rng.randrange(len(LOOKS)), rng.randrange(1, 17), rng.randrange(NPR)) for _ in range(60)]
+if V10:                                                                         # every LUT look with every profile
+    combos += [(l, s, 0) for l in range(19, 22) for s in range(1, 17)]
 totC, nC = 0, 0
 for look, sec, pr in combos:
     s1 = run(RUN_FL, ['%d 0 0 %s 0 %s %s %s' % (look, D, hx(r), hx(g), hx(b)) for r, g, b in pts])
