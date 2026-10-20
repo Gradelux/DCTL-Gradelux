@@ -3,12 +3,11 @@
 # a simple filmic display curve for viewing only (not a calibrated DRT, and
 # not part of any look).
 #   python3 tools/look_preview.py tiles.raw sheet.png ["label|label|..."] [columns]
-# Without labels, the 24 Film Looks (default look_preview output) are assumed.
+# Without labels, the Film Looks of the current version (default look_preview output) are assumed.
 import numpy as np, sys
 from PIL import Image, ImageDraw
 W, H = 320, 200
-LOOKS = ["Off", "Pure", "Ember", "Slate", "Solace", "Chrome", "Dune", "Noir", "Bloom", "Haze", "Vivid", "Muse",
-         "Tundra", "Sienna", "Velvet", "Cinder", "Lumen", "Fable", "Moss", "Prism", "Eclipse", "Mono", "Obsidian", "Silver"]
+LOOKS = ["Off", "Verona 250D", "Aurelia 400", "Verdant 250D", "Midnight 800T"]   # Version 5 prototype
 labels = sys.argv[3].split('|') if len(sys.argv) > 3 else [f"{i:02d} {n}" for i, n in enumerate(LOOKS)]
 cols = int(sys.argv[4]) if len(sys.argv) > 4 else 6
 raw = np.fromfile(sys.argv[1], dtype=np.float32).reshape(len(labels), H, W, 3)

@@ -1,21 +1,140 @@
 # Gradelux FilmLab
 
-Film look and print emulation engine for DaVinci Resolve Studio, written as a DCTL.
+Film stock and print emulation engine for DaVinci Resolve Studio, written as a DCTL.
 
 | File | Contents |
 |---|---|
-| `Gradelux_FilmLab_v4.dctl` | **Version 4 (current):** 23 refined Gradelux looks, 5 film print emulations with print controls, the film adjustment controls and all Version 1 grading controls |
-| `Gradelux_FilmLab_v3.dctl` | Version 3: 23 looks, no print stage |
-| `Gradelux_FilmLab_v2.dctl` | Version 2: 10 film-stock profiles |
-| `Gradelux_FilmLab.dctl` | Version 1: the six core controls only |
-| `tools/gradelux_lut.c` | Reference `.cube` generator and LUT accuracy validator (look only, print only, look + print) |
-| `tools/look_preview.c`, `tools/look_preview.py` | Renders a test scene through any look / print combination into a contact sheet |
+| `Gradelux_FilmLab_v5.dctl` | **Version 5 prototype (current):** the first 4 renamed film stocks, the 5 renamed film prints, and all controls |
+| `Gradelux_FilmLab_v4.dctl` | Version 4: the previous 23 looks and the prints under their old names |
+| `Gradelux_FilmLab_v3.dctl`, `_v2`, `Gradelux_FilmLab.dctl` | Earlier versions |
+| `tools/gradelux_lut.c` | Reference `.cube` generator and LUT accuracy validator (v5 by default; `-DFILMLAB_V4` for v4) |
+| `tools/look_preview.c`, `tools/look_preview.py` | Contact-sheet renderer for any stock / print combination |
 | `docs/LUT_PLAN.md` | Plan for the standalone LUTs (DWG and Rec.709) |
-| `docs/FilmLab_v4_looks.png`, `docs/FilmLab_v4_prints.png` | Contact sheets of the v4 looks and of prints and look + print combinations |
-| `docs/FilmLab_v3_look_preview.png` | The v3 looks, for comparison |
+| `docs/FilmLab_v5_prototype.png` | The 4 prototype stocks, the prints, and stock + print pairs |
+| `docs/FilmLab_v4_*.png`, `docs/FilmLab_v3_look_preview.png` | Earlier versions, for comparison |
 
-Grain, halation, bloom, diffusion and film damage are intentionally not included. They will be
-built separately from the LUT-compatible colour engine.
+Grain, halation, bloom, diffusion and film damage are intentionally not included.
+
+## Version 5 prototype: Gradelux film stocks
+
+All 23 looks are being renamed to original Gradelux film-stock names, and each is being
+redesigned to have its own colour and tonal response. As requested, this prototype contains
+only the first four stocks, for testing and approval. The other 19 come after sign-off.
+
+**Film Look dropdown (prototype):** Off, Verona 250D, Aurelia 400, Verdant 250D, Midnight 800T.
+
+**Planned full list:**
+1. Verona 250D
+2. Tungsten 500T
+3. Halcyon 400
+4. Aurelia 400
+5. Argent 200
+6. Solara 200
+7. Nocturne 800
+8. Pastelle 400
+9. Patina 400
+10. Chroma 100
+11. Opaline 160
+12. Glacier 400
+13. Terracotta 200
+14. Velour 400
+15. Ashen 500
+16. Lucent 50D
+17. Nostalgia 200
+18. Verdant 250D
+19. Spectra 100
+20. Midnight 800T
+21. Panchro 400
+22. Monolith 800
+23. Silvergrain 100
+
+**Film Print dropdown:** None, Cinechrome 2383, Velachrome 2393, Lumachrome 3513, Retrochrome
+3510, Silkchrome 2383. These are the v4 prints renamed. Their colour science, tone and controls
+are unchanged (verified bit-for-bit against v4 across all print control settings).
+
+All stocks and prints are original Gradelux creative interpretations inspired by the character
+of well-known films. They are not measured reproductions of any Kodak, Fujifilm or other
+manufacturer's product.
+
+### New in the colour science: spectral sensitivity overlap
+
+A film's three layers don't see cleanly separated red, green and blue. Their spectral
+sensitivities overlap, and how much is a large part of a stock's colour signature. v5 models
+this per stock, as the first step of the film-stock stage:
+
+```
+c' = c + Σ s_cj (j − c)        (linear light, s_cj ≥ 0)
+```
+
+- **Neutrals:** greys are untouched exactly.
+- **Range:** in-range colours stay in range and never go negative.
+- **Hue order:** never changes.
+- **Skin:** keeps 60% of its original rendering through a wide, soft hue window.
+
+Overlap blends colours in a stock-specific, hue-specific way. The stock's dye masking (v4)
+then restores purity through density, which is the same balance real film strikes. Together
+with each stock's own curve, channel response, tints, per-hue response and dye coupling,
+this gives every stock a distinct colour and tonal signature.
+
+### The four prototype stocks
+
+Measured at Creative Intensity 100%, no print:
+- **Slope:** mid contrast.
+- **Black:** shift 4 stops under grey.
+- **Whites:** red–blue lean of highlights, in stops.
+
+| Stock | Inspired by | Slope | Black | Whites | Character |
+|---|---|---|---|---|---|
+| Verona 250D | Clean cinema negative (Vision3-style daylight) | 1.17 | −0.60 | +0.11 | Long latitude and a late, gentle shoulder; firm, natural mids; dense detailed blacks. Moderate layer overlap balanced by strong dye masking: clean, faithful colour that still reads as film. Near-neutral greys with a whisper of cool shadow and warm light. |
+| Aurelia 400 | Portrait colour negative (Portra-style) | 1.08 | −0.19 | +0.16 | Broad, overlapping sensitivities and light masking: soft, blended colour. Low per-layer contrast for smooth skin; early creamy shoulder for pastel, forgiving highlights. Warm-golden mids, coral reds, muted olive greens, quiet teal-leaning blues, skin hue consolidation. Gentle but finished contrast. |
+| Verdant 250D | Restrained cinema negative (Eterna-style) | 1.12 | −0.48 | +0.03 | Strong green/blue overlap and almost no masking: a quiet, low-saturation palette (skin saturation ×0.75). Cyan-green shadow density, crimson-leaning reds, green-leaning yellows, teal greens. Soft contrast with real depth. |
+| Midnight 800T | Tungsten night film (high-speed tungsten / neon style) | 1.20 | −0.72 | +0.22 | Tight layer separation and strong masking keep neon and practicals vivid. Cool blue shadows against warm light; the red layer shoulders later than blue, so bright sources roll off warm (tonal only, no halation). Teal greens, sodium-orange yellows, violet-leaning magentas, punchy mids, deep blacks. |
+
+Midnight 800T keeps 18% grey neutral, like every stock, so it fits a normal colour-managed
+workflow. Its tungsten character is in how it renders colour and light, not a global blue
+cast. For the daylight-balanced-tungsten-film look, cool the image with Film Highlight
+Warmth or Film Shadow Tone (or the white balance before FilmLab).
+
+**Skin hue shift:** at most 3.2° for any stock alone, 6.0° worst across all 20 stock × print
+pairs (mean 3.0°).
+
+**LUT accuracy at 65³ (DWG, real colours):** mean error 0.0002–0.0003 code values for the
+stocks alone and 0.0005 for Midnight 800T + Velachrome 2393 (the strongest pair). The LUT tool
+now targets v5; file names use the new stock and print names.
+
+### Prototype review checklist
+
+For each of the 4 stocks, alone and with each of the 5 prints:
+- [ ] The stock's identity is recognisable on real footage (daylight, interior tungsten, night / neon, portraits).
+- [ ] Skin is natural on light, medium and deep skin, especially Aurelia 400 on portraits.
+- [ ] Verdant 250D reads quiet and cinematic, not washed out.
+- [ ] Midnight 800T: practicals and neon roll off warm and vivid without clipping; shadows are cool but not crushed.
+- [ ] Whites read as white (Midnight and Aurelia lean warm by design, gently).
+- [ ] Creative Intensity 0–200% and every print control behave smoothly.
+- [ ] The dropdowns show Off + 4 stocks and None + 5 prints with the new names.
+
+Then confirm, or send changes, before the remaining 19 stocks are built.
+
+### Tests (v5)
+
+`tests/math_test_v5.c` runs the full v4 suite on every stock × print combination. It covers:
+- identity and bypasses
+- neutral prints
+- monotonic, continuous ramps
+- no NaN/Inf; no negatives from in-range colours
+- the hue map, including the new overlap stage
+- slider extremes
+- skin hue, per stock and across combinations
+- distinctness
+
+Regression dumps confirm:
+- the Version 1 controls match v1 bit-for-bit
+- the film adjustments match v3 bit-for-bit
+- the renamed prints match v4 bit-for-bit
+
+**Known limit:** at the most extreme combined settings (a stock at 200% under Velachrome 2393
+with every print slider at +100), one channel can drift by about 0.0001 code value across a
+highlight stretch. That's invisible, and defaults are strictly monotonic.
 
 ## Version 4: film looks and print emulation
 

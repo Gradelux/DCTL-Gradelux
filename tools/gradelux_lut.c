@@ -1,7 +1,7 @@
 // =============================================================================
-//  Gradelux FilmLab — reference LUT generator / validator (Version 4)
+//  Gradelux FilmLab — reference LUT generator / validator (Version 5; -DFILMLAB_V4 for Version 4)
 // -----------------------------------------------------------------------------
-//  Compiles Gradelux_FilmLab_v4.dctl itself (through a small C shim) and
+//  Compiles Gradelux_FilmLab_v5.dctl (or v4 with -DFILMLAB_V4) itself (through a small C shim) and
 //  samples its transform() in one of three reference configurations:
 //      A. Film Look only      : Look = <look>,  Print = None
 //      B. Film Print only     : Look = Off,     Print = <print>
@@ -12,14 +12,14 @@
 //  the DCTL, a LUT can never drift from the DCTL.
 //
 //  BUILD
-//      gcc -O2 -o gradelux_lut tools/gradelux_lut.c -lm      (from repo root)
+//      gcc -O2 -o gradelux_lut tools/gradelux_lut.c -lm      (from repo root; add -DFILMLAB_V4 for v4)
 //
 //  USAGE
 //      gradelux_lut list
-//      gradelux_lut cube     <look 0-23> <print 0-5> <dwg|rec709> <33|65>  > file.cube
-//      gradelux_lut validate <look 0-23> <print 0-5> <dwg|rec709> <33|65>
+//      gradelux_lut cube     <look #> <print 0-5> <dwg|rec709> <33|65>  > file.cube
+//      gradelux_lut validate <look #> <print 0-5> <dwg|rec709> <33|65>
 //      gradelux_lut all      <print 0-5> <dwg|rec709> <33|65> <output dir>
-//    look 0 = Off, print 0 = None (not both). "all" writes the 23 looks with
+//    look 0 = Off, print 0 = None (not both). "all" writes every look with
 //    the given print (0 = look-only LUTs).
 //
 //  PIPELINES
@@ -57,6 +57,7 @@ static float3 make_float3(float a, float b, float c) { float3 r = {a, b, c}; ret
 #define _sinf sinf
 static float _clampf(float x, float a, float b) { return fminf(fmaxf(x, a), b); }
 #define DEFINE_UI_PARAMS(...)
+#ifdef FILMLAB_V4
 enum { GLX_LOOK_OFF, GLX_LOOK_PURE, GLX_LOOK_EMBER, GLX_LOOK_SLATE, GLX_LOOK_SOLACE, GLX_LOOK_CHROME,
        GLX_LOOK_DUNE, GLX_LOOK_NOIR, GLX_LOOK_BLOOM, GLX_LOOK_HAZE, GLX_LOOK_VIVID, GLX_LOOK_MUSE,
        GLX_LOOK_TUNDRA, GLX_LOOK_SIENNA, GLX_LOOK_VELVET, GLX_LOOK_CINDER, GLX_LOOK_LUMEN, GLX_LOOK_FABLE,
@@ -68,6 +69,17 @@ static const char *LOOK_NAMES[] = { "Off", "Pure", "Ember", "Slate", "Solace", "
     "Bloom", "Haze", "Vivid", "Muse", "Tundra", "Sienna", "Velvet", "Cinder", "Lumen", "Fable", "Moss",
     "Prism", "Eclipse", "Mono", "Obsidian", "Silver" };
 static const char *PRINT_NAMES[] = { "None", "Print2383", "Print2393", "Print3513", "Print3510", "Print2383Soft" };
+#define FILMLAB_SOURCE "../Gradelux_FilmLab_v4.dctl"
+#else   // Version 5 (prototype: 4 film stocks, renamed prints)
+enum { GLX_LOOK_OFF, GLX_LOOK_VERONA_250D, GLX_LOOK_AURELIA_400, GLX_LOOK_VERDANT_250D, GLX_LOOK_MIDNIGHT_800T,
+       GLX_LOOK_COUNT };
+enum { GLX_PRINT_NONE, GLX_PRINT_CINECHROME_2383, GLX_PRINT_VELACHROME_2393, GLX_PRINT_LUMACHROME_3513,
+       GLX_PRINT_RETROCHROME_3510, GLX_PRINT_SILKCHROME_2383, GLX_PRINT_COUNT };
+static const char *LOOK_NAMES[] = { "Off", "Verona250D", "Aurelia400", "Verdant250D", "Midnight800T" };
+static const char *PRINT_NAMES[] = { "None", "Cinechrome2383", "Velachrome2393", "Lumachrome3513",
+                                     "Retrochrome3510", "Silkchrome2383" };
+#define FILMLAB_SOURCE "../Gradelux_FilmLab_v5.dctl"
+#endif
 
 // UI globals: reference configuration (defaults; Film Look / Film Print set per call)
 static int   ui_Look = 0, ui_Print = 0;
@@ -76,7 +88,7 @@ static float ui_CreativeIntensity = 100, ui_PrintStrength = 100, ui_PrintContras
 static float ui_ColorDensity = 0, ui_Separation = 50, ui_HlWarmth = 0, ui_ShadowTone = 0;
 static float ui_Density = 0, ui_SubSat = 0, ui_Contrast = 0, ui_Shadow = 0, ui_Rolloff = 0, ui_Intensity = 100;
 
-#include "../Gradelux_FilmLab_v4.dctl"
+#include FILMLAB_SOURCE
 
 // ---- Rec.709 <-> DWG (both D65; derived from primaries in double precision) --
 static void rec709_to_dwg(const double *i, double *o) {
@@ -267,7 +279,7 @@ int main(int argc, char **argv) {
         }
         return 0;
     }
-    fprintf(stderr, "usage: gradelux_lut list | cube <look 0-23> <print 0-5> <dwg|rec709> <size>\n"
+    fprintf(stderr, "usage: gradelux_lut list | cube <look #> <print 0-5> <dwg|rec709> <size>\n"
                     "       | validate <look> <print> <dwg|rec709> <size> | all <print 0-5> <dwg|rec709> <size> <dir>\n");
     return 1;
 }

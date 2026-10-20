@@ -1,4 +1,12 @@
-# Gradelux LUT Plan (Version 4)
+# Gradelux LUT Plan (Versions 4 and 5)
+
+Version 5 renames the looks to Gradelux film stocks (prototype: Verona 250D, Aurelia 400,
+Verdant 250D, Midnight 800T) and the prints to Cinechrome 2383, Velachrome 2393, Lumachrome
+3513, Retrochrome 3510 and Silkchrome 2383. The LUT architecture is unchanged. The generator
+targets v5 by default (`-DFILMLAB_V4` builds it for v4), and file names use the new stock and
+print names, e.g. `Gradelux_01_Verona250D_Cinechrome2383_DWG_65.cube`. The accuracy tables
+below were measured on v4. The v5 prototype stocks measure the same or better: mean error
+on real colours at 65³ is 0.0002–0.0005.
 
 This is the plan for selling the Gradelux looks, and optionally the film prints and look +
 print pairs, as standalone `.cube` LUTs in two colour-space versions. No LUTs have been

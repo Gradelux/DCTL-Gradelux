@@ -1,5 +1,5 @@
 // =============================================================================
-//  Gradelux FilmLab — look preview renderer (Version 4)
+//  Gradelux FilmLab — look preview renderer (Version 5; -DFILMLAB_V4 for Version 4)
 // -----------------------------------------------------------------------------
 //  Renders a synthetic test scene through any Film Look / Film Print
 //  combinations (reference configuration) using the DCTL source itself.
@@ -14,7 +14,7 @@
 //
 //    gcc -O2 -o look_preview tools/look_preview.c -lm
 //    ./look_preview looks.raw                  # all looks
-//    ./look_preview combos.raw 1:0 1:1 1:2     # Pure, Pure+2383, Pure+2393
+//    ./look_preview combos.raw 1:0 1:1 1:2     # look 1 alone, with print 1, with print 2
 //    python3 tools/look_preview.py looks.raw preview.png "Off|Pure|..." [columns]
 // =============================================================================
 #include <math.h>
@@ -36,16 +36,29 @@ static float3 make_float3(float a, float b, float c) { float3 r = {a, b, c}; ret
 #define _sinf sinf
 static float _clampf(float x, float a, float b) { return fminf(fmaxf(x, a), b); }
 #define DEFINE_UI_PARAMS(...)
+#ifdef FILMLAB_V4
 enum { GLX_LOOK_OFF, GLX_LOOK_PURE, GLX_LOOK_EMBER, GLX_LOOK_SLATE, GLX_LOOK_SOLACE, GLX_LOOK_CHROME,
        GLX_LOOK_DUNE, GLX_LOOK_NOIR, GLX_LOOK_BLOOM, GLX_LOOK_HAZE, GLX_LOOK_VIVID, GLX_LOOK_MUSE,
        GLX_LOOK_TUNDRA, GLX_LOOK_SIENNA, GLX_LOOK_VELVET, GLX_LOOK_CINDER, GLX_LOOK_LUMEN, GLX_LOOK_FABLE,
        GLX_LOOK_MOSS, GLX_LOOK_PRISM, GLX_LOOK_ECLIPSE, GLX_LOOK_MONO, GLX_LOOK_OBSIDIAN, GLX_LOOK_SILVER,
        GLX_LOOK_COUNT };
+enum { GLX_PRINT_NONE, GLX_PRINT_2383, GLX_PRINT_2393, GLX_PRINT_3513, GLX_PRINT_3510, GLX_PRINT_2383_SOFT,
+       GLX_PRINT_COUNT };
 static const char *LOOK_NAMES[] = { "Off", "Pure", "Ember", "Slate", "Solace", "Chrome", "Dune", "Noir",
     "Bloom", "Haze", "Vivid", "Muse", "Tundra", "Sienna", "Velvet", "Cinder", "Lumen", "Fable", "Moss",
     "Prism", "Eclipse", "Mono", "Obsidian", "Silver" };
-
-enum { GLX_PRINT_NONE, GLX_PRINT_2383, GLX_PRINT_2393, GLX_PRINT_3513, GLX_PRINT_3510, GLX_PRINT_2383_SOFT };
+static const char *PRINT_NAMES[] = { "None", "Print2383", "Print2393", "Print3513", "Print3510", "Print2383Soft" };
+#define FILMLAB_SOURCE "../Gradelux_FilmLab_v4.dctl"
+#else   // Version 5 (prototype: 4 film stocks, renamed prints)
+enum { GLX_LOOK_OFF, GLX_LOOK_VERONA_250D, GLX_LOOK_AURELIA_400, GLX_LOOK_VERDANT_250D, GLX_LOOK_MIDNIGHT_800T,
+       GLX_LOOK_COUNT };
+enum { GLX_PRINT_NONE, GLX_PRINT_CINECHROME_2383, GLX_PRINT_VELACHROME_2393, GLX_PRINT_LUMACHROME_3513,
+       GLX_PRINT_RETROCHROME_3510, GLX_PRINT_SILKCHROME_2383, GLX_PRINT_COUNT };
+static const char *LOOK_NAMES[] = { "Off", "Verona250D", "Aurelia400", "Verdant250D", "Midnight800T" };
+static const char *PRINT_NAMES[] = { "None", "Cinechrome2383", "Velachrome2393", "Lumachrome3513",
+                                     "Retrochrome3510", "Silkchrome2383" };
+#define FILMLAB_SOURCE "../Gradelux_FilmLab_v5.dctl"
+#endif
 
 // UI globals: reference configuration (defaults; Film Look / Film Print set per tile)
 static int   ui_Look = 0, ui_Print = 0;
@@ -54,7 +67,7 @@ static float ui_CreativeIntensity = 100, ui_PrintStrength = 100, ui_PrintContras
 static float ui_ColorDensity = 0, ui_Separation = 50, ui_HlWarmth = 0, ui_ShadowTone = 0;
 static float ui_Density = 0, ui_SubSat = 0, ui_Contrast = 0, ui_Shadow = 0, ui_Rolloff = 0, ui_Intensity = 100;
 
-#include "../Gradelux_FilmLab_v4.dctl"
+#include FILMLAB_SOURCE
 
 #define W 320
 #define H 200
@@ -80,7 +93,7 @@ static void scene(int x,int y,float*o){
   r709_to_dwg(r,g,b,o);
 }
 int main(int argc, char **argv){
-  (void)LOOK_NAMES;
+  (void)LOOK_NAMES; (void)PRINT_NAMES;
   FILE*f=fopen(argc > 1 ? argv[1] : "looks.raw","wb");
   static float img[H][W][3];
   int tiles = (argc > 2) ? argc - 2 : GLX_LOOK_COUNT;

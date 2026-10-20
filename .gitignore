@@ -2,6 +2,7 @@ tests/math_test
 tests/math_test_v2
 tests/math_test_v3
 tests/math_test_v4
+tests/math_test_v5
 tests/dump_v1
 tests/dump_v2
 tests/v1.txt
