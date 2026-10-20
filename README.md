@@ -4,10 +4,9 @@ Film look engine for DaVinci Resolve Studio, written as a DCTL.
 
 | File | Contents |
 |---|---|
-| `Gradelux_FilmLab_v10.dctl` | **Version 10 (current):** 18 film-engine looks + 3 original LUT looks (Vista, Lux, Laguna, embedded verbatim), 16 Cine16 profiles, no film prints; 2 dropdowns, 11 sliders. Single file |
-| `luts/` | The original Vista, Lux and Laguna .cube files (source of the embedded data) |
-| `docs/V10_CHANGES.md` | Version 10: LUT integration, the open LUT colour-space step, removed print engine, tests, Resolve checklist |
-| `tools/v10_luts.py`, `tests/v91_v10_equivalence.c`, `tests/math_test_v10.c`, `tests/v10_interface_check.py` | Version 10: embed / verify the LUT data; V9.1 vs V10 bit-identity; LUT-look tests; interface check |
+| `Gradelux_FilmLab_v10.dctl` | **Version 10 (current):** 18 film looks, 16 Cine16 profiles, no film prints; 2 dropdowns, 11 sliders; bit-identical to Version 9.1 with Film Print = None |
+| `docs/V10_CHANGES.md` | Version 10: removed print engine, tests, Resolve checklist |
+| `tests/v91_v10_equivalence.c`, `tests/v10_interface_check.py` | Version 10: V9.1 vs V10 bit-identity; interface check |
 | `Gradelux_FilmLab_v9_1.dctl` | Version 9.1: Version 9 with a simplified interface (3 dropdowns, 12 sliders); bit-identical to Version 9 at the same settings |
 | `Gradelux_FilmLab_v9.dctl` | Version 9: 18 primary looks with middle-grey anchoring, 16 Cine16 secondary profiles, 5 prints, Exposure / Temperature / Tint, Split Toning |
 | `Gradelux_FilmLab_v8.dctl` | Version 8: Version 7 plus the 16 Cine16 profiles as an independent Secondary Film Look engine |
@@ -40,29 +39,19 @@ Film look engine for DaVinci Resolve Studio, written as a DCTL.
 
 Grain, halation, bloom, diffusion and film damage are intentionally not included.
 
-## Version 10: original LUT looks, no film prints
+## Version 10: film prints removed
 
 `Gradelux_FilmLab_v10.dctl` has two dropdowns and eleven sliders:
-- **Film Look (22 options):** Off, the 18 film-engine looks, then 19 Vista, 20 Lux and
-  21 Laguna.
-- **Secondary Film Look:** the 16 original Cine16 profiles.
-- **Sliders:** Exposure, Temperature, Tint, Film Strength, Secondary Strength, Film
-  Contrast, Film Density, Subtractive Saturation, Highlight Roll-Off, Shadow Depth, Global
-  Intensity.
+- **Dropdowns:** Film Look (Off + the 18 looks) and Secondary Film Look (the 16 original
+  Cine16 profiles).
+- **Sliders:** Exposure, Temperature, Tint, Film Strength, Secondary Strength, Film Contrast,
+  Film Density, Subtractive Saturation, Highlight Roll-Off, Shadow Depth, Global Intensity.
 
-**What changed:**
-- **Prints removed:** the film print engine and its controls are gone.
-- **Looks unchanged:** every remaining look and profile is bit-identical to V9.1 with Film
-  Print = None (319,067 test outputs). Cine16 still matches the original DCTL bit for bit.
-- **LUT looks:** Vista, Lux and Laguna are embedded byte for byte (`DEFINE_CUBE_LUT`) and
-  applied by Resolve's own LUT engine (`APPLY_LUT`).
-- **Film Strength:** works on the LUT looks too; 100% is the LUT exactly, 0% a bypass.
+**What changed:** the film print engine and its controls were removed. Every remaining look
+and profile is bit-identical to V9.1 with Film Print = None (319,067 test outputs), and Cine16
+still matches the original DCTL bit for bit.
 
-**Open item:** the LUTs' input colour space is not confirmed. They are currently treated as
-Rec.709 Gamma 2.4, a provisional choice based on evidence in the data. There is a one-line
-switch per LUT and a Resolve test to confirm it.
-
-Details, limitations and the Resolve checklist: [`docs/V10_CHANGES.md`](docs/V10_CHANGES.md).
+Details and the Resolve checklist: [`docs/V10_CHANGES.md`](docs/V10_CHANGES.md).
 
 ## Version 9.1: simplified interface
 

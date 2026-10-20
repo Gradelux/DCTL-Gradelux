@@ -1,35 +1,33 @@
 // =============================================================================
 //  Gradelux FilmLab: Version 9.1 vs Version 10 equivalence dump
 // -----------------------------------------------------------------------------
-//  Version 10 removes the film print engine and adds three LUT looks. With
+//  Version 10 removes the film print engine. With
 //  Film Print = None, every Version 9.1 configuration must render identically
 //  in Version 10. This program runs one of the two DCTLs on identical inputs
 //  with identical settings of every control Version 10 keeps (Version 9.1
 //  keeps Film Print = None). The two dumps must be identical (bit for bit, %a):
 //
-//    python3 tools/v10_luts.py strip build/Gradelux_FilmLab_v10_host.dctl
 //    cd tests
 //    gcc -O2 -DSRC_V91 -o eq91 v91_v10_equivalence.c -lm && ./eq91 > v91.txt
 //    gcc -O2           -o eq10 v91_v10_equivalence.c -lm && ./eq10 > v10.txt
 //    cmp v91.txt v10.txt
 //
 //  Sections (each line starts with its section tag):
-//    L   every film-engine look alone (Secondary Off)
+//    L   every film look alone (Secondary Off)
 //    S   every secondary profile alone
 //    LS  every look x secondary pair (including Off)
 //    OFF every engine disabled (Off / Off, or Film Strength 0 with a look)
 //    EV  exposure -5 .. +5 stops with every look
 //    G   every grading slider alone at -100, -50, 50, 100 with every look
-//    R   random settings of all eleven sliders and both dropdowns (film-engine
-//        looks), extended-range input
+//    R   random settings of all eleven sliders and both dropdowns,
+//        extended-range input
 // =============================================================================
 #if defined(SRC_V91)
 #include "../tools/filmlab_shim.h"
 #include "../Gradelux_FilmLab_v9_1.dctl"
 #else
-#define FILMLAB_V10
 #include "../tools/filmlab_shim.h"
-#include "../build/Gradelux_FilmLab_v10_host.dctl"
+#include "../Gradelux_FilmLab_v10.dctl"
 #endif
 
 static float frand(float a, float b) { return a + (b - a) * (float)rand() / (float)RAND_MAX; }
@@ -52,7 +50,7 @@ static void extras(const char *tag) {
 
 int main(void)
 {
-    const int NL = GLX_LOOK_ENGINE_COUNT;           // Off + 18 film-engine looks
+    const int NL = GLX_LOOK_COUNT;                  // Off + 18 film looks
     for (int l = 1; l < NL; l++) { filmlab_reset(); ui_Look = l; grid("L", 9); extras("L"); }
     for (int s = 1; s < GLX_SEC_COUNT; s++) { filmlab_reset(); ui_SecLook = s; grid("S", 9); extras("S"); }
     for (int l = 0; l < NL; l++)
@@ -72,8 +70,13 @@ int main(void)
             for (int v = 0; v < 4; v++) {
                 filmlab_reset(); ui_Look = l;
                 float x = (c == 3) ? fabsf(GV[v]) : GV[v];
-                if (c == 0) ui_Contrast = x; if (c == 1) ui_Density = x; if (c == 2) ui_SubSat = x;
-                if (c == 3) ui_Rolloff = x;  if (c == 4) ui_Shadow = x;
+                switch (c) {
+                    case 0: ui_Contrast = x; break;
+                    case 1: ui_Density  = x; break;
+                    case 2: ui_SubSat   = x; break;
+                    case 3: ui_Rolloff  = x; break;
+                    default: ui_Shadow  = x; break;
+                }
                 grid("G", 4);
             }
     srand(10);

@@ -4,17 +4,16 @@
 Checks Gradelux_FilmLab_v10.dctl for:
   - exactly two dropdowns and eleven sliders, in the specified order and with
     the Version 9.1 internal names, ranges and defaults;
-  - the Film Look dropdown: 22 options (Off, 18 film-engine looks, Vista, Lux,
-    Laguna) and the Secondary Film Look dropdown: 17 options (Off + 16 Cine16);
-  - no film print code or control left, no Daze or Koda;
-  - the three embedded LUTs byte-identical to luts/*.cube (tools/v10_luts.py check).
+  - the Film Look dropdown: 19 options (Off + the 18 film looks, IDs unchanged)
+    and the Secondary Film Look dropdown: 17 options (Off + 16 Cine16);
+  - no film print code or control left, and no LUT looks or LUT data.
 Run from the repository root:  python3 tests/v10_interface_check.py
 """
-import os, re, subprocess, sys
+import os, re, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 src = open(os.path.join(ROOT, "Gradelux_FilmLab_v10.dctl"), encoding="utf-8").read()
-code = src[:src.index("DEFINE_CUBE_LUT(GlxLutVista)")] + src[src.index("//  ENTRY POINT"):]
+code = src
 fails = 0
 def ok(cond, what):
     global fails
@@ -46,12 +45,10 @@ def labels(c):
     return re.findall(r'"([^"]*)"', c[3])
 look = dict((c[1].strip(), c) for c in combos)["Film Look"]
 L = labels(look)
-ok(len(L) == 22, "Film Look: 22 options (found %d)" % len(L))
+ok(len(L) == 19, "Film Look: 19 options (found %d)" % len(L))
 ok(L == ["Off", "Verona", "Verdant", "Midnight", "Aurelia", "Solara", "Moss", "Chroma", "Silvergrain", "Tungsten",
-         "Halcyon", "Argent", "Nocturne", "Pastelle", "Patina", "Opaline", "Glacier", "Terracotta", "Velour",
-         "Vista", "Lux", "Laguna"], "Film Look order: 0 Off ... 18 Velour, 19 Vista, 20 Lux, 21 Laguna")
-ids = re.findall(r"GLX_LOOK_\w+", look[3])
-ok(ids[19:] == ["GLX_LOOK_VISTA", "GLX_LOOK_LUX", "GLX_LOOK_LAGUNA"] and len(ids) == 22, "Film Look internal IDs (0-18 unchanged)")
+         "Halcyon", "Argent", "Nocturne", "Pastelle", "Patina", "Opaline", "Glacier", "Terracotta", "Velour"],
+   "Film Look order: 0 Off ... 18 Velour (as V9.1)")
 S = labels(dict((c[1].strip(), c) for c in combos)["Secondary Film Look"])
 ok(len(S) == 17 and S[0] == "Off", "Secondary Film Look: Off + 16 Cine16 profiles")
 
@@ -59,13 +56,8 @@ print("Removed content")
 ok(not re.search(r"ui_Print|GLX_PRINT|glx_print|printOn|isPrint", code), "no film print control or code")
 ok(not re.search(r"ui_SecSep|ui_SecSat|ui_SecSubtr|ui_SecBias|ui_SecTone|ui_SecSkinProt|ui_ShHue|ui_SplitStrength|ui_Diag|ui_SecShowSkin|ui_ColorDensity|ui_Separation|ui_HlWarmth|ui_ShadowTone", code),
    "no split-toning, extra film, Cine16 detail or diagnostic controls")
-ok(not re.search(r"\b(daze|koda)\b", src, re.I), "no Daze or Koda anywhere in the file")
-ok(len(re.findall(r"^DEFINE_CUBE_LUT\(", src, re.M)) == 3, "exactly three embedded LUTs")
-
-print("Embedded LUTs")
-r = subprocess.run([sys.executable, "-I", os.path.join(ROOT, "tools", "v10_luts.py"), "check"], capture_output=True, text=True)
-print("  " + r.stdout.strip().replace("\n", "\n  "))
-ok(r.returncode == 0, "embedded LUTs byte-identical to luts/*.cube")
+ok(not re.search(r"\b(vista|lux|laguna|daze|koda)\b", src, re.I), "no Vista, Lux, Laguna, Daze or Koda")
+ok(not re.search(r"DEFINE_CUBE_LUT|DEFINE_LUT|APPLY_LUT", src), "no embedded or external LUTs")
 
 print("INTERFACE CHECK PASSED" if fails == 0 else "INTERFACE CHECK: %d FAILURES" % fails)
 sys.exit(1 if fails else 0)

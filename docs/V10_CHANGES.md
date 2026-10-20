@@ -1,219 +1,71 @@
-# FilmLab V10: original LUT looks, no film prints, 11 sliders
+# FilmLab V10: no film prints, 11 sliders
 
-`Gradelux_FilmLab_v10.dctl` is FilmLab V9.1 with four changes:
-- **Film prints removed:** the Film Print dropdown, Print Strength and the whole print engine.
-- **Three LUT looks added:** Vista, Lux and Laguna, at positions 19–21 of the Film Look
-  dropdown.
-- **Smaller panel:** two dropdowns and eleven sliders.
-- **Single file:** everything is in one DCTL. The three .cube files are embedded verbatim and
-  applied by Resolve's own LUT engine, so no companion files are needed.
+`Gradelux_FilmLab_v10.dctl` is FilmLab V9.1 with the film print engine removed:
+- **Removed:** the Film Print dropdown, Print Strength, the five prints and their code.
+- **Panel:** two dropdowns and eleven sliders.
+- **Unchanged:** the 18 film looks, the 16 Cine16 profiles and every retained control. With
+  Film Print = None, V10 output is bit-identical to V9.1 (section 4).
 
-**Unchanged:** the 18 film-engine looks, the 16 Cine16 profiles and every retained control.
-With Film Print = None, V10 output is bit-identical to V9.1 (section 6).
-
-> **Open item: LUT input colour space.** Nobody has confirmed which colour space Vista, Lux
-> and Laguna were built for.
-> - **Current setting:** Rec.709 Gamma 2.4. This is provisional, chosen from evidence in the
->   LUT data (section 3).
-> - **Switching:** each LUT can be set to direct DWG / Intermediate with one line in the DCTL.
-> - **Before release:** confirm the space with the Resolve test in section 3.3.
+The three original LUT looks (Vista, Lux, Laguna) were added in an earlier V10 build and then
+removed at your request. Neither the DCTL nor the repository contains any LUT data.
 
 ## 1. Interface
 
-| Control | Range | Default | Notes |
-|---|---|---|---|
-| Exposure | −5 … +5 stops | 0 | |
-| Temperature | −100 … +100 | 0 | |
-| Tint | −100 … +100 | 0 | |
-| **Film Look** (dropdown) | 22 options | Off | 0 Off · 1 Verona · 2 Verdant · 3 Midnight · 4 Aurelia · 5 Solara · 6 Moss · 7 Chroma · 8 Silvergrain · 9 Tungsten · 10 Halcyon · 11 Argent · 12 Nocturne · 13 Pastelle · 14 Patina · 15 Opaline · 16 Glacier · 17 Terracotta · 18 Velour · **19 Vista · 20 Lux · 21 Laguna** |
-| Film Strength | 0 … 200% | 100% | Works on every look, including the LUT looks |
-| **Secondary Film Look** (dropdown) | 17 options | Off | Off + the 16 original Cine16 profiles |
-| Secondary Strength | 0 … 1.5 | 1.00 | |
-| Film Contrast | −100 … +100 | 0 | |
-| Film Density | −100 … +100 | 0 | |
-| Subtractive Saturation | −100 … +100 | 0 | |
-| Highlight Roll-Off | 0 … 100 | 0 | |
-| Shadow Depth | −100 … +100 | 0 | |
-| Global Intensity | 0 … 100% | 100% | |
+| Control | Range | Default |
+|---|---|---|
+| Exposure | −5 … +5 stops | 0 |
+| Temperature | −100 … +100 | 0 |
+| Tint | −100 … +100 | 0 |
+| **Film Look** (dropdown, 19 options) | Off + Verona, Verdant, Midnight, Aurelia, Solara, Moss, Chroma, Silvergrain, Tungsten, Halcyon, Argent, Nocturne, Pastelle, Patina, Opaline, Glacier, Terracotta, Velour | Off |
+| Film Strength | 0 … 200% | 100% |
+| **Secondary Film Look** (dropdown, 17 options) | Off + the 16 original Cine16 profiles | Off |
+| Secondary Strength | 0 … 1.5 | 1.00 |
+| Film Contrast | −100 … +100 | 0 |
+| Film Density | −100 … +100 | 0 |
+| Subtractive Saturation | −100 … +100 | 0 |
+| Highlight Roll-Off | 0 … 100 | 0 |
+| Shadow Depth | −100 … +100 | 0 |
+| Global Intensity | 0 … 100% | 100% |
 
-- **Internal names:** every retained control keeps its V9.1 name, range and default (internal
-  IDs 0–18 of the Film Look dropdown are unchanged), so saved V9.1 grades keep those values.
+- **Saved grades:** every control keeps its V9.1 internal name, range and default. Dropdown IDs
+  are unchanged, so saved V9.1 grades keep their values.
 - **Pipeline:** Exposure → Temperature / Tint → Film Look → Secondary Film Look (Cine16) →
   grading sliders → Global Intensity.
+- **Data format:** DaVinci Wide Gamut / Intermediate in and out.
 
 ## 2. Removed
 
 | Removed | How existing looks are preserved |
 |---|---|
-| Film Print dropdown and its five prints (Cinechrome 2383, Velachrome 2393, Lumachrome 3513, Retrochrome 3510, Silkchrome 2383) | Every look renders exactly as it did in V9.1 with Film Print = None (bit-identical, section 6) |
+| Film Print dropdown and its five prints (Cinechrome 2383, Velachrome 2393, Lumachrome 3513, Retrochrome 3510, Silkchrome 2383) | Every look renders exactly as it did in V9.1 with Film Print = None (section 4) |
 | Print Strength slider | — |
 | Fixed print controls (`GLX_FIX_PRINT_*`) | Only used by the print engine |
-| Print engine code (`glx_print_get`, `glx_print_controls`, `glx_print_apply`, the neutral-locked print variant of the tone stage, the `isPrint` field) | These code paths never ran for looks, so the arithmetic of every look is unchanged |
+| Print engine code (`glx_print_get`, `glx_print_controls`, `glx_print_apply`, the neutral-locked print variant of the tone stage, the `isPrint` field) | These paths never ran for looks, so the arithmetic of every look is unchanged |
 
-**Still applied internally:** the non-neutral V9 defaults fixed in V9.1. These are the six
-Cine16 detail settings at 1.00, plus the film adjustments at their bypass values, in the
-FIXED SETTINGS section. Split toning, the Stage View and the skin mask were already removed
-in V9.1.
+The non-neutral V9 defaults fixed in V9.1 are still applied internally (the FIXED SETTINGS
+section):
+- the six Cine16 detail settings at 1.00;
+- the film adjustments at their bypass values.
 
-**Old grades:** a saved V9.1 grade that used a film print will now render without the print.
+**Old grades:** a saved V9.1 grade that used a film print now renders without the print.
 
-## 3. The original LUT looks
+## 3. Unchanged
 
-### 3.1 How they are integrated
+- **Looks:** all 18 film looks (data, IDs, names, middle-grey anchoring) and all 16 Cine16
+  profiles. The Cine16 code is verbatim from the original DCTL and still takes all seven
+  original controls.
+- **LUT export:** every stage is a deterministic RGB → RGB function, so any configuration can
+  still be exported as a LUT. Use Resolve's Generate LUT on a FilmLab node, or
+  `tools/gradelux_lut.c`, which uses V9.1 (identical with Print None).
 
-The DCTL uses Resolve's documented DCTL LUT feature, as confirmed in the DCTL reference before
-implementation:
+## 4. Tests executed on the host (all passed)
 
-- `DEFINE_CUBE_LUT(name) { …standard .cube content… }` embeds a LUT inside the DCTL. This is
-  available since Resolve 17.
-- `APPLY_LUT(r, g, b, name)` applies it and returns `float3`. Resolve uses its own LUT engine,
-  with the 3D LUT interpolation set in the project settings (trilinear or tetrahedral), the
-  same as a .cube on a node.
-- **Why embedded:** the alternative, `DEFINE_LUT(name, path)` with external files, depends on
-  file paths relative to the DCTL, and users report "cannot find external LUT" errors with it.
-
-**Verbatim data:** each .cube is copied byte for byte into the DCTL, with no rounding,
-resampling or reformatting.
-- `tools/v10_luts.py check` verifies all three against `luts/*.cube`; SHA-1 hashes are below.
-- All three are 33-point LUTs generated by Resolve.
-
-| LUT | Position | DCTL name | Bytes | SHA-1 |
-|---|---|---|---|---|
-| Vista.cube | 19 | `GlxLutVista` | 881,134 | ab7d13e419be970e0e6580f2a6697337b48a85ae |
-| Lux.cube | 20 | `GlxLutLux` | 948,952 | 85fd13e9791f7b138e268dcd0c6fb4ba33330fb5 |
-| Laguna.cube | 21 | `GlxLutLaguna` | 881,699 | c587df594f388f5e131ccf3a556d8d734d047479 |
-
-**Excluded:** Daze is not in the DCTL, the data or the deliverables. Koda.cube, the file
-attached by mistake, is not used.
-
-**File size:** the DCTL is 2.8 MB, almost all of it LUT data.
-
-### 3.2 Input space: what the DCTL does
-
-Each LUT has one setting at the top of the DCTL (section LUT INPUT SPACE):
-
-```
-#define GLX_LUT_SPACE_VISTA   GLX_LUT_REC709 // PROVISIONAL (not confirmed)
-#define GLX_LUT_SPACE_LUX     GLX_LUT_REC709 // PROVISIONAL (not confirmed)
-#define GLX_LUT_SPACE_LAGUNA  GLX_LUT_REC709 // PROVISIONAL (not confirmed)
-```
-
-**`GLX_LUT_REC709`** treats the LUT as built for Rec.709 Gamma 2.4:
-1. Converts DWG / Intermediate to Rec.709 Gamma 2.4: Intermediate decode, matrix from the
-   primaries, clip to 0–1, then 1/2.4 power.
-2. Applies the LUT.
-3. Converts the result back with the exact inverse.
-
-This is the same maths as a node chain of CST to Rec.709 Gamma 2.4 → .cube → CST back to
-DWG / Intermediate, with tone mapping and gamut mapping off in both CSTs.
-
-**`GLX_LUT_DI`** applies the LUT directly to the DWG / Intermediate values. This is identical
-to the .cube on a node in a DWG / Intermediate timeline.
-
-**Input domain:** in both modes the LUT only sees values inside its 0–1 input domain.
-
-### 3.3 Why Rec.709 is the provisional choice, and how to confirm it
-
-**The data alone cannot prove the colour space.** All three files are plain 33-point cubes
-from Resolve, with no title or shaper that would identify it. But the two readings behave
-very differently:
-
-| LUT | 18% grey, read as DaVinci Intermediate | 18% grey, read as Rec.709 Gamma 2.4 |
-|---|---|---|
-| Vista | −1.59 stops | −0.51 stops |
-| Lux | −0.31 stops | −0.07 stops |
-| Laguna | −0.21 stops | −0.04 stops |
-
-`docs/FilmLab_v10_lut_spaces.png` renders all three LUTs both ways on a test chart:
-- **Read as Intermediate:** the bright end of the grey ramp turns strongly cyan and skin
-  tones go teal-grey.
-- **Read as Rec.709 Gamma 2.4:** they behave like coherent film looks, with neutral-to-warm
-  greys, faded blacks and natural skin.
-
-That is strong evidence for Rec.709, but it is not confirmation. Gamma 2.2 or sRGB encoding,
-or a LUT made for a specific camera log, would also be possible.
-
-**The remaining step: confirm in Resolve.** You know how the looks are supposed to look.
-1. In a DWG / Intermediate timeline (or after an input CST to DWG / Intermediate), on a
-   typical clip, build two versions:
-   - **A:** `Vista.cube` on a node, nothing else.
-   - **B:** CST DWG / Intermediate → Rec.709 Gamma 2.4 (tone mapping None, gamut mapping None)
-     → `Vista.cube` → CST Rec.709 Gamma 2.4 → DWG / Intermediate (tone mapping None).
-2. View both through your usual output transform. The one that looks as Vista was designed
-   is its colour space. Repeat for Lux and Laguna.
-3. If B is right, keep the setting. If A is right, change that LUT's line to `GLX_LUT_DI`.
-   If neither looks right, tell me what the LUTs were made from, for example the timeline
-   colour space when "Generate LUT" was used.
-
-Section 7 then checks that FilmLab reproduces the chosen chain.
-
-### 3.4 Behaviour and limitations of the LUT looks
-
-**Exact at 100%.** Film Strength 100% gives exactly the LUT stage (in its input space), with
-no extra processing.
-
-**Film Strength at other values:**
-- **0%:** exact bypass.
-- **Below 100%:** mixes the LUT's input and output in DaVinci Intermediate.
-- **Above 100%:** extends the LUT's change beyond the original LUT. This is a creative
-  extension, not part of the original look. The mixed result is bounded to DI −0.5 … 2.0, the
-  same bound the Cine16 engine applies. Real images never reach that bound; it only stops
-  impossible values from overflowing.
-
-**Order with other controls:**
-- Exposure, Temperature and Tint run before the LUT, as on the film-engine looks.
-- The Cine16 secondary and the grading sliders run after it.
-
-**Display LUT limits (Rec.709 setting):**
-- Colours outside Rec.709 and highlights above Rec.709 display white are clipped before the
-  LUT. This is inherent to a display LUT and identical to the CST → LUT chain.
-- Exposure can place highlights before the LUT.
-- LUT outputs top out around 0.96, display white.
-
-**Viewing transform (Rec.709 setting).** The LUT result matches the look as it was built only
-when FilmLab feeds a plain CST to Rec.709 Gamma 2.4. A tone-mapping DRT or ACES output reshapes
-it, as it would reshape the CST → LUT chain.
-
-**No middle-grey anchoring.** V9's anchoring does not apply to the LUT looks; they stay
-exactly as authored. For example, Vista darkens middle grey by about half a stop under the
-Rec.709 reading.
-
-## 4. Unchanged
-
-- **Looks and profiles:** all 18 film-engine looks (data, IDs, names, middle-grey anchoring)
-  and all 16 Cine16 profiles. The Cine16 code is verbatim from the original DCTL and still
-  takes all seven original controls.
-- **Data format:** DWG / Intermediate in and out.
-- **Determinism:** every stage is a deterministic RGB → RGB function, so any configuration
-  can still be exported as a LUT. For example, Resolve's Generate LUT on a FilmLab node, or
-  `tools/gradelux_lut.c` for the film-engine looks (identical to V9.1 with Print None).
-
-## 5. Files
-
-| File | Purpose |
-|---|---|
-| `Gradelux_FilmLab_v10.dctl` | The deliverable (single file, LUTs embedded) |
-| `luts/Vista.cube`, `luts/Lux.cube`, `luts/Laguna.cube` | The original LUTs (source of the embedded data) |
-| `tools/v10_luts.py` | `embed` / `check` (byte-for-byte) / `strip` (host copy for the C tests) |
-| `tools/filmlab_shim.h` | Host shim; with `FILMLAB_V10` adds the LUT looks and an `APPLY_LUT` emulation (trilinear / tetrahedral) |
-| `tests/v91_v10_equivalence.c` | V9.1 vs V10 bit-identity |
-| `tests/math_test_v10.c` | LUT-look tests in both input-space modes |
-| `tests/v10_interface_check.py` | Panel, dropdowns, removed content, embedded data |
-| `tests/cine16_regression.py` (`FILMLAB=10`) | Cine16 against the original DCTL, including chaining after the LUT looks |
-| `docs/FilmLab_v10_looks.png`, `docs/FilmLab_v10_lut_looks.png`, `docs/FilmLab_v10_lut_spaces.png` | Preview sheets |
-
-## 6. Tests executed on the host (all passed)
-
-These run the DCTL's own code compiled as C.
-
-**Not emulated by these tests:** Resolve's `APPLY_LUT`. The host reads the same .cube files
-and interpolates them itself (trilinear and tetrahedral), so these tests prove the DCTL code
-around the lookup, not Resolve's interpolation.
+These compile the DCTL's own code as C.
 
 | Test | Result |
 |---|---|
-| **V9.1 (Film Print = None) vs V10, identical settings** (`v91_v10_equivalence.c`) | **319,067 outputs bit-identical** |
-| — each film-engine look alone | 14,418 identical |
+| **V9.1 (Film Print = None) vs V10, identical settings** (`tests/v91_v10_equivalence.c`) | **319,067 outputs bit-identical** |
+| — each look alone | 14,418 identical |
 | — each Cine16 profile alone | 12,816 identical |
 | — every look × secondary pair, including Off | 40,375 identical |
 | — engines disabled | 1,602 identical |
@@ -221,32 +73,14 @@ around the lookup, not Resolve's interpolation.
 | — each grading slider at ±50 / ±100 with every look | 24,320 identical |
 | — 200,000 random settings of all 11 sliders and both dropdowns, extended-range input | 200,000 identical |
 | Sensitivity: the same comparison with a deliberately tiny change | 294,054 of 319,067 differ, so the test detects changes |
-| **LUT looks** (`math_test_v10.c`), run with both input-space settings and both interpolations | **552,630 checks per setting, 0 failures** |
-| — 100% = the LUT stage exactly; 0% = exact bypass; 50 / 150 / 200% = the documented mix | |
-| — Exposure / Temperature / Tint before the LUT; Cine16 and grading after it; Global Intensity mix and 0% bypass | |
-| — 400,000 random settings over all 22 looks, inputs up to DI ±8 (10³⁰ × linear) | all finite |
-| Rec.709 round trip with identity LUTs (600,000 samples) | returns the input to 9 × 10⁻⁸ (DI direct: exactly) |
-| Rec.709 conversion vs a double-precision reference | max error 1.2 × 10⁻⁶ linear, 5.9 × 10⁻⁶ code value (≈ 1/170 of a 10-bit step); 18% grey → 0.48944 exactly |
-| **Cine16 vs the original Cine16 DCTL** (`FILMLAB=10`) | **328,432 samples bit-identical** |
-| — secondary inert when Off | 79,332 identical |
-| — Film Look Off: V10 = V8 | 30,651 identical |
-| — chaining, including every LUT look × all 16 profiles | 90,576 identical |
-| Interface (`v10_interface_check.py`) | 2 dropdowns, 11 sliders in order; 22 Film Look options; no print, split-toning, diagnostic or extra film controls; no Daze or Koda |
-| Embedded LUTs (`v10_luts.py check`) | all three byte-identical to the source files |
+| **Cine16 vs the original Cine16 DCTL** (`FILMLAB=10 python3 tests/cine16_regression.py`) | **328,432 samples bit-identical**; secondary inert when Off (68,514); Film Look Off = V8 (30,651); chained engines (51,408) |
+| Interface (`tests/v10_interface_check.py`) | 2 dropdowns and 11 sliders in order; 19 Film Look options; no print, split-toning, diagnostic or extra film controls; no LUT looks or LUT data |
 
-**Bug found and fixed during testing:** Film Strength above 100% on impossible inputs (DI 2.4
-is about 70 million × linear) combined with strong Temperature / Tint overflowed to infinity
-in the grading stage. It is fixed by the DI −0.5 … 2.0 bound in section 3.4.
+Because V10 equals V9.1 bit for bit and V9.1 equals V9, the V9 suite
+(`tests/math_test_v9.c`) carries over.
 
-**Pre-existing limit, as in V9.1:** inputs beyond DI ≈ 9.4 overflow float when decoded.
-
-**Commands** (from the repository root):
+**Commands:**
 ```
-python3 tools/v10_luts.py strip build/Gradelux_FilmLab_v10_host.dctl
-sed 's/GLX_LUT_SPACE_\([A-Z]*\) *GLX_LUT_[A-Z0-9]*/GLX_LUT_SPACE_\1 GLX_LUT_DI/' build/Gradelux_FilmLab_v10_host.dctl > build/Gradelux_FilmLab_v10_host_di.dctl
-sed 's/GLX_LUT_SPACE_\([A-Z]*\) *GLX_LUT_[A-Z0-9]*/GLX_LUT_SPACE_\1 GLX_LUT_REC709/' build/Gradelux_FilmLab_v10_host.dctl > build/Gradelux_FilmLab_v10_host_709.dctl
-gcc -O2 -DSPACE_DI  -o build/t10_di  tests/math_test_v10.c -lm && build/t10_di
-gcc -O2 -DSPACE_709 -o build/t10_709 tests/math_test_v10.c -lm && build/t10_709
 cd tests
 gcc -O2 -DSRC_V91 -o eq91 v91_v10_equivalence.c -lm && ./eq91 > v91.txt
 gcc -O2           -o eq10 v91_v10_equivalence.c -lm && ./eq10 > v10.txt && cmp v91.txt v10.txt
@@ -254,51 +88,12 @@ FILMLAB=10 python3 cine16_regression.py
 python3 v10_interface_check.py
 ```
 
-## 7. Resolve testing checklist (not performed: no Resolve here)
+## 5. Resolve testing checklist (not performed: no Resolve here)
 
-**Install and compile**
-- [ ] Copy `Gradelux_FilmLab_v10.dctl` alone into Resolve's LUT folder. No other files are
-      needed. Restart Resolve, or use Update Lists.
-- [ ] The DCTL compiles and the panel shows exactly 2 dropdowns and 11 sliders in the order of
-      section 1. Film Look has 22 entries, ending Vista, Lux, Laguna.
-- [ ] Note the first-load time. The file is 2.8 MB because of the embedded LUTs.
-- [ ] If Resolve reports a LUT error, send me the exact message. The fallback is the same
-      DCTL using `DEFINE_LUT` with the three .cube files placed next to it.
-
-**LUT colour space and accuracy**
-- [ ] Run the colour-space test in section 3.3. Set each LUT's line if it differs from Rec.709
-      Gamma 2.4.
-- [ ] Accuracy: compare FilmLab with only Film Look = Vista (Film Strength 100%, everything
-      else default) against the matching node chain from section 3.3 (B for Rec.709, A for
-      DI). Use a difference composite (Layer Mixer → Difference). It should be black, apart
-      from tiny interpolation differences. Repeat for Lux and Laguna.
-- [ ] Repeat once with the 3D LUT interpolation project setting switched between trilinear and
-      tetrahedral. FilmLab should follow it the same way the node chain does.
-- [ ] View through your normal output transform. With the Rec.709 setting, a tone-mapping DRT
-      changes the LUT looks just as it changes the CST → LUT chain (section 3.4).
-
-**LUT look controls**
-- [ ] Film Strength on a LUT look: 0% equals Film Look Off, 100% equals the LUT, 50% sits
-      halfway, and 150–200% exaggerates the look smoothly.
-- [ ] Exposure / Temperature / Tint, a Secondary Film Look and each grading slider on a LUT
-      look, with no artefacts in skin, skies or highlights.
-
-**Regression against V9.1**
-- [ ] V9.1 vs V10 on the same clip, with V9.1 Film Print = None and matching settings: the
-      difference should be black for several film-engine looks and secondaries.
-- [ ] Old grades: a saved V9.1 grade keeps its values. Grades that used a film print now
-      render without it.
-
-**Performance and delivery**
-- [ ] Real-time playback with a LUT look and with a film-engine look.
+- [ ] V10 compiles in Resolve Studio. The panel shows exactly the 2 dropdowns and 11 sliders
+      of section 1, and Film Look has 19 entries.
+- [ ] A/B against V9.1 on the same clip, with V9.1 Film Print = None and matching settings:
+      the difference matte should be black for several looks and secondaries.
+- [ ] Old grades keep their values. Grades that used a film print now render without it.
+- [ ] Playback performance, expected the same as V9.1 or slightly better.
 - [ ] A render or delivery of a short clip matches the viewer.
-
-## Sources for the DCTL LUT syntax
-
-- [ResolveCafe DCTL documentation](https://github.com/CommandPost/ResolveCafe/blob/main/docs/developers/dctl.md)
-  (mirror of Blackmagic's DCTL readme): `DEFINE_LUT`, `DEFINE_CUBE_LUT`, `APPLY_LUT`, path
-  rules, interpolation.
-- [apply_internal_lut_contents_dctl](https://github.com/Johnr24/apply_internal_lut_contents_dctl):
-  a working example of an embedded `DEFINE_CUBE_LUT`.
-- [ACES Central: DaVinci Resolve DCTL and OFX plugins](https://community.acescentral.com/t/davinci-resolve-dctl-and-ofx-plugins/1385)
-- [Blackmagic forum: external LUT path issue](https://forum.blackmagicdesign.com/viewtopic.php?f=21&t=222370)

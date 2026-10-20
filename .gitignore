@@ -19,5 +19,3 @@ tests/math_test_v7
 scenario_check
 tests/math_test_v8
 tests/math_test_v9
-!luts/*.cube
-build/

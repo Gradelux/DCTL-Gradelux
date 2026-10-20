@@ -28,9 +28,8 @@
 #    cd tests && FILMLAB=9.1 python3 cine16_regression.py     (FilmLab v9.1: only Secondary Strength
 #       remains adjustable, so slider variation covers strength only; the skin-mask
 #       view no longer exists)
-#    cd tests && FILMLAB=10 python3 cine16_regression.py      (FilmLab v10: as v9.1, no prints (print
-#       option None only), and the three LUT looks Vista / Lux / Laguna take part in
-#       B and C with Resolve's APPLY_LUT emulated by tools/filmlab_shim.h)
+#    cd tests && FILMLAB=10 python3 cine16_regression.py      (FilmLab v10: as v9.1, no prints:
+#       print option None only)
 #  Exit status 0 only if every comparison is bit-identical.
 # =============================================================================
 import os, subprocess, sys, tempfile, random, math
@@ -61,10 +60,6 @@ V10 = os.environ.get('FILMLAB', '9') == '10'
 V91 = os.environ.get('FILMLAB', '9') == '9.1' or V10        # v10 keeps the v9.1 secondary controls
 FLNAME = 'v10' if V10 else 'v9.1' if V91 else 'v9'
 NPR = 1 if V10 else 6                                          # print options (v10: None only)
-if V10:
-    LOOKS = LOOKS + ["Vista", "Lux", "Laguna"]
-    subprocess.check_call([sys.executable, '-I', os.path.join(HERE, '..', 'tools', 'v10_luts.py'), 'strip',
-                           os.path.join(HERE, '..', 'build', 'Gradelux_FilmLab_v10_host.dctl')])
 RUN_C16, RUN_V8 = build('RUN_CINE16', 'run_c16'), build('RUN_FILMLAB8', 'run_v8')
 RUN_FL = (build('RUN_FILMLAB10', 'run_v10') if V10 else build('RUN_FILMLAB91', 'run_v91') if V91
           else build('RUN_FILMLAB9', 'run_v9'))
@@ -207,8 +202,6 @@ else:
 pts = SETS['rgb patches'][::11] + SETS['skin tones'][::3] + SETS['saturated'][::9] + SETS['grey ramp'][::16]
 combos = [(0, 6, 0), (1, 6, 0), (1, 6, 1 if NPR > 1 else 0)]                # the three requested combinations
 combos += [(rng.randrange(len(LOOKS)), rng.randrange(1, 17), rng.randrange(NPR)) for _ in range(60)]
-if V10:                                                                         # every LUT look with every profile
-    combos += [(l, s, 0) for l in range(19, 22) for s in range(1, 17)]
 totC, nC = 0, 0
 for look, sec, pr in combos:
     s1 = run(RUN_FL, ['%d 0 0 %s 0 %s %s %s' % (look, D, hx(r), hx(g), hx(b)) for r, g, b in pts])

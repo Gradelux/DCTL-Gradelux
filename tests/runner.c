@@ -14,10 +14,8 @@
 //    gcc -O2 -DRUN_FILMLAB91 -o run_v91 runner.c -lm Gradelux_FilmLab_v9_1.dctl (same line format; the
 //                                                    secondary sliders other than strength are ignored:
 //                                                    Version 9.1 fixes them at 1.00)
-//    gcc -O2 -DRUN_FILMLAB10 -o run_v10 runner.c -lm Version 10 host copy (build/Gradelux_FilmLab_v10_host.dctl,
-//                                                    from tools/v10_luts.py strip); same line format,
-//                                                    print must be 0 (Version 10 has no prints); looks
-//                                                    19-21 are the LUT looks (APPLY_LUT emulated)
+//    gcc -O2 -DRUN_FILMLAB10 -o run_v10 runner.c -lm Gradelux_FilmLab_v10.dctl (same line format;
+//                                                    print must be 0: Version 10 has no prints)
 //
 //  Input: one sample per line, whitespace-separated:
 //    RUN_CINE16  : profile strength sep sat subtr bias tone skinprot showskin  R G B
@@ -28,9 +26,8 @@
 // =============================================================================
 #if defined(RUN_FILMLAB10)
 #define RUN_FILMLAB9
-#define FILMLAB_V10
 #include "../tools/filmlab_shim.h"
-#include "../build/Gradelux_FilmLab_v10_host.dctl"
+#include "../Gradelux_FilmLab_v10.dctl"
 #elif defined(RUN_FILMLAB91)
 #define RUN_FILMLAB9
 #include "../tools/filmlab_shim.h"
