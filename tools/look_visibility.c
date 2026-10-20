@@ -8,7 +8,7 @@
 //  full stock, its colour and tone stages, with stages removed, and over a
 //  print; plus dE between stocks (distinctness).
 //
-//    gcc -O2 -o look_visibility tools/look_visibility.c -lm && ./look_visibility   (Version 6)
+//    gcc -O2 -o look_visibility tools/look_visibility.c -lm && ./look_visibility   (Version 6.1)
 // =============================================================================
 #define HAS_SENS
 #include <math.h>
@@ -54,7 +54,9 @@ static const char *LOOK_NAMES[] = { "Off", "Verona250D", "Verdant250D", "Midnigh
                                     "Solara200", "Moss250D", "Chroma100", "Silvergrain100" };
 static const char *PRINT_NAMES[] = { "None", "Cinechrome2383", "Velachrome2393", "Lumachrome3513",
                                      "Retrochrome3510", "Silkchrome2383" };
-#define FILMLAB_SOURCE "../Gradelux_FilmLab_v6.dctl"
+#ifndef FILMLAB_SOURCE   /* Version 6.1 by default; -DFILMLAB_SOURCE='"../Gradelux_FilmLab_v6.dctl"' for 6.0 */
+#define FILMLAB_SOURCE "../Gradelux_FilmLab_v6_1.dctl"
+#endif
 #endif
 
 // UI globals: reference configuration (defaults; Film Look / Film Print set per tile)

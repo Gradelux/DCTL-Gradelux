@@ -1,7 +1,7 @@
 // =============================================================================
-//  Gradelux FilmLab — reference LUT generator / validator (Version 6; -DFILMLAB_V4 for Version 4)
+//  Gradelux FilmLab — reference LUT generator / validator (Version 6.1; -DFILMLAB_V4 for Version 4)
 // -----------------------------------------------------------------------------
-//  Compiles Gradelux_FilmLab_v6.dctl (or v4 with -DFILMLAB_V4) itself (through a small C shim) and
+//  Compiles Gradelux_FilmLab_v6_1.dctl (or v4 with -DFILMLAB_V4) itself (through a small C shim) and
 //  samples its transform() in one of three reference configurations:
 //      A. Film Look only      : Look = <look>,  Print = None
 //      B. Film Print only     : Look = Off,     Print = <print>
@@ -81,7 +81,9 @@ static const char *LOOK_NAMES[] = { "Off", "Verona250D", "Verdant250D", "Midnigh
                                     "Solara200", "Moss250D", "Chroma100", "Silvergrain100" };
 static const char *PRINT_NAMES[] = { "None", "Cinechrome2383", "Velachrome2393", "Lumachrome3513",
                                      "Retrochrome3510", "Silkchrome2383" };
-#define FILMLAB_SOURCE "../Gradelux_FilmLab_v6.dctl"
+#ifndef FILMLAB_SOURCE   /* Version 6.1 by default; -DFILMLAB_SOURCE='"../Gradelux_FilmLab_v6.dctl"' for 6.0 */
+#define FILMLAB_SOURCE "../Gradelux_FilmLab_v6_1.dctl"
+#endif
 #endif
 
 // UI globals: reference configuration (defaults; Film Look / Film Print set per call)

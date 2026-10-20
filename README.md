@@ -4,7 +4,8 @@ Film stock and print emulation engine for DaVinci Resolve Studio, written as a D
 
 | File | Contents |
 |---|---|
-| `Gradelux_FilmLab_v6.dctl` | **Version 6 (current production foundation):** 8 film stocks, the 5 prints, all controls, developer Stage View |
+| `Gradelux_FilmLab_v6_1.dctl` | **Version 6.1 (current):** Version 6 with Moss 250D and Chroma 100 refined; everything else bit-identical |
+| `Gradelux_FilmLab_v6.dctl` | Version 6: production foundation, 8 film stocks, the 5 prints, all controls, developer Stage View |
 | `Gradelux_FilmLab_v5_diagnostic.dctl` | Version 5 diagnostic build: the 3 stocks v6 is built on |
 | `Gradelux_FilmLab_v5.dctl` | Version 5 first prototype: 4 stocks (superseded by the diagnostic build) |
 | `Gradelux_FilmLab_v4.dctl` | Version 4: the previous 23 looks and the prints under their old names |
@@ -19,6 +20,82 @@ Film stock and print emulation engine for DaVinci Resolve Studio, written as a D
 | `docs/FilmLab_v4_*.png`, `docs/FilmLab_v3_look_preview.png` | Earlier versions, for comparison |
 
 Grain, halation, bloom, diffusion and film damage are intentionally not included.
+
+## Version 6.1: Moss 250D and Chroma 100 refinement
+
+`Gradelux_FilmLab_v6_1.dctl` changes **only the stock definitions of Moss 250D and Chroma 100**.
+- No shared function, control, default, dropdown entry or print changed.
+- The other six stocks produce bit-identical output to Version 6 (verification below).
+
+### Changelog
+
+**Moss 250D** (was too flat and washed out)
+
+Contrast and tone:
+- Midtone contrast 1.21 → 1.29.
+- Deeper toe: blacks at −4 stops −0.86 → −1.36; print-down density −0.04 → −0.10.
+- Clearer shadow separation.
+- Longer, more open shoulder for a smooth highlight roll-off.
+
+Colour:
+- Colourfulness 0.57× → 0.81× of the source (display-referred).
+- Skin 0.55× → 0.82×, natural hue.
+- Built from dye density, not saturation: colour density 0.25 → 0.60, stronger per-hue
+  density (greens −0.35, cyans −0.28). Colours are darker and denser at restrained chroma,
+  giving deep forest greens and dense cyans.
+- The dye "impurity" that softened colour was removed.
+- Global saturation 0.78 → 1.04, with per-hue saturation lowered on greens, cyans, blues and
+  magentas so skin gains the most.
+- Cool blue-cyan shadows against neutral, faintly warm highlights.
+
+Kept apart from Verdant: Verdant stays lighter, more saturated and emerald/teal; Moss is
+denser and quieter, with a different tone shape (ΔE 7.4 between them).
+
+**Chroma 100** (was far too saturated)
+
+Colourfulness changes (display-referred, relative to the source):
+
+| | V6 | V6.1 |
+|---|---|---|
+| Overall | 1.56× | 1.27× (Verona 1.20×, Aurelia 0.75×) |
+| Reds | 1.91× | 1.49× |
+| Oranges | 1.70× | 1.44× |
+| Blues | 1.31× | 1.27× |
+| Foliage | 1.64× | 1.36× |
+| Skin | 1.30× | 1.09× |
+| Peak display chroma (C*) | 117 | 108 |
+| Samples above C* 80 | 24 | 5 |
+
+How:
+- Per-layer response (kappa) 0.45 → 0.22. This was the main driver of runaway reds.
+- Red-layer masking lightened.
+- Red, yellow, blue and magenta zone saturation 1.25/1.08/1.30/1.02 → 0.85/0.90/0.96/0.96.
+- Subtractive saturation 0.30 → 0.18.
+- Colour density 0.35 → 0.45, and red / green / blue per-hue density deepened, so richness
+  comes from density.
+
+Kept: global saturation (1.32) and the slide-like tone (slope 1.48, hard toe, early shoulder,
+shadows that hold colour). Greys stay neutral.
+
+### Verification of the six approved stocks
+
+`tests/math_test_v6_1.c` with `-DDUMP_SIX_V6` (compiles Version 6) and `-DDUMP_SIX_V61`
+(compiles Version 6.1) drives both files with identical inputs and prints every output
+bit-for-bit (`%a`):
+- **Grid:** a fixed 9×9×9 DaVinci Intermediate grid (including out-of-range values) for Off,
+  Verona, Verdant, Midnight, Aurelia, Solara and Silvergrain × all 6 print options × all
+  4 Stage Views.
+- **Random settings:** 100,000 random settings of every control.
+
+Result: all 222,472 outputs identical (`cmp` and SHA-1 match). As a check that the comparison
+detects changes, the same harness with Moss and Chroma in the set reports 55,612 differing
+outputs.
+
+The full test (`./math_test_v6_1`) passes, and the V1, film adjustment, print and Version 5
+diagnostic regressions remain bit-exact. Skin across all stock × print pairs: worst 6.1°
+(was 6.6°).
+
+Preview: `docs/FilmLab_v6_1_before_after.png`, `docs/FilmLab_v6_1_looks.png`.
 
 ## Version 6: production foundation (8 film stocks)
 
