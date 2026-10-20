@@ -24,7 +24,10 @@
 #   D. SANITY. Profile N against the wrong profile N+1 must differ, proving the
 #      comparison can detect a change.
 #
-#    cd tests && python3 cine16_regression.py
+#    cd tests && python3 cine16_regression.py                 (FilmLab v9)
+#    cd tests && FILMLAB=9.1 python3 cine16_regression.py     (FilmLab v9.1: only Secondary Strength
+#       remains adjustable, so slider variation covers strength only; the skin-mask
+#       view no longer exists)
 #  Exit status 0 only if every comparison is bit-identical.
 # =============================================================================
 import os, subprocess, sys, tempfile, random, math
@@ -51,7 +54,14 @@ def build(macro, name):
     exe = os.path.join(tmp, name)
     subprocess.check_call(['gcc', '-O2', '-w', '-D' + macro, '-o', exe, os.path.join(HERE, 'runner.c'), '-lm'])
     return exe
-RUN_C16, RUN_V8, RUN_FL = build('RUN_CINE16', 'run_c16'), build('RUN_FILMLAB8', 'run_v8'), build('RUN_FILMLAB9', 'run_v9')
+V91 = os.environ.get('FILMLAB', '9') == '9.1'
+FLNAME = 'v9.1' if V91 else 'v9'
+RUN_C16, RUN_V8 = build('RUN_CINE16', 'run_c16'), build('RUN_FILMLAB8', 'run_v8')
+RUN_FL = build('RUN_FILMLAB91', 'run_v91') if V91 else build('RUN_FILMLAB9', 'run_v9')
+def rand_sliders():
+    # v9.1 keeps only Secondary Strength; the other six stay at the original defaults
+    if V91: return [hx(rng.uniform(*RANGES[0]))] + [hx(v) for v in DEFAULTS[1:]]
+    return [hx(rng.uniform(lo, hi)) for lo, hi in RANGES]
 
 def run(exe, lines):
     out = subprocess.run([exe], input='\n'.join(lines) + '\n', capture_output=True, text=True, check=True).stdout
@@ -113,7 +123,7 @@ def compare(a, b):
     return mism, mx
 
 # ---- A. standalone match -------------------------------------------------------
-print('A. STANDALONE MATCH: original Cine16 DCTL vs FilmLab v9 (Primary Off, Secondary = profile, Print None)')
+print('A. STANDALONE MATCH: original Cine16 DCTL vs FilmLab %s (Primary Off, Secondary = profile, Print None)' % FLNAME)
 print('   counts are samples whose RGB output differs in any bit (float32)\n')
 cats = list(SETS) + ['random sliders', 'slider extremes', 'show skin mask']
 print('   %-14s' % 'profile' + ''.join(' %15s' % c for c in cats))
@@ -129,7 +139,7 @@ for p, name in enumerate(PROFILES):
     # random sliders within the original ranges, on random inputs from all sets
     la, lb = [], []
     for i in range(4000):
-        sl = [hx(rng.uniform(lo, hi)) for lo, hi in RANGES]
+        sl = rand_sliders()
         cat, (r, g, b) = ALL[rng.randrange(len(ALL))]
         la.append('%d %s 0 %s %s %s' % (p, ' '.join(sl), hx(r), hx(g), hx(b)))
         lb.append('0 %d 0 %s 0 %s %s %s' % (p + 1, ' '.join(sl), hx(r), hx(g), hx(b)))
@@ -137,32 +147,32 @@ for p, name in enumerate(PROFILES):
     # slider extremes: every slider at its min or max (128 corners) on a subset
     la, lb = [], []
     sub = SETS['rgb patches'][::37] + SETS['skin tones'][::7] + SETS['extended range'][::97]
-    for corner in range(128):
-        sl = [hx(RANGES[j][(corner >> j) & 1]) for j in range(7)]
+    for corner in range(2 if V91 else 128):
+        sl = ([hx(RANGES[0][corner])] + [hx(v) for v in DEFAULTS[1:]]) if V91 else [hx(RANGES[j][(corner >> j) & 1]) for j in range(7)]
         for r, g, b in sub:
             la.append('%d %s 0 %s %s %s' % (p, ' '.join(sl), hx(r), hx(g), hx(b)))
             lb.append('0 %d 0 %s 0 %s %s %s' % (p + 1, ' '.join(sl), hx(r), hx(g), hx(b)))
     m, mx = compare(run(RUN_C16, la), run(RUN_FL, lb)); row.append((m, len(la), mx))
-    # Show Skin Mask
-    pts = SETS['skin tones'] + SETS['rgb patches'][::5]
+    # Show Skin Mask (removed from v9.1: skipped)
+    pts = [] if V91 else SETS['skin tones'] + SETS['rgb patches'][::5]
     la = ['%d %s 1 %s %s %s' % (p, ' '.join(hx(v) for v in DEFAULTS), hx(r), hx(g), hx(b)) for r, g, b in pts]
     lb = ['0 %d 0 %s 1 %s %s %s' % (p + 1, ' '.join(hx(v) for v in DEFAULTS), hx(r), hx(g), hx(b)) for r, g, b in pts]
-    m, mx = compare(run(RUN_C16, la), run(RUN_FL, lb)); row.append((m, len(pts), mx))
+    m, mx = compare(run(RUN_C16, la), run(RUN_FL, lb)) if pts else (0, 0.0); row.append((m, len(pts), mx))
     print('   %-14s' % name + ''.join(' %8d/%-6d' % (m, n) for m, n, mx in row))
     totalA += sum(m for m, n, mx in row)
-nA = 16 * (sum(len(v) for v in SETS.values()) + 4000 + 128 * len(sub) + len(pts))
+nA = 16 * (sum(len(v) for v in SETS.values()) + 4000 + (2 if V91 else 128) * len(sub) + len(pts))
 print('\n   total differing samples: %d of %d  -> %s\n' % (totalA, nA, 'BIT-IDENTICAL' if totalA == 0 else 'DIFFERENCES FOUND'))
 fails += totalA
 
 # ---- B. secondary Off -----------------------------------------------------------
-print('B. SECONDARY OFF: (1) secondary controls inert when Off; (2) with Film Look Off, v9 = v8')
+print('B. SECONDARY OFF: (1) secondary controls inert when Off; (2) with Film Look Off, %s = v8' % FLNAME)
 D = ' '.join(hx(v) for v in DEFAULTS)
 la, lb = [], []
 pts = SETS['rgb patches'][::3] + SETS['grey ramp'][::4] + SETS['skin tones'] + SETS['saturated'][::3] + SETS['extended range'][::5]
 for look in range(len(LOOKS)):
     for pr in range(6):
         for r, g, b in pts:
-            sl = [hx(rng.uniform(lo, hi)) for lo, hi in RANGES]
+            sl = rand_sliders()
             la.append('%d 0 %d %s 0 %s %s %s' % (look, pr, D, hx(r), hx(g), hx(b)))
             lb.append('%d 0 %d %s %d %s %s %s' % (look, pr, ' '.join(sl), rng.randrange(2), hx(r), hx(g), hx(b)))
 m1, mx = compare(run(RUN_FL, la), run(RUN_FL, lb))
@@ -172,7 +182,7 @@ la = []
 for sec in range(17):
     for pr in range(6):
         for r, g, b in pts[::2]:
-            sl = [hx(rng.uniform(lo, hi)) for lo, hi in RANGES]
+            sl = rand_sliders()
             la.append('0 %d %d %s 0 %s %s %s' % (sec, pr, ' '.join(sl), hx(r), hx(g), hx(b)))
 m2, mx = compare(run(RUN_V8, la), run(RUN_FL, la))
 print('   (2) Film Look Off, 17 secondary options x 6 print options, random secondary sliders: %d samples; differing: %d -> %s\n'
@@ -180,7 +190,7 @@ print('   (2) Film Look Off, 17 secondary options x 6 print options, random seco
 fails += m1 + m2
 
 # ---- C. chaining ----------------------------------------------------------------
-print('C. CHAINING: v9 (Primary + Secondary + Print) vs v9 primary -> original Cine16 -> v9 print, as separate programs')
+print('C. CHAINING: %s (Primary + Secondary + Print) vs %s primary -> original Cine16 -> %s print, as separate programs' % (FLNAME, FLNAME, FLNAME))
 pts = SETS['rgb patches'][::11] + SETS['skin tones'][::3] + SETS['saturated'][::9] + SETS['grey ramp'][::16]
 combos = [(0, 6, 0), (1, 6, 0), (1, 6, 1)]                                   # the three requested combinations
 combos += [(rng.randrange(len(LOOKS)), rng.randrange(1, 17), rng.randrange(6)) for _ in range(60)]
@@ -200,7 +210,7 @@ print('   total: %d of %d samples differ -> %s\n' % (totC, nC, 'BIT-IDENTICAL' i
 fails += totC
 
 # ---- D. sanity: the comparison must detect a wrong profile ---------------------
-print('D. SANITY: original profile N vs v9 profile N+1 (deliberately wrong) must differ')
+print('D. SANITY: original profile N vs %s profile N+1 (deliberately wrong) must differ' % FLNAME)
 pts = SETS['rgb patches'][::7] + SETS['skin tones']
 bad = 0
 for p in range(16):

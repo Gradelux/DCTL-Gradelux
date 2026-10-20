@@ -72,7 +72,7 @@ static void filmlab_reset(void) {}
 #else               // Version 9: shared shim (every control at its DCTL default)
 #include "filmlab_shim.h"
 #ifndef FILMLAB_SOURCE
-#define FILMLAB_SOURCE "../Gradelux_FilmLab_v9.dctl"
+#define FILMLAB_SOURCE "../Gradelux_FilmLab_v9_1.dctl"
 #endif
 #endif
 
@@ -113,7 +113,8 @@ int main(int argc, char **argv){
     if (argc > 2) {
       sscanf(argv[t + 2], "%d:%d:%d", &look, &pr, &sec);
 #ifndef FILMLAB_V4
-      // Version 9 controls for previews: ev, temp, tint, shh, shs, mdh, mds, hlh, hls, bal, str, ci
+      // Controls for previews: ev, temp, tint, ci (Version 9 / 9.1); shh, shs, mdh, mds, hlh, hls,
+      // bal, str (split toning: Version 9 only, ignored by 9.1)
       const char *at = strchr(argv[t + 2], '@');
       while (at && *at) {
         char key[16]; float val;

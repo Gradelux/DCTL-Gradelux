@@ -54,7 +54,7 @@ static void filmlab_reset(void) {}
 #else   // Version 9 (18 film stocks; shared shim with every control at its default)
 #include "filmlab_shim.h"
 #ifndef FILMLAB_SOURCE
-#define FILMLAB_SOURCE "../Gradelux_FilmLab_v9.dctl"
+#define FILMLAB_SOURCE "../Gradelux_FilmLab_v9_1.dctl"
 #endif
 #endif
 

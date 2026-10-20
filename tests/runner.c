@@ -11,6 +11,9 @@
 //    gcc -O2 -DRUN_FILMLAB7 -o run_v7 runner.c -lm   Gradelux_FilmLab_v7.dctl
 //    gcc -O2 -DRUN_FILMLAB8 -o run_v8 runner.c -lm   Gradelux_FilmLab_v8.dctl
 //    gcc -O2 -DRUN_FILMLAB9 -o run_v9 runner.c -lm   Gradelux_FilmLab_v9.dctl (every Version 9 control at its default)
+//    gcc -O2 -DRUN_FILMLAB91 -o run_v91 runner.c -lm Gradelux_FilmLab_v9_1.dctl (same line format; the
+//                                                    secondary sliders other than strength are ignored:
+//                                                    Version 9.1 fixes them at 1.00)
 //
 //  Input: one sample per line, whitespace-separated:
 //    RUN_CINE16  : profile strength sep sat subtr bias tone skinprot showskin  R G B
@@ -19,7 +22,11 @@
 //  (R G B: DaVinci Intermediate code values, decimal or hex float.) Every
 //  other control stays at its default. Output: "R G B" per line, %a.
 // =============================================================================
-#if defined(RUN_FILMLAB9)
+#if defined(RUN_FILMLAB91)
+#define RUN_FILMLAB9
+#include "../tools/filmlab_shim.h"
+#include "../Gradelux_FilmLab_v9_1.dctl"
+#elif defined(RUN_FILMLAB9)
 #include "../tools/filmlab_shim.h"
 #include "../Gradelux_FilmLab_v9.dctl"
 #else

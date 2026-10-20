@@ -108,7 +108,7 @@ static void filmlab_reset(void) {}
 #else               // Version 9: shared shim (every control at its DCTL default)
 #include "filmlab_shim.h"
 #ifndef FILMLAB_SOURCE
-#define FILMLAB_SOURCE "../Gradelux_FilmLab_v9.dctl"
+#define FILMLAB_SOURCE "../Gradelux_FilmLab_v9_1.dctl"
 #endif
 #define HAS_SECONDARY 1
 #endif
@@ -177,7 +177,7 @@ static void write_cube(FILE *f, int look, int rec709, int n, const double *lut) 
 #ifdef FILMLAB_V4
     fprintf(f, "# Gradelux FilmLab v4 reference transform: %s (Creative Intensity 100%%, Print Strength 100%%, print controls 0)\n", name);
 #else
-    fprintf(f, "# Gradelux FilmLab v8 reference transform: %s (Creative Intensity 100%%, Print Strength 100%%, print controls 0, secondary controls 1.00)\n", name);
+    fprintf(f, "# Gradelux FilmLab v9.1 reference transform: %s (Film Strength 100%%, Secondary Strength 1.00, Print Strength 100%%, every other control at its default)\n", name);
 #endif
     if (rec709)
         fprintf(f, "# Input and output: Rec.709 / Gamma 2.4 code values (output clipped to 0..1)\n");

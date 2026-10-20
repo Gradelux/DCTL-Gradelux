@@ -1,12 +1,14 @@
 // =============================================================================
-//  Gradelux FilmLab — host shim for compiling the DCTL as C (Version 9)
+//  Gradelux FilmLab — host shim for compiling the DCTL as C (Version 9 / 9.1)
+//  Version 9.1 removed some controls from the interface; their globals stay
+//  declared here (unused by 9.1) so the same shim builds both versions.
 // -----------------------------------------------------------------------------
 //  Shared by the tools and tests. Provides the DCTL built-ins the source uses,
 //  the dropdown enumerations (as Resolve generates them from DEFINE_UI_PARAMS)
 //  and every UI control as a global at its DCTL default. Include this, then
 //  the .dctl:
 //      #include "../tools/filmlab_shim.h"
-//      #include "../Gradelux_FilmLab_v9.dctl"
+//      #include "../Gradelux_FilmLab_v9_1.dctl"   (or _v9.dctl)
 //  filmlab_reset() puts every control back to its default.
 // =============================================================================
 #ifndef FILMLAB_SHIM_H

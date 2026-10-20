@@ -4,7 +4,8 @@ Film stock and print emulation engine for DaVinci Resolve Studio, written as a D
 
 | File | Contents |
 |---|---|
-| `Gradelux_FilmLab_v9.dctl` | **Version 9 (current):** 18 primary looks with middle-grey anchoring, 16 Cine16 secondary profiles, 5 prints, Exposure / Temperature / Tint, Split Toning |
+| `Gradelux_FilmLab_v9_1.dctl` | **Version 9.1 (current):** Version 9 with a simplified interface (3 dropdowns, 12 sliders); bit-identical to Version 9 at the same settings |
+| `Gradelux_FilmLab_v9.dctl` | Version 9: 18 primary looks with middle-grey anchoring, 16 Cine16 secondary profiles, 5 prints, Exposure / Temperature / Tint, Split Toning |
 | `Gradelux_FilmLab_v8.dctl` | Version 8: Version 7 plus the 16 Cine16 profiles as an independent Secondary Film Look engine |
 | `Gradelux_FilmLab_v7.dctl` | Version 7: 13 film stocks (the 8 approved V6.1 stocks plus 5 new), the 5 prints, all controls, developer Stage View |
 | `Gradelux_FilmLab_v6_1.dctl` | Version 6.1: Version 6 with Moss 250D and Chroma 100 refined |
@@ -21,6 +22,8 @@ Film stock and print emulation engine for DaVinci Resolve Studio, written as a D
 | `tools/extract_cine16.py` | Generates the Cine16 secondary engine from the original file (verbatim code, prefixed names) |
 | `tests/runner.c`, `tests/cine16_regression.py` | Bit-for-bit comparison of v8 against the original Cine16 DCTL and FilmLab v7, including chained engines |
 | `docs/V8_CINE16_INTEGRATION.md` | Cine16 integration: code changes, behaviour notes, regression instructions |
+| `docs/V9_1_CHANGES.md` | Version 9.1: removed controls, how their defaults are preserved, regression checklist |
+| `tests/v9_v91_equivalence.c` | Bit-for-bit comparison of Version 9 and 9.1 |
 | `docs/V9_CHANGES.md` | Version 9 changelog, exposure-anchoring analysis, new controls, Cine16 notes, regression tests and Resolve checklist |
 | `tools/filmlab_shim.h` | Shared host shim (DCTL built-ins, dropdown IDs, every control at its default) for tools and tests |
 | `tests/math_test_v9.c`, `tests/v8_v9_report.py` | Version 9 test suite; documented V8 -> V9 differences and dropdown mapping check |
@@ -32,6 +35,28 @@ Film stock and print emulation engine for DaVinci Resolve Studio, written as a D
 | `docs/FilmLab_v4_*.png`, `docs/FilmLab_v3_look_preview.png` | Earlier versions, for comparison |
 
 Grain, halation, bloom, diffusion and film damage are intentionally not included.
+
+## Version 9.1: simplified interface
+
+`Gradelux_FilmLab_v9_1.dctl` keeps the three dropdowns (Film Look, Secondary Film Look, Film
+Print) and twelve sliders:
+- **Corrections:** Exposure, Temperature, Tint.
+- **Strengths:** Film Strength (formerly Creative Intensity), Secondary Strength, Print
+  Strength.
+- **Grading:** Film Contrast, Film Density, Subtractive Saturation, Highlight Roll-Off, Shadow
+  Depth.
+- **Master:** Global Intensity.
+
+The other 24 controls were removed:
+- **Kept as fixed defaults:** the six Cine16 detail sliders (1.00) and four print-shaping
+  sliders (0) are fixed internally at their V9 defaults, so their effect is unchanged.
+- **Removed outright:** film adjustments, split toning and the developer controls. At V9
+  defaults these were exact bypasses.
+
+**Result:** V9.1 matches V9 bit for bit on 358,754 test outputs, covering every look,
+secondary, print and combination, plus 200,000 random slider settings. The Cine16 profiles
+still match the original Cine16 DCTL bit for bit. Details and the Resolve checklist:
+[`docs/V9_1_CHANGES.md`](docs/V9_1_CHANGES.md).
 
 ## Version 9: exposure anchoring, controls and new looks
 
