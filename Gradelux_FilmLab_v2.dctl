@@ -1,0 +1,970 @@
+// =============================================================================
+//  GRADELUX FILMLAB  —  Version 2.0
+//  Film emulation & grading engine for DaVinci Resolve Studio (DCTL)
+//  (c) Gradelux. All rights reserved.
+// =============================================================================
+//
+//  COLOUR SPACE CONTRACT
+//  ---------------------
+//    Input  : DaVinci Wide Gamut / DaVinci Intermediate
+//    Output : DaVinci Wide Gamut / DaVinci Intermediate
+//
+//    No colour space conversion is performed. Place FilmLab after the input
+//    CST (or inside an RCM timeline set to DWG/Intermediate) and before the
+//    output CST / DRT.
+//
+//  PROCESSING MODEL  (Version 2)
+//  ----------------
+//    Film stage (new in V2, see FILM EMULATION ENGINE below) runs first on
+//    linear light, then the Version 1 controls run unchanged:
+//      decode -> film colour -> film tone -> V1 colour -> V1 tone -> encode
+//      -> Global Intensity mix.
+//
+//  Version 1 pipeline detail:
+//    1. Decode DaVinci Intermediate -> linear DWG (exact published curve).
+//    2. Rotate linear DWG -> linear Rec.2020 primaries (internal only).
+//       DWG's blue primary is imaginary, which gives DWG luminance a
+//       negative blue weight and lets ratio-based saturation push colours
+//       toward non-physical chromaticities. Rec.2020 has real primaries,
+//       all-positive luminance weights and still covers nearly every real
+//       surface colour, so it is a safer space for the colour operators.
+//       Colours outside Rec.2020 (negative components) are handled safely
+//       and the rotation is exactly undone in step 5.
+//    3. Colour stage (operates on chromaticity relationships):
+//         Film Density            brightness of colour, chroma unchanged
+//         Subtractive Saturation  chroma, luminance largely preserved
+//    4. Tone stage (one ratio-preserving gain per pixel -> no hue shifts):
+//         Film Contrast           S-curve in stops around 18% grey
+//         Shadow Depth            toe below ~ -2 stops
+//         Highlight Roll-Off      shoulder above ~ +1.5 stops
+//    5. Rotate back to linear DWG and encode to DaVinci Intermediate.
+//    6. Global Intensity mixes the result with the untouched input in
+//       DaVinci Intermediate (perceptually even fade, like node opacity).
+//
+//    Every operator is either a single positive gain applied to all three
+//    channels, or a sign-preserving power on channel ratios bounded to
+//    (0, 1]. Neither can flip the sign of a channel, push a channel past the
+//    pixel's brightest channel, or move a neutral off the neutral axis.
+//
+//  SIGNED / EXTENDED VALUES
+//  ------------------------
+//    No 0–1 clamp is applied to image data. Negatives (out-of-gamut colours,
+//    sensor noise) and highlights far above 1.0 linear pass through. The
+//    DaVinci Intermediate linear segment is valid for negative values, so
+//    decode/encode are exact inverses over the full signed range.
+//
+//  IDENTITY
+//  --------
+//    All controls at default, or Global Intensity at 0%, returns the input
+//    bit-for-bit (the processing path is skipped).
+//
+//  ARCHITECTURE
+//  ------------
+//    GlxControls : the user's slider values, normalised.
+//    GlxProfile  : the characteristic constants of the V1 operators (curve
+//                  widths, knees, strengths, skin hue...).
+//    GlxStock    : a film stock's characteristic numbers (V2). Every stock
+//                  runs through the same film operators.
+//    GlxFilmAdj  : the five film customisation sliders, normalised.
+//    Operators   : one __DEVICE__ function per control, each stateless.
+// =============================================================================
+
+
+// -----------------------------------------------------------------------------
+//  USER INTERFACE  (in pipeline order: film -> colour -> tone -> output)
+//  Sliders use a -100..100 / 0..100 scale; all defaults are neutral.
+// -----------------------------------------------------------------------------
+DEFINE_UI_PARAMS(ui_Stock, Film Stock, DCTLUI_COMBO_BOX, 0, { GLX_STOCK_NONE, GLX_STOCK_V500T, GLX_STOCK_V250D, GLX_STOCK_V50D, GLX_STOCK_2383, GLX_STOCK_PORTRA400, GLX_STOCK_GOLD200, GLX_STOCK_ETERNA, GLX_STOCK_400H, GLX_STOCK_CS800T, GLX_STOCK_MODERN }, { "None / Clean", "Vision3 500T Inspired", "Vision3 250D Inspired", "Vision3 50D Inspired", "Kodak 2383 Print Inspired", "Portra 400 Inspired", "Kodak Gold 200 Inspired", "Fujifilm Eterna Inspired", "Fujifilm 400H Inspired", "CineStill 800T Inspired", "Modern Cinema Negative" })
+DEFINE_UI_PARAMS(ui_StockStrength, Film Stock Strength,       DCTLUI_SLIDER_FLOAT, 100.0,    0.0, 100.0, 1.0)
+DEFINE_UI_PARAMS(ui_ColorDensity,  Film Color Density,        DCTLUI_SLIDER_FLOAT,   0.0, -100.0, 100.0, 1.0)
+DEFINE_UI_PARAMS(ui_Separation,    Film Color Separation,     DCTLUI_SLIDER_FLOAT,  50.0,    0.0, 100.0, 1.0)
+DEFINE_UI_PARAMS(ui_HlWarmth,      Film Highlight Warmth,     DCTLUI_SLIDER_FLOAT,   0.0, -100.0, 100.0, 1.0)
+DEFINE_UI_PARAMS(ui_ShadowTone,    Film Shadow Tone,          DCTLUI_SLIDER_FLOAT,   0.0, -100.0, 100.0, 1.0)
+
+// Version 1 controls (ranges and defaults unchanged)
+DEFINE_UI_PARAMS(ui_Density,   Film Density,           DCTLUI_SLIDER_FLOAT,   0.0, -100.0, 100.0, 1.0)
+DEFINE_UI_PARAMS(ui_SubSat,    Subtractive Saturation, DCTLUI_SLIDER_FLOAT,   0.0, -100.0, 100.0, 1.0)
+DEFINE_UI_PARAMS(ui_Contrast,  Film Contrast,          DCTLUI_SLIDER_FLOAT,   0.0, -100.0, 100.0, 1.0)
+DEFINE_UI_PARAMS(ui_Shadow,    Shadow Depth,           DCTLUI_SLIDER_FLOAT,   0.0, -100.0, 100.0, 1.0)
+DEFINE_UI_PARAMS(ui_Rolloff,   Highlight Roll-Off,     DCTLUI_SLIDER_FLOAT,   0.0,    0.0, 100.0, 1.0)
+DEFINE_UI_PARAMS(ui_Intensity, Global Intensity,       DCTLUI_SLIDER_FLOAT, 100.0,    0.0, 100.0, 1.0)
+
+
+// -----------------------------------------------------------------------------
+//  DAVINCI INTERMEDIATE  (Blackmagic Design, "DaVinci Wide Gamut -
+//  DaVinci Intermediate" white paper)
+// -----------------------------------------------------------------------------
+#define DI_A        0.0075f
+#define DI_B        7.0f
+#define DI_C        0.07329248f
+#define DI_M        10.44426855f
+#define DI_LIN_CUT  0.00262409f
+#define DI_LOG_CUT  0.02740668f
+
+__DEVICE__ float glx_di_to_lin(float v)
+{
+    return (v <= DI_LOG_CUT) ? v / DI_M : _exp2f(v / DI_C - DI_B) - DI_A;
+}
+
+__DEVICE__ float glx_lin_to_di(float x)
+{
+    return (x <= DI_LIN_CUT) ? x * DI_M : (_log2f(x + DI_A) + DI_B) * DI_C;
+}
+
+
+// -----------------------------------------------------------------------------
+//  COLORIMETRY
+// -----------------------------------------------------------------------------
+//  Matrices derived from the primaries (both D65, so no chromatic adaptation):
+//    DWG      R(0.8000, 0.3130)  G(0.1682, 0.9877)  B(0.0790, -0.1155)
+//    Rec.2020 R(0.7080, 0.2920)  G(0.1700, 0.7970)  B(0.1310,  0.0460)
+//  Computed in double precision; one is the exact inverse of the other and
+//  every row sums to 1, so neutrals map to identical neutrals.
+__DEVICE__ float3 glx_dwg_to_work(float r, float g, float b)
+{
+    return make_float3( 1.1303021813f * r - 0.0203928523f * g - 0.1099093290f * b,
+                       -0.0255470571f * r + 1.3108493176f * g - 0.2853022605f * b,
+                       -0.0925986068f * r - 0.1646530216f * g + 1.2572516284f * b);
+}
+
+__DEVICE__ float3 glx_work_to_dwg(float r, float g, float b)
+{
+    return make_float3(0.8921121209f * r + 0.0243691759f * g + 0.0835187032f * b,
+                       0.0326166018f * r + 0.7861375169f * g + 0.1812458813f * b,
+                       0.0699770512f * r + 0.1047494919f * g + 0.8252734569f * b);
+}
+
+//  Relative luminance Y of linear Rec.2020 (ITU-R BT.2020 / BT.2100):
+//  middle row of the RGB -> XYZ matrix. Weights are positive and sum to 1.
+#define WORK_YR 0.2627002120f
+#define WORK_YG 0.6779980715f
+#define WORK_YB 0.0593017165f
+
+#define GLX_MID_GREY 0.18f
+#define GLX_EPS      1.0e-6f
+#define GLX_INV_SQRT6 0.4082482905f
+#define GLX_INV_SQRT2 0.7071067812f
+
+__DEVICE__ float glx_luma(float r, float g, float b)
+{
+    return WORK_YR * r + WORK_YG * g + WORK_YB * b;
+}
+
+__DEVICE__ float glx_max3(float a, float b, float c) { return _fmaxf(a, _fmaxf(b, c)); }
+__DEVICE__ float glx_min3(float a, float b, float c) { return _fminf(a, _fminf(b, c)); }
+
+// Hermite smoothstep on [e0, e1] (works for e0 > e1 as well).
+__DEVICE__ float glx_smooth(float e0, float e1, float x)
+{
+    float t = _clampf((x - e0) / (e1 - e0), 0.0f, 1.0f);
+    return t * t * (3.0f - 2.0f * t);
+}
+
+// Tone norm: average of max(RGB) and luminance, with luminance limited to
+// [0, max]. Pure max-RGB makes saturated colours behave as if very bright;
+// pure luminance lets a saturated colour's strongest channel run far above
+// the curve. The hybrid stays between 0.5*max and max, is continuous, and
+// tracks perceived brightness.
+__DEVICE__ float glx_tone_norm(float r, float g, float b)
+{
+    float m = glx_max3(r, g, b);
+    float y = _clampf(glx_luma(r, g, b), 0.0f, _fmaxf(m, 0.0f));
+    return 0.5f * (m + y);
+}
+
+
+// -----------------------------------------------------------------------------
+//  PROFILE  —  engine characteristics (future film profiles plug in here)
+// -----------------------------------------------------------------------------
+typedef struct {
+    // Film Density
+    float densityStops;      // darkening of a fully saturated colour at 100
+    float densityToe;        // linear level below which density fades out
+    float skinHueA;          // unit vector of the skin hue in the opponent
+    float skinHueB;          //   plane (see glx_density)
+    float skinCosInner;      // cos of half-width of full protection
+    float skinCosOuter;      // cos of half-width where protection ends
+    float skinProtect;       // 0..1 fraction of density removed on skin
+    // Subtractive Saturation
+    float satRange;          // exponent range in stops of density scale
+    float satToe;            // offset that stabilises near-black noise
+    float satLumaKeep;       // 0..1 how much luminance is restored
+    // Film Contrast
+    float contrastRange;     // log2 of max slope at grey (at +/-100)
+    float contrastWidth;     // half-width (stops) of the S-curve's action
+    float contrastToe;       // linear offset that keeps black slope finite
+    // Shadow Depth
+    float shadowKnee;        // linear level where the toe is 50% engaged
+    float shadowStops;       // max change of the deepest shadows (stops)
+    // Highlight Roll-Off
+    float rolloffKnee;       // shoulder start, stops above 18% grey
+    float rolloffRate;       // compression rate at 100
+} GlxProfile;
+
+// "Gradelux Base": neutral reference characteristic.
+// Skin hue: sRGB skin references (pale to deep) converted to linear
+// Rec.2020 cluster at 21–30 deg in the opponent plane; centre 25 deg.
+// Pure red sits at ~4.5 deg, outside the protection window.
+__DEVICE__ GlxProfile glx_profile_base(void)
+{
+    GlxProfile p;
+    p.densityStops  = 0.75f;
+    p.densityToe    = 0.01f;
+    p.skinHueA      = 0.9063077870f;   // cos 25 deg
+    p.skinHueB      = 0.4226182617f;   // sin 25 deg
+    p.skinCosInner  = 0.9925461516f;   // +/- 7 deg  : full protection
+    p.skinCosOuter  = 0.9396926208f;   // +/- 20 deg : no protection
+    p.skinProtect   = 0.7f;
+    p.satRange      = 0.75f;           // ratio exponent 0.59 .. 1.68
+    p.satToe        = 0.001f;
+    p.satLumaKeep   = 0.75f;
+    p.contrastRange = 0.6f;            // slope at grey 0.66 .. 1.52
+    p.contrastWidth = 2.5f;
+    p.contrastToe   = 0.01f;
+    p.shadowKnee    = 0.04f;           // ~ -2.2 stops below grey
+    p.shadowStops   = 1.0f;
+    p.rolloffKnee   = 1.5f;            // ~0.51 linear
+    p.rolloffRate   = 0.4f;            // asymptote K + 2.5 stops at 100
+    return p;
+}
+
+
+// -----------------------------------------------------------------------------
+//  CONTROLS
+// -----------------------------------------------------------------------------
+typedef struct {
+    float density;     // -1..1
+    float subSat;      // -1..1
+    float contrast;    // -1..1
+    float shadow;      // -1..1
+    float rolloff;     //  0..1
+    float intensity;   //  0..1
+} GlxControls;
+
+
+// =============================================================================
+//  OPERATORS  (linear working space in, linear working space out)
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+//  FILM DENSITY
+// -----------------------------------------------------------------------------
+//  On film, saturated colours are formed by more dye and print denser than a
+//  neutral of the same exposure; digital colour stays bright and "thin".
+//  Density lowers the brightness of coloured pixels with ONE gain on all three
+//  channels, so hue and saturation ratios are untouched — the colour becomes
+//  deeper, not more saturated.
+//
+//    sat    = (max - min) / (max + toe)        0 neutral .. 1 pure colour
+//    w_sat  = smoothstep(sat)                  low-chroma colours barely move
+//    w_lum  = n / (n + toe)                    fades out toward black
+//    w_skin = 1 - protect * skinMask(hue)      skin keeps its natural density
+//    gain   = 2^(-density * stops * w_sat * w_lum * w_skin)
+//
+//  Hue is measured without trig: the chroma vector (rgb minus its mean) is
+//  projected to an orthonormal opponent plane and compared to the skin hue
+//  by cosine similarity.
+__DEVICE__ float3 glx_density(float r, float g, float b, float amount, GlxProfile p)
+{
+    float mx = glx_max3(r, g, b);
+    if (mx <= 0.0f) return make_float3(r, g, b);
+    float mn = glx_min3(r, g, b);
+
+    float sat  = _clampf((mx - mn) / (mx + p.densityToe), 0.0f, 1.0f);
+    float wSat = sat * sat * (3.0f - 2.0f * sat);
+    float wLum = mx / (mx + p.densityToe);
+
+    // Opponent plane: a = red–cyan, b = green–blue (orthonormal basis).
+    float oa  = (2.0f * r - g - b) * GLX_INV_SQRT6;
+    float ob  = (g - b) * GLX_INV_SQRT2;
+    float len = _sqrtf(oa * oa + ob * ob) + GLX_EPS;
+    float cosH = (oa * p.skinHueA + ob * p.skinHueB) / len;
+    float skin = glx_smooth(p.skinCosOuter, p.skinCosInner, cosH);
+    float wSkin = 1.0f - p.skinProtect * skin;
+
+    float gain = _exp2f(-amount * p.densityStops * wSat * wLum * wSkin);
+    return make_float3(r * gain, g * gain, b * gain);
+}
+
+// -----------------------------------------------------------------------------
+//  SUBTRACTIVE SATURATION
+// -----------------------------------------------------------------------------
+//  Subtractive colour adds saturation by adding dye to the channels that
+//  should be weaker, never by adding light. Each channel's density relative
+//  to the brightest channel is scaled:
+//  The density of the weakest channel relative to the brightest is scaled:
+//      D_min = -log(c_min / c_max),   D_min' = k * D_min
+//      =>  c_min' = c_min * (c_min / c_max)^(k - 1),   k = 2^(amount * range)
+//  (computed with a small toe in the ratio so near-black noise is not
+//  amplified, and sign-preserving for out-of-gamut negatives).
+//
+//  The brightest channel is kept, and every channel is then re-placed at
+//  the same relative position between min and max:
+//      f_i  = (c_i - c_min) / (c_max - c_min)
+//      c_i' = c_min' + f_i * (c_max - c_min')
+//  The fraction f of the middle channel is what defines RGB hue, so hue is
+//  held fixed while saturation changes — a plain per-channel power would
+//  rotate hues by up to ~12 deg. Since the min/max ratio stays in (0, 1],
+//  no channel can change sign or exceed the brightest channel, so saturation
+//  cannot clip. Already-saturated colours (ratio near 0) change little, so
+//  the effect eases off instead of running away.
+//
+//  Pure subtractive saturation also darkens; to keep natural luminance
+//  relationships, satLumaKeep of the luminance change is restored with one
+//  ratio-preserving gain (the remainder is the subtle film darkening).
+__DEVICE__ float3 glx_subtractive_sat(float r, float g, float b, float amount, GlxProfile p)
+{
+    float mx = glx_max3(r, g, b);
+    float mn = glx_min3(r, g, b);
+    float range = mx - mn;
+    if (mx <= 0.0f || range <= GLX_EPS * mx) return make_float3(r, g, b);  // black / neutral
+
+    float km1 = _exp2f(amount * p.satRange) - 1.0f;
+    float t   = _fminf((_fabs(mn) + p.satToe) / (mx + p.satToe), 1.0f);
+    float mn1 = mn * _powf(t, km1);
+
+    float s  = (mx - mn1) / range;            // f_i * (max - min') = (c_i - min) * s
+    float y0 = glx_luma(r, g, b);
+    float r1 = mn1 + (r - mn) * s;
+    float g1 = mn1 + (g - mn) * s;
+    float b1 = mn1 + (b - mn) * s;
+
+    // Partial luminance restore. The toe keeps the ratio finite and smooth
+    // near black / for out-of-gamut colours; limited to +/-2 stops.
+    float y1 = glx_luma(r1, g1, b1);
+    float lg = _log2f((_fmaxf(y0, 0.0f) + p.satToe) / (_fmaxf(y1, 0.0f) + p.satToe));
+    float gain = _exp2f(_clampf(lg, -2.0f, 2.0f) * p.satLumaKeep);
+    return make_float3(r1 * gain, g1 * gain, b1 * gain);
+}
+
+// -----------------------------------------------------------------------------
+//  TONE CURVES  (operate on a scalar norm; return the new norm)
+// -----------------------------------------------------------------------------
+
+//  FILM CONTRAST — S-curve in stops about 18% grey:
+//      s  = log2((n + t) / (0.18 + t))              stops from grey
+//      s' = s + (c - 1) * W * tanh(s / W)           c = 2^(amount * range)
+//      n' = n * 2^(s' - s)
+//  Slope in stops is c at grey and eases back to 1 beyond about +/-W stops,
+//  so mids gain or lose contrast while the extremes are never clipped or
+//  flattened. Applying it as a gain keeps black at 0, and the toe offset t
+//  keeps the gain finite near black. d(ln n')/d(ln n) >= min(c, 1) > 0, so
+//  the curve is strictly monotonic for every slider value.
+__DEVICE__ float glx_tanh(float x)
+{
+    // Overflow-safe tanh: e = 2^(-2|x|/ln2) in (0, 1].
+    float e = _exp2f(-2.8853900818f * _fabs(x));
+    float t = (1.0f - e) / (1.0f + e);
+    return (x < 0.0f) ? -t : t;
+}
+
+__DEVICE__ float glx_contrast(float n, float amount, GlxProfile p)
+{
+    float c = _exp2f(amount * p.contrastRange);
+    float s = _log2f((n + p.contrastToe) / (GLX_MID_GREY + p.contrastToe));
+    float shift = (c - 1.0f) * p.contrastWidth * glx_tanh(s / p.contrastWidth);
+    return n * _exp2f(shift);
+}
+
+//  SHADOW DEPTH — smooth toe:
+//      T(n)  = 1 / (1 + (n / knee)^4)          ~1 in deep shadow, ~0 at grey
+//      gain  = 2^(-amount * stops * (T(n) - T(0.18)))
+//  Normalising by T(0.18) holds 18% grey exactly. Positive deepens shadow
+//  density, negative lifts it. The gain is finite and > 0 at black, so
+//  nothing is crushed to a hard floor, and since |n T'(n)| <= 1 and
+//  stops * ln2 < 1 the curve stays monotonic over the full slider range.
+__DEVICE__ float glx_shadow(float n, float amount, GlxProfile p)
+{
+    float u  = n / p.shadowKnee;
+    float u2 = u * u;
+    float T  = 1.0f / (1.0f + u2 * u2);
+    float ug = GLX_MID_GREY / p.shadowKnee;
+    float ug2 = ug * ug;
+    float Tg = 1.0f / (1.0f + ug2 * ug2);
+    return n * _exp2f(-amount * p.shadowStops * (T - Tg));
+}
+
+//  HIGHLIGHT ROLL-OFF — rational shoulder in stops above the knee K:
+//      x  = log2(n / 0.18) - K
+//      x' = x / (1 + a x)     for x > 0,   a = amount * rate
+//  Slope is exactly 1 at the knee (seamless join) and falls smoothly toward
+//  0, approaching K + 1/a stops: highlights compress but keep separation
+//  (strictly monotonic) and never hit a hard clip.
+__DEVICE__ float glx_rolloff(float n, float amount, GlxProfile p)
+{
+    float a = amount * p.rolloffRate;
+    float x = _log2f(n / GLX_MID_GREY) - p.rolloffKnee;
+    if (x <= 0.0f) return n;
+    return n * _exp2f(-(a * x * x) / (1.0f + a * x));
+}
+
+
+// =============================================================================
+//  FILM EMULATION ENGINE  (Version 2)
+// =============================================================================
+//
+//  A film stock is described by a GlxStock: a set of characteristic numbers
+//  fed into two shared operators. All stocks run through the same code path;
+//  adding a stock means adding a profile, not new maths.
+//
+//  1. FILM COLOUR (glx_film_color) — chroma model
+//     The pixel is split into a neutral component (mean of R,G,B) and a
+//     chroma vector in an orthonormal opponent plane. Hue is read from the
+//     direction of that vector (no trig needed) and mapped onto six
+//     overlapping hue zones (R, Y, G, C, B, M, 60 deg apart). Zone weights
+//     are raised-cosine bumps that sum exactly to 1, so every per-hue
+//     parameter is interpolated smoothly around the hue circle:
+//        - hue rotation       (e.g. greens toward teal, yellows toward gold)
+//        - saturation scale   (e.g. muted greens, rich reds)
+//        - colour density     (per-hue darkening/lightening, like dye
+//                              density varying between dye layers)
+//     plus stock-wide saturation, saturation loss in deep shadows and bright
+//     highlights, and saturation-dependent density. Saturation increases are
+//     soft-limited so no channel is pushed below zero (no clipping), and hue
+//     rotation is reduced on skin tones.
+//
+//  2. FILM TONE (glx_film_tone) — characteristic curves
+//     Each stock has its own tone curve (mid contrast, toe, shoulder) in
+//     stops around 18% grey. The curve is applied partly to the pixel's
+//     brightness norm (hue-stable) and partly to each channel on its own
+//     (fraction "kappa"). The per-channel part reproduces the way film dye
+//     layers respond independently: colours gain saturation through the
+//     mids and soften in the shoulder. On top of that, each channel gets
+//     its own deviation curve driven by exposure:
+//        - channel gamma differences (colour crossover across the scale)
+//        - shadow colour bias, highlight colour bias
+//     These deviations are zero at 18% grey and normalised to carry no
+//     luminance, so grey stays grey and exposure is consistent between
+//     stocks: stocks change colour and contrast, not brightness.
+//
+//  The film adjustments are folded into the same two passes (rotations add,
+//  log-domain gains add), so no extra colour space conversions are needed:
+//     Film Color Density     scales the stock's density response
+//     Film Color Separation  hue clustering / spreading around the circle
+//     Film Highlight Warmth  highlight colour temperature (log-domain gain)
+//     Film Shadow Tone       shadow colour bias (log-domain gain)
+//
+//  FILM STOCK STRENGTH interpolates every stock parameter from Clean (0%)
+//  to the full profile (100%). Interpolating the profile, rather than
+//  cross-fading two images, keeps intermediate settings on a coherent film
+//  curve. At 0% the stock is bypassed exactly; the adjustments above and
+//  all Version 1 controls remain independent of it.
+// =============================================================================
+
+typedef struct {
+    // Tone curve (neutral axis)
+    float contrast;          // slope at 18% grey (1 = unchanged)
+    float width;             // stops over which mid contrast acts
+    float toe;               // stops at deep black: + lifted, - deeper
+    float knee;              // shoulder start, stops above grey
+    float shoulder;          // shoulder compression rate (0 = none)
+    float kappa;             // 0..1 share of the curve applied per channel
+    // Channel deviation curves (stops; luminance-normalised)
+    float gR, gG, gB;        // gamma difference (crossover)
+    float shR, shG, shB;     // shadow colour bias
+    float hlR, hlG, hlB;     // highlight colour bias
+    // Saturation and density
+    float sat;               // overall chroma scale
+    float hlDesat;           // chroma loss in highlights (0..1)
+    float shDesat;           // chroma loss in shadows (0..1)
+    float density;           // saturation-dependent darkening (V1 units)
+    float sep;               // hue clustering toward the skin/primary axes
+    // Per-hue response: R, Y, G, C, B, M
+    float hR, hY, hG, hC, hB, hM;   // hue rotation (degrees)
+    float sR, sY, sG, sC, sB, sM;   // saturation scale
+    float dR, dY, dG, dC, dB, dM;   // density (stops; - darker, + lighter)
+} GlxStock;
+
+typedef struct {
+    float strength;    // 0..1  Film Stock Strength
+    float cdScale;     // 0..2  Film Color Density (1 = stock as designed)
+    float sepF;        // -1..1 Film Color Separation (0 = stock as designed)
+    float warmth;      // -1..1 Film Highlight Warmth
+    float shadowTone;  // -1..1 Film Shadow Tone
+} GlxFilmAdj;
+
+__DEVICE__ GlxStock glx_stock_clean(void)
+{
+    GlxStock s;
+    s.contrast = 1.0f; s.width = 2.5f; s.toe = 0.0f; s.knee = 1.5f; s.shoulder = 0.0f; s.kappa = 0.0f;
+    s.gR = 0.0f;  s.gG = 0.0f;  s.gB = 0.0f;
+    s.shR = 0.0f; s.shG = 0.0f; s.shB = 0.0f;
+    s.hlR = 0.0f; s.hlG = 0.0f; s.hlB = 0.0f;
+    s.sat = 1.0f; s.hlDesat = 0.0f; s.shDesat = 0.0f; s.density = 0.0f; s.sep = 0.0f;
+    s.hR = 0.0f; s.hY = 0.0f; s.hG = 0.0f; s.hC = 0.0f; s.hB = 0.0f; s.hM = 0.0f;
+    s.sR = 1.0f; s.sY = 1.0f; s.sG = 1.0f; s.sC = 1.0f; s.sB = 1.0f; s.sM = 1.0f;
+    s.dR = 0.0f; s.dY = 0.0f; s.dG = 0.0f; s.dC = 0.0f; s.dB = 0.0f; s.dM = 0.0f;
+    return s;
+}
+
+// -----------------------------------------------------------------------------
+//  FILM PROFILES
+//  Original, film-inspired interpretations designed by eye and by numeric
+//  analysis. They are not measured reproductions of any manufacturer's
+//  stock. Hue rotations: + turns R->Y->G->C->B->M, - turns the other way.
+// -----------------------------------------------------------------------------
+__DEVICE__ GlxStock glx_stock_get(int id)
+{
+    GlxStock s = glx_stock_clean();
+
+    if (id == GLX_STOCK_V500T) {
+        // Tungsten camera negative: soft, open shadows, long shoulder, cool
+        // shadows against warm highlights, teal-leaning greens.
+        s.contrast = 0.92f; s.width = 2.8f; s.toe = 0.15f; s.knee = 1.5f; s.shoulder = 0.25f; s.kappa = 0.15f;
+        s.gR = 0.0f;   s.gG = 0.0f;  s.gB = -0.03f;
+        s.shR = -0.04f; s.shG = 0.0f;  s.shB = 0.05f;
+        s.hlR = 0.05f;  s.hlG = 0.0f;  s.hlB = -0.05f;
+        s.sat = 0.95f; s.hlDesat = 0.15f; s.shDesat = 0.15f; s.density = 0.15f; s.sep = 0.10f;
+        s.hR = 3.0f;  s.hY = -4.0f; s.hG = 6.0f;  s.hC = -3.0f; s.hB = -4.0f; s.hM = -4.0f;
+        s.sR = 1.02f; s.sY = 0.95f; s.sG = 0.88f; s.sC = 1.0f;  s.sB = 0.95f; s.sM = 0.90f;
+        s.dR = -0.05f; s.dY = 0.0f; s.dG = -0.08f; s.dC = -0.04f; s.dB = -0.06f; s.dM = -0.03f;
+    } else if (id == GLX_STOCK_V250D) {
+        // Daylight camera negative: natural contrast, clean neutrals,
+        // gentle warmth up top, slightly cyan shadows.
+        s.contrast = 1.0f; s.width = 2.6f; s.toe = 0.10f; s.knee = 1.8f; s.shoulder = 0.20f; s.kappa = 0.12f;
+        s.gR = 0.01f;  s.gG = 0.0f;  s.gB = -0.01f;
+        s.shR = -0.02f; s.shG = 0.01f; s.shB = 0.02f;
+        s.hlR = 0.03f;  s.hlG = 0.0f;  s.hlB = -0.03f;
+        s.sat = 1.0f; s.hlDesat = 0.12f; s.shDesat = 0.10f; s.density = 0.12f; s.sep = 0.08f;
+        s.hR = 2.0f;  s.hY = -2.0f; s.hG = 4.0f;  s.hC = -2.0f; s.hB = -3.0f; s.hM = -2.0f;
+        s.sR = 1.03f; s.sY = 1.0f;  s.sG = 0.92f; s.sC = 0.98f; s.sB = 0.97f; s.sM = 0.95f;
+        s.dR = -0.04f; s.dY = -0.01f; s.dG = -0.05f; s.dC = -0.03f; s.dB = -0.04f; s.dM = -0.02f;
+    } else if (id == GLX_STOCK_V50D) {
+        // Fine-grain daylight negative: the cleanest, most neutral stock.
+        // Slightly firmer mids, high colour fidelity, subtle density.
+        s.contrast = 1.05f; s.width = 2.5f; s.toe = 0.05f; s.knee = 2.0f; s.shoulder = 0.15f; s.kappa = 0.10f;
+        s.gR = 0.0f;   s.gG = 0.0f;  s.gB = 0.0f;
+        s.shR = -0.01f; s.shG = 0.0f;  s.shB = 0.01f;
+        s.hlR = 0.01f;  s.hlG = 0.0f;  s.hlB = -0.01f;
+        s.sat = 1.04f; s.hlDesat = 0.10f; s.shDesat = 0.05f; s.density = 0.10f; s.sep = 0.05f;
+        s.hR = 1.0f;  s.hY = -1.0f; s.hG = 2.0f;  s.hC = 0.0f;  s.hB = -2.0f; s.hM = 0.0f;
+        s.sR = 1.04f; s.sY = 1.02f; s.sG = 0.96f; s.sC = 1.0f;  s.sB = 1.0f;  s.sM = 0.97f;
+        s.dR = -0.03f; s.dY = 0.0f; s.dG = -0.03f; s.dC = -0.02f; s.dB = -0.03f; s.dM = -0.02f;
+    } else if (id == GLX_STOCK_2383) {
+        // Print film: high contrast, deep toe, firm shoulder, strong
+        // per-layer contrast (rich colour), cyan-blue shadows against warm
+        // highlights, dense reds and blues, greens pulled toward teal.
+        s.contrast = 1.25f; s.width = 2.3f; s.toe = -0.30f; s.knee = 1.2f; s.shoulder = 0.45f; s.kappa = 0.30f;
+        s.gR = 0.03f;  s.gG = 0.0f;  s.gB = -0.02f;
+        s.shR = -0.06f; s.shG = 0.0f;  s.shB = 0.04f;
+        s.hlR = 0.05f;  s.hlG = 0.01f; s.hlB = -0.07f;
+        s.sat = 1.08f; s.hlDesat = 0.30f; s.shDesat = 0.10f; s.density = 0.30f; s.sep = 0.20f;
+        s.hR = 2.0f;  s.hY = -6.0f; s.hG = 10.0f; s.hC = -4.0f; s.hB = -6.0f; s.hM = -5.0f;
+        s.sR = 1.08f; s.sY = 0.97f; s.sG = 0.88f; s.sC = 1.05f; s.sB = 1.02f; s.sM = 0.92f;
+        s.dR = -0.12f; s.dY = -0.03f; s.dG = -0.10f; s.dC = -0.08f; s.dB = -0.12f; s.dM = -0.08f;
+    } else if (id == GLX_STOCK_PORTRA400) {
+        // Portrait negative: low contrast, lifted toe, very soft shoulder,
+        // warm-pastel highlights, muted yellow-leaning greens, gentle skin.
+        s.contrast = 0.85f; s.width = 3.0f; s.toe = 0.20f; s.knee = 1.8f; s.shoulder = 0.30f; s.kappa = 0.08f;
+        s.gR = 0.01f;  s.gG = 0.0f;  s.gB = -0.02f;
+        s.shR = 0.02f;  s.shG = 0.0f;  s.shB = -0.02f;
+        s.hlR = 0.03f;  s.hlG = 0.01f; s.hlB = -0.03f;
+        s.sat = 0.92f; s.hlDesat = 0.20f; s.shDesat = 0.10f; s.density = 0.05f; s.sep = 0.15f;
+        s.hR = 4.0f;  s.hY = -3.0f; s.hG = -6.0f; s.hC = -2.0f; s.hB = -4.0f; s.hM = -6.0f;
+        s.sR = 1.0f;  s.sY = 0.95f; s.sG = 0.82f; s.sC = 0.92f; s.sB = 0.90f; s.sM = 0.88f;
+        s.dR = -0.02f; s.dY = 0.02f; s.dG = -0.04f; s.dC = 0.0f; s.dB = -0.05f; s.dM = 0.0f;
+    } else if (id == GLX_STOCK_GOLD200) {
+        // Consumer negative: warm overall, golden yellows, saturated reds,
+        // yellow-leaning greens, warm shadows and highlights.
+        s.contrast = 1.08f; s.width = 2.6f; s.toe = 0.08f; s.knee = 1.5f; s.shoulder = 0.30f; s.kappa = 0.18f;
+        s.gR = 0.01f;  s.gG = 0.0f;  s.gB = -0.03f;
+        s.shR = 0.03f;  s.shG = 0.01f; s.shB = -0.05f;
+        s.hlR = 0.05f;  s.hlG = 0.02f; s.hlB = -0.07f;
+        s.sat = 1.10f; s.hlDesat = 0.20f; s.shDesat = 0.10f; s.density = 0.12f; s.sep = 0.12f;
+        s.hR = 3.0f;  s.hY = -5.0f; s.hG = -8.0f; s.hC = -3.0f; s.hB = -5.0f; s.hM = -3.0f;
+        s.sR = 1.08f; s.sY = 1.12f; s.sG = 0.95f; s.sC = 0.95f; s.sB = 0.95f; s.sM = 1.0f;
+        s.dR = -0.06f; s.dY = 0.0f; s.dG = -0.04f; s.dC = -0.03f; s.dB = -0.04f; s.dM = -0.04f;
+    } else if (id == GLX_STOCK_ETERNA) {
+        // Cinema negative with a restrained palette: low contrast, low
+        // saturation, teal-green shadows, cool greens, crimson-leaning reds.
+        s.contrast = 0.88f; s.width = 2.8f; s.toe = 0.12f; s.knee = 1.4f; s.shoulder = 0.35f; s.kappa = 0.10f;
+        s.gR = -0.01f; s.gG = 0.01f; s.gB = 0.0f;
+        s.shR = -0.04f; s.shG = 0.02f; s.shB = 0.03f;
+        s.hlR = 0.0f;   s.hlG = 0.01f; s.hlB = -0.01f;
+        s.sat = 0.82f; s.hlDesat = 0.20f; s.shDesat = 0.25f; s.density = 0.18f; s.sep = 0.05f;
+        s.hR = -4.0f; s.hY = 4.0f;  s.hG = 8.0f;  s.hC = 0.0f;  s.hB = -4.0f; s.hM = 3.0f;
+        s.sR = 0.90f; s.sY = 0.85f; s.sG = 0.92f; s.sC = 1.0f;  s.sB = 0.95f; s.sM = 0.85f;
+        s.dR = -0.06f; s.dY = -0.04f; s.dG = -0.06f; s.dC = -0.04f; s.dB = -0.04f; s.dM = -0.02f;
+    } else if (id == GLX_STOCK_400H) {
+        // Airy pastel negative: lifted toe, soft contrast, mint/cyan greens,
+        // thin (light) colour density, slightly cool highlights.
+        s.contrast = 0.85f; s.width = 3.0f; s.toe = 0.25f; s.knee = 1.6f; s.shoulder = 0.35f; s.kappa = 0.06f;
+        s.gR = -0.01f; s.gG = 0.01f; s.gB = 0.01f;
+        s.shR = -0.02f; s.shG = 0.02f; s.shB = 0.01f;
+        s.hlR = -0.02f; s.hlG = 0.02f; s.hlB = 0.01f;
+        s.sat = 0.88f; s.hlDesat = 0.30f; s.shDesat = 0.10f; s.density = -0.05f; s.sep = 0.10f;
+        s.hR = -2.0f; s.hY = 6.0f;  s.hG = 10.0f; s.hC = 0.0f;  s.hB = -3.0f; s.hM = 4.0f;
+        s.sR = 0.92f; s.sY = 0.88f; s.sG = 0.90f; s.sC = 1.02f; s.sB = 0.95f; s.sM = 0.95f;
+        s.dR = 0.0f;  s.dY = 0.03f; s.dG = 0.02f; s.dC = 0.0f;  s.dB = -0.03f; s.dM = 0.02f;
+    } else if (id == GLX_STOCK_CS800T) {
+        // Tungsten night stock: strong cool shadows against warm-red
+        // highlights, teal greens, intense reds, punchy mids.
+        s.contrast = 1.05f; s.width = 2.5f; s.toe = 0.05f; s.knee = 1.4f; s.shoulder = 0.25f; s.kappa = 0.20f;
+        s.gR = 0.04f;  s.gG = 0.0f;  s.gB = -0.03f;
+        s.shR = -0.08f; s.shG = -0.01f; s.shB = 0.08f;
+        s.hlR = 0.08f;  s.hlG = -0.01f; s.hlB = -0.06f;
+        s.sat = 1.06f; s.hlDesat = 0.15f; s.shDesat = 0.10f; s.density = 0.15f; s.sep = 0.18f;
+        s.hR = -3.0f; s.hY = -6.0f; s.hG = 12.0f; s.hC = 4.0f;  s.hB = -4.0f; s.hM = -6.0f;
+        s.sR = 1.10f; s.sY = 1.0f;  s.sG = 0.85f; s.sC = 1.08f; s.sB = 1.05f; s.sM = 0.95f;
+        s.dR = -0.04f; s.dY = 0.0f; s.dG = -0.08f; s.dC = -0.06f; s.dB = -0.08f; s.dM = -0.03f;
+    } else if (id == GLX_STOCK_MODERN) {
+        // Contemporary cinema negative look: punchy, clean mids with a late,
+        // smooth shoulder, a clear teal-shadow / warm-highlight split,
+        // controlled teal-leaning greens and dense, clean primaries.
+        s.contrast = 1.12f; s.width = 2.4f; s.toe = 0.0f; s.knee = 2.0f; s.shoulder = 0.22f; s.kappa = 0.10f;
+        s.gR = 0.02f;  s.gG = 0.0f;  s.gB = -0.02f;
+        s.shR = -0.05f; s.shG = 0.01f; s.shB = 0.05f;
+        s.hlR = 0.04f;  s.hlG = 0.01f; s.hlB = -0.04f;
+        s.sat = 1.04f; s.hlDesat = 0.20f; s.shDesat = 0.15f; s.density = 0.20f; s.sep = 0.15f;
+        s.hR = 2.0f;  s.hY = -4.0f; s.hG = 8.0f;  s.hC = -2.0f; s.hB = -5.0f; s.hM = -3.0f;
+        s.sR = 1.05f; s.sY = 0.96f; s.sG = 0.86f; s.sC = 1.04f; s.sB = 1.0f;  s.sM = 0.92f;
+        s.dR = -0.06f; s.dY = -0.02f; s.dG = -0.08f; s.dC = -0.04f; s.dB = -0.07f; s.dM = -0.04f;
+    }
+    return s;
+}
+
+// Interpolate a stock toward Clean: t = 0 -> Clean, t = 1 -> full stock.
+__DEVICE__ GlxStock glx_stock_scale(GlxStock s, float t)
+{
+    s.contrast = 1.0f + (s.contrast - 1.0f) * t;
+    s.toe *= t; s.shoulder *= t; s.kappa *= t;
+    s.gR *= t;  s.gG *= t;  s.gB *= t;
+    s.shR *= t; s.shG *= t; s.shB *= t;
+    s.hlR *= t; s.hlG *= t; s.hlB *= t;
+    s.sat = 1.0f + (s.sat - 1.0f) * t;
+    s.hlDesat *= t; s.shDesat *= t; s.density *= t; s.sep *= t;
+    s.hR *= t; s.hY *= t; s.hG *= t; s.hC *= t; s.hB *= t; s.hM *= t;
+    s.sR = 1.0f + (s.sR - 1.0f) * t; s.sY = 1.0f + (s.sY - 1.0f) * t;
+    s.sG = 1.0f + (s.sG - 1.0f) * t; s.sC = 1.0f + (s.sC - 1.0f) * t;
+    s.sB = 1.0f + (s.sB - 1.0f) * t; s.sM = 1.0f + (s.sM - 1.0f) * t;
+    s.dR *= t; s.dY *= t; s.dG *= t; s.dC *= t; s.dB *= t; s.dM *= t;
+    return s;
+}
+
+// -----------------------------------------------------------------------------
+//  Film engine helpers
+// -----------------------------------------------------------------------------
+#define GLX_DEG2RAD      0.0174532925f
+#define GLX_LOG2E        1.4426950409f
+#define FILM_TOE_OFFSET  0.01f     // same toe offset as Film Contrast
+#define FILM_TOE_KNEE    0.04f     // same toe knee as Shadow Depth
+#define FILM_HL_STOPS    4.0f      // highlight zone: 0 .. +4 stops
+#define FILM_SH_STOPS    4.0f      // shadow zone:    0 .. -4 stops
+#define FILM_SEP_RANGE   0.3f      // clustering strength at Separation 0/100
+#define FILM_SEP_LIMIT   0.5f      // |k| cap: keeps the total hue map monotonic
+#define FILM_SEP_SAT     0.12f     // chroma change at Separation 0/100
+#define FILM_SKIN_HUE_PROTECT 0.6f // share of hue rotation removed on skin
+#define FILM_SKIN_TINT_PROTECT 0.6f// share of stock tints removed on skin
+#define FILM_GAMUT_KNEE  0.9f      // chroma limit starts at 90% of the way to the gamut edge
+#define FILM_WARMTH_STOPS 0.30f
+#define FILM_SHADOW_STOPS 0.30f
+
+// Weight of a hue zone from c = cos(angle to zone centre). Raised cosine
+// over +/-60 deg: w = (1 + cos 3d) / 2, with cos 3d = 4c^3 - 3c. Adjacent
+// zones sum exactly to 1 and the weight is C1-smooth at the zone edge.
+__DEVICE__ float glx_zone(float c)
+{
+    return (c > 0.5f) ? 0.5f * (1.0f + c * (4.0f * c * c - 3.0f)) : 0.0f;
+}
+
+// Exposure in stops relative to 18% grey, toe-limited so it stays finite.
+__DEVICE__ float glx_exposure(float n)
+{
+    return _log2f((_fmaxf(n, 0.0f) + FILM_TOE_OFFSET) / (GLX_MID_GREY + FILM_TOE_OFFSET));
+}
+
+// -----------------------------------------------------------------------------
+//  FILM COLOUR
+// -----------------------------------------------------------------------------
+__DEVICE__ float3 glx_film_color(float r, float g, float b, GlxStock s, GlxFilmAdj adj, GlxProfile p)
+{
+    // Neutral component + chroma vector in the orthonormal opponent plane.
+    float m  = (r + g + b) * (1.0f / 3.0f);
+    float oa = (2.0f * r - g - b) * GLX_INV_SQRT6;
+    float ob = (g - b) * GLX_INV_SQRT2;
+    float len = _sqrtf(oa * oa + ob * ob);
+    if (len <= GLX_EPS * (_fabs(m) + GLX_EPS)) return make_float3(r, g, b);   // neutral
+    float ua = oa / len, ub = ob / len;                                       // hue direction
+
+    // Hue zones (centres R 5, Y 65, G 125, C 185, B 245, M 305 deg; the
+    // red centre sits near the hue of Rec.709 red).
+    float wR = glx_zone( 0.9961946981f * ua + 0.0871557427f * ub);
+    float wY = glx_zone( 0.4226182617f * ua + 0.9063077870f * ub);
+    float wG = glx_zone(-0.5735764364f * ua + 0.8191520443f * ub);
+    float wC = glx_zone(-0.9961946981f * ua - 0.0871557427f * ub);
+    float wB = glx_zone(-0.4226182617f * ua - 0.9063077870f * ub);
+    float wM = glx_zone( 0.5735764364f * ua - 0.8191520443f * ub);
+    float hueDeg = wR * s.hR + wY * s.hY + wG * s.hG + wC * s.hC + wB * s.hB + wM * s.hM;
+    float satHue = wR * s.sR + wY * s.sY + wG * s.sG + wC * s.sC + wB * s.sB + wM * s.sM;
+    float denHue = wR * s.dR + wY * s.dY + wG * s.dG + wC * s.dC + wB * s.dB + wM * s.dM;
+
+    // Chroma amount (same measure as Film Density) and skin mask.
+    float mx  = glx_max3(r, g, b);
+    float mn  = glx_min3(r, g, b);
+    float sat = (mx > 0.0f) ? _clampf((mx - mn) / (mx + p.densityToe), 0.0f, 1.0f) : 0.0f;
+    float wSat   = sat * sat * (3.0f - 2.0f * sat);
+    float chromaFade = glx_smooth(0.0f, 0.15f, sat);   // leave near-neutrals' hue alone
+    float skin = glx_smooth(p.skinCosOuter, p.skinCosInner, ua * p.skinHueA + ub * p.skinHueB);
+
+    // Exposure zones from the brightness norm.
+    float e  = glx_exposure(glx_tone_norm(r, g, b));
+    float wh = glx_smooth(0.0f,  FILM_HL_STOPS, e);
+    float ws = glx_smooth(0.0f, -FILM_SH_STOPS, e);
+
+    // ---- Hue rotation: stock per-hue rotation + Film Color Separation ------
+    // Separation warps hue angle  theta' = theta - k sin(6 (theta - theta0)) / 6
+    // with theta0 on the skin hue: k > 0 draws hues toward six axes (skin,
+    // and 60-deg steps from it) so colour families read as more distinct;
+    // k < 0 spreads them for a blended palette. d theta'/d theta >= 1 - |k| > 0,
+    // so the warp alone can never fold hues. |k| is capped at 0.5 so that,
+    // added to the stock's per-hue rotation (slope <= ~0.42), the combined
+    // hue map stays strictly monotonic.
+    float k = _clampf(s.sep + adj.sepF * FILM_SEP_RANGE, -FILM_SEP_LIMIT, FILM_SEP_LIMIT);
+    float ca = ua * p.skinHueA + ub * p.skinHueB;          // cos(theta - theta0)
+    float sa = ub * p.skinHueA - ua * p.skinHueB;          // sin(theta - theta0)
+    float c2 = ca * ca - sa * sa, s2 = 2.0f * ca * sa;      // angle x2
+    float c3 = c2 * ca - s2 * sa, s3 = s2 * ca + c2 * sa;   // angle x3
+    float sin6 = 2.0f * s3 * c3;                            // sin(6 (theta - theta0))
+    float sepRot = -k * sin6 * (1.0f / 6.0f);
+    if (k < 0.0f) sepRot *= 1.0f - p.skinProtect * skin;    // never scatter skin
+
+    float rot = (hueDeg * GLX_DEG2RAD * (1.0f - FILM_SKIN_HUE_PROTECT * skin) + sepRot) * chromaFade;
+    float cr = _cosf(rot), sr = _sinf(rot);
+    float na = oa * cr - ob * sr;
+    float nb = oa * sr + ob * cr;
+
+    // ---- Saturation ----------------------------------------------------------
+    float sigma = s.sat * satHue
+                * (1.0f - s.hlDesat * wh - s.shDesat * ws)
+                * (1.0f + adj.sepF * FILM_SEP_SAT);
+    sigma = _fmaxf(sigma, 0.0f);
+
+    // Channel offsets from the neutral component.
+    float dr = 2.0f * GLX_INV_SQRT6 * na;
+    float dg = -GLX_INV_SQRT6 * na + GLX_INV_SQRT2 * nb;
+    float db = -GLX_INV_SQRT6 * na - GLX_INV_SQRT2 * nb;
+
+    // Soft gamut limit. Along this colour's (rotated) chroma direction the
+    // lowest channel reaches 0 at chroma scale L = m / -min(d). With
+    // x = sigma / L as the fraction of the way to that edge, x passes
+    // unchanged up to a knee and then approaches 1 asymptotically
+    // (1 - 2^-x curve), so rotated or saturated colours never cross into
+    // negative values and never clip hard. The knee is never placed below
+    // the input colour's own position, so a colour is only ever held where
+    // it was (this keeps 0% -> 1% Strength continuous); colours that were
+    // already outside the gamut are not pushed further out.
+    if (m > 0.0f) {
+        float dmin = glx_min3(dr, dg, db);
+        if (dmin < 0.0f) {
+            float L    = m / -dmin;
+            float x0   = _fmaxf(-glx_min3(r - m, g - m, b - m) / m, 0.0f);
+            float knee = _fmaxf(FILM_GAMUT_KNEE, x0);
+            float x    = sigma / L;
+            if (x > knee) {
+                float span = 1.0f - knee;
+                x = (span > 1.0e-4f)
+                  ? knee + span * (1.0f - _exp2f(-(x - knee) / span * GLX_LOG2E))
+                  : knee;
+            }
+            sigma = x * L;
+        }
+    }
+    float r1 = m + sigma * dr;
+    float g1 = m + sigma * dg;
+    float b1 = m + sigma * db;
+
+    // ---- Colour density: per-hue density plus saturation-dependent density,
+    // both scaled by Film Color Density; one gain, so hue is unaffected.
+    float wSkin = 1.0f - p.skinProtect * skin;
+    float dStops = (denHue - s.density * p.densityStops * wSkin) * wSat * adj.cdScale;
+    float gain = _exp2f(dStops);
+    return make_float3(r1 * gain, g1 * gain, b1 * gain);
+}
+
+// -----------------------------------------------------------------------------
+//  FILM TONE
+// -----------------------------------------------------------------------------
+// Stock characteristic curve as a shift in stops for linear value x (|x| is
+// used, so negative values get a finite, sign-preserving gain):
+//   mid contrast : (c - 1) W tanh(e / W)        slope c at grey
+//   toe          : toe * (T(x) - T(grey))       T = 1 / (1 + (x/knee)^4)
+//   shoulder     : -a z^2 / (1 + a z)           z = stops above the knee
+// Each part is 0 at 18% grey and keeps the curve strictly monotonic over
+// the ranges the profiles use.
+__DEVICE__ float glx_stock_curve(float x, GlxStock s)
+{
+    x = _fabs(x);
+    float e  = _log2f((x + FILM_TOE_OFFSET) / (GLX_MID_GREY + FILM_TOE_OFFSET));
+    float dC = (s.contrast - 1.0f) * s.width * glx_tanh(e / s.width);
+    float x1 = x * _exp2f(dC);
+
+    float u  = x1 / FILM_TOE_KNEE;
+    float u2 = u * u;
+    float ug = GLX_MID_GREY / FILM_TOE_KNEE;
+    float ug2 = ug * ug;
+    float dT = s.toe * (1.0f / (1.0f + u2 * u2) - 1.0f / (1.0f + ug2 * ug2));
+    float x2 = x1 * _exp2f(dT);
+
+    float z  = _log2f(_fmaxf(x2, 1.0e-10f) / GLX_MID_GREY) - s.knee;
+    float dS = (z > 0.0f) ? -(s.shoulder * z * z) / (1.0f + s.shoulder * z) : 0.0f;
+    return dC + dT + dS;
+}
+
+__DEVICE__ float3 glx_film_tone(float r, float g, float b, GlxStock s, GlxFilmAdj adj, GlxProfile p)
+{
+    float n  = glx_tone_norm(r, g, b);
+
+    // Skin weight for the stock tints, faded in with chroma so the hue
+    // direction of near-neutral noise can never modulate the tint.
+    float oa  = (2.0f * r - g - b) * GLX_INV_SQRT6;
+    float ob  = (g - b) * GLX_INV_SQRT2;
+    float len = _sqrtf(oa * oa + ob * ob);
+    float mx  = glx_max3(r, g, b);
+    float sat = (mx > 0.0f) ? _clampf((glx_max3(r, g, b) - glx_min3(r, g, b)) / (mx + p.densityToe), 0.0f, 1.0f) : 0.0f;
+    float cosH = (oa * p.skinHueA + ob * p.skinHueB) / (len + GLX_EPS);
+    float skin = glx_smooth(p.skinCosOuter, p.skinCosInner, cosH) * glx_smooth(0.02f, 0.12f, sat);
+    float tintK = 1.0f - FILM_SKIN_TINT_PROTECT * skin;
+
+    // Characteristic curve: (1 - kappa) via the brightness norm (hue-stable)
+    // plus kappa per channel (dye-layer independence). For neutrals both
+    // paths are identical, so neutral tone is the same either way.
+    float dN = glx_stock_curve(n, s);
+    float q  = 1.0f - s.kappa;
+    float vR = q * dN + s.kappa * glx_stock_curve(r, s);
+    float vG = q * dN + s.kappa * glx_stock_curve(g, s);
+    float vB = q * dN + s.kappa * glx_stock_curve(b, s);
+
+    // Channel deviation curves, driven by the exposure of the norm.
+    float e  = glx_exposure(n);
+    float wh = glx_smooth(0.0f,  FILM_HL_STOPS, e);
+    float ws = glx_smooth(0.0f, -FILM_SH_STOPS, e);
+    float tw = s.width * glx_tanh(e / s.width);
+
+    // Film Highlight Warmth: + amber, - cool blue (stops, before normalising).
+    float hw = adj.warmth * FILM_WARMTH_STOPS * wh;
+    // Film Shadow Tone: + warm amber, - teal (continuous through 0).
+    float st = adj.shadowTone * FILM_SHADOW_STOPS * ws;
+    float stR = (st > 0.0f) ?  0.70f * st : 0.80f * st;
+    float stG = (st > 0.0f) ?  0.20f * st : -0.25f * st;
+    float stB = (st > 0.0f) ? -0.90f * st : -0.55f * st;
+
+    // Stock tints are reduced on skin; the user's Warmth / Shadow Tone are not.
+    float tR = (s.gR * tw + s.shR * ws + s.hlR * wh) * tintK + 0.80f * hw + stR;
+    float tG = (s.gG * tw + s.shG * ws + s.hlG * wh) * tintK + 0.10f * hw + stG;
+    float tB = (s.gB * tw + s.shB * ws + s.hlB * wh) * tintK - 0.90f * hw + stB;
+
+    // Remove the luminance component (a uniform log offset): the tint's hue
+    // is unchanged but it no longer brightens or darkens the image.
+    float tY = WORK_YR * tR + WORK_YG * tG + WORK_YB * tB;
+
+    return make_float3(r * _exp2f(vR + tR - tY),
+                       g * _exp2f(vG + tG - tY),
+                       b * _exp2f(vB + tB - tY));
+}
+
+
+// =============================================================================
+//  ENGINE
+// =============================================================================
+__DEVICE__ float3 glx_process_linear(float r, float g, float b, GlxControls k, GlxProfile p,
+                                     GlxStock s, GlxFilmAdj adj, int filmColor, int filmTone)
+{
+    // ---- Film stage (V2): stock colour response + adjustments, then the
+    // stock's characteristic curves + highlight/shadow colour ------------------
+    if (filmColor) {
+        float3 c = glx_film_color(r, g, b, s, adj, p);
+        r = c.x; g = c.y; b = c.z;
+    }
+    if (filmTone) {
+        float3 c = glx_film_tone(r, g, b, s, adj, p);
+        r = c.x; g = c.y; b = c.z;
+    }
+
+    // ---- Colour stage --------------------------------------------------------
+    if (k.density != 0.0f) {
+        float3 c = glx_density(r, g, b, k.density, p);
+        r = c.x; g = c.y; b = c.z;
+    }
+    if (k.subSat != 0.0f) {
+        float3 c = glx_subtractive_sat(r, g, b, k.subSat, p);
+        r = c.x; g = c.y; b = c.z;
+    }
+
+    // ---- Tone stage ----------------------------------------------------------
+    // Contrast and shadow use the perceptual hybrid norm. Roll-off uses
+    // max(RGB) so no single channel can escape the shoulder in saturated
+    // highlights. Every step is a gain on all channels: hue is preserved.
+    float n0 = glx_tone_norm(r, g, b);
+    if (n0 > 0.0f && (k.contrast != 0.0f || k.shadow != 0.0f)) {
+        float n = n0;
+        if (k.contrast != 0.0f) n = glx_contrast(n, k.contrast, p);
+        if (k.shadow   != 0.0f) n = glx_shadow(n, k.shadow, p);
+        float gain = n / n0;
+        r *= gain; g *= gain; b *= gain;
+    }
+
+    float m0 = glx_max3(r, g, b);
+    if (m0 > 0.0f && k.rolloff > 0.0f) {
+        float gain = glx_rolloff(m0, k.rolloff, p) / m0;
+        r *= gain; g *= gain; b *= gain;
+    }
+
+    return make_float3(r, g, b);
+}
+
+
+// =============================================================================
+//  ENTRY POINT
+// =============================================================================
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+    GlxControls k;
+    k.density   = _clampf(ui_Density   * 0.01f, -1.0f, 1.0f);
+    k.subSat    = _clampf(ui_SubSat    * 0.01f, -1.0f, 1.0f);
+    k.contrast  = _clampf(ui_Contrast  * 0.01f, -1.0f, 1.0f);
+    k.shadow    = _clampf(ui_Shadow    * 0.01f, -1.0f, 1.0f);
+    k.rolloff   = _clampf(ui_Rolloff   * 0.01f,  0.0f, 1.0f);
+    k.intensity = _clampf(ui_Intensity * 0.01f,  0.0f, 1.0f);
+
+    GlxFilmAdj adj;
+    adj.strength   = _clampf(ui_StockStrength * 0.01f, 0.0f, 1.0f);
+    adj.cdScale    = 1.0f + _clampf(ui_ColorDensity * 0.01f, -1.0f, 1.0f);   // 0 .. 2
+    adj.sepF       = _clampf((ui_Separation - 50.0f) * 0.02f, -1.0f, 1.0f);  // -1 .. 1
+    adj.warmth     = _clampf(ui_HlWarmth   * 0.01f, -1.0f, 1.0f);
+    adj.shadowTone = _clampf(ui_ShadowTone * 0.01f, -1.0f, 1.0f);
+
+    // Film stage activity. Stock Strength 0% bypasses the stock completely;
+    // the adjustments stay independent of it.
+    int stockOn   = (ui_Stock != GLX_STOCK_NONE) && (adj.strength > 0.0f);
+    int filmColor = stockOn || (adj.sepF != 0.0f);
+    int filmTone  = stockOn || (adj.warmth != 0.0f) || (adj.shadowTone != 0.0f);
+
+    // Exact identity: neutral controls or 0% intensity skip all processing.
+    int active = filmColor || filmTone
+              || (k.density != 0.0f) || (k.subSat != 0.0f) || (k.contrast != 0.0f)
+              || (k.shadow  != 0.0f) || (k.rolloff > 0.0f);
+    if (!active || k.intensity <= 0.0f)
+        return make_float3(p_R, p_G, p_B);
+
+    GlxProfile p = glx_profile_base();
+    GlxStock   s = stockOn ? glx_stock_scale(glx_stock_get(ui_Stock), adj.strength)
+                           : glx_stock_clean();
+
+    // DaVinci Intermediate -> linear DWG -> linear working (Rec.2020 primaries)
+    float3 w = glx_dwg_to_work(glx_di_to_lin(p_R), glx_di_to_lin(p_G), glx_di_to_lin(p_B));
+
+    w = glx_process_linear(w.x, w.y, w.z, k, p, s, adj, filmColor, filmTone);
+
+    // linear working -> linear DWG -> DaVinci Intermediate
+    float3 o = glx_work_to_dwg(w.x, w.y, w.z);
+    float oR = glx_lin_to_di(o.x);
+    float oG = glx_lin_to_di(o.y);
+    float oB = glx_lin_to_di(o.z);
+
+    // Global Intensity: mix in DaVinci Intermediate, where equal steps are
+    // roughly equal perceptual steps, so the fade from 0% to 100% is even.
+    float t = k.intensity;
+    return make_float3(p_R + (oR - p_R) * t,
+                       p_G + (oG - p_G) * t,
+                       p_B + (oB - p_B) * t);
+}
