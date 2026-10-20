@@ -4,7 +4,8 @@ Film stock and print emulation engine for DaVinci Resolve Studio, written as a D
 
 | File | Contents |
 |---|---|
-| `Gradelux_FilmLab_v7.dctl` | **Version 7 (current):** 13 film stocks (the 8 approved V6.1 stocks, bit-identical, plus 5 new), the 5 prints, all controls, developer Stage View |
+| `Gradelux_FilmLab_v8.dctl` | **Version 8 (current):** Version 7 plus the 16 Cine16 profiles as an independent Secondary Film Look engine; Secondary Off = Version 7 bit-for-bit |
+| `Gradelux_FilmLab_v7.dctl` | Version 7: 13 film stocks (the 8 approved V6.1 stocks plus 5 new), the 5 prints, all controls, developer Stage View |
 | `Gradelux_FilmLab_v6_1.dctl` | Version 6.1: Version 6 with Moss 250D and Chroma 100 refined |
 | `Gradelux_FilmLab_v6.dctl` | Version 6: production foundation, 8 film stocks, the 5 prints, all controls, developer Stage View |
 | `Gradelux_FilmLab_v5_diagnostic.dctl` | Version 5 diagnostic build: the 3 stocks v6 is built on |
@@ -15,6 +16,10 @@ Film stock and print emulation engine for DaVinci Resolve Studio, written as a D
 | `tools/look_preview.c`, `tools/look_preview.py` | Contact-sheet renderer for any stock / print combination |
 | `docs/LUT_PLAN.md` | Plan for the standalone LUTs (DWG and Rec.709) |
 | `docs/V5_DIAGNOSIS.md`, `docs/FilmLab_v5_diagnostic.png` | Why the first v5 looks were weak, the fixes, and a preview |
+| `reference/Cine16_1B_Color_Profile.dctl` | The original Cine16 DCTL, unchanged: source of the secondary engine and reference for its regression test |
+| `tools/extract_cine16.py` | Generates the Cine16 secondary engine from the original file (verbatim code, prefixed names) |
+| `tests/runner.c`, `tests/cine16_regression.py` | Bit-for-bit comparison of v8 against the original Cine16 DCTL and FilmLab v7, including chained engines |
+| `docs/V8_CINE16_INTEGRATION.md` | Cine16 integration: code changes, behaviour notes, regression instructions |
 | `tools/scenario_check.c` | Synthetic scenario checks (portrait, daylight, foliage, interior, night, saturated, high contrast) for every stock × print |
 | `docs/V7_TESTING.md` | V7 regression checklist: what was executed and what needs Resolve |
 | `tools/look_visibility.c` | Measures visible strength of each stock and a distinctness matrix between all stocks |
@@ -23,6 +28,56 @@ Film stock and print emulation engine for DaVinci Resolve Studio, written as a D
 | `docs/FilmLab_v4_*.png`, `docs/FilmLab_v3_look_preview.png` | Earlier versions, for comparison |
 
 Grain, halation, bloom, diffusion and film damage are intentionally not included.
+
+## Version 8: Cine16 Secondary Film Look
+
+`Gradelux_FilmLab_v8.dctl` adds the sixteen Gradelux Cine16 film colour profiles as an independent
+**Secondary Film Look** engine, using the original Cine16 colour science unchanged.
+
+**Processing order:**
+1. Input (DWG / DaVinci Intermediate)
+2. Primary Film Look
+3. **Secondary Film Look**
+4. Film Print
+5. Film adjustments and grading
+6. Output (DWG / DaVinci Intermediate)
+7. Global Intensity
+
+**Secondary Film Look dropdown:** Off, Neutral, Warm, Cool, Pastel, Rich, Golden, Faded, Reversal,
+Night 500T, Daylight 250D, Portrait 400, Chrome 64, Emerald 400, Steel Chrome, Vivid 50, Cinema E.
+
+**Controls:** the original Cine16 sliders with their original ranges and defaults:
+- Secondary Strength
+- Secondary Color Separation
+- Secondary Saturation
+- Secondary Subtractive Density
+- Secondary Print Bias
+- Secondary Profile Tone
+- Secondary Skin Protection
+
+The original Show Skin Mask is in the developer section.
+
+### Verification
+
+Executed on the host, bit for bit; details in
+[`docs/V8_CINE16_INTEGRATION.md`](docs/V8_CINE16_INTEGRATION.md).
+- **Cine16 match:** each profile in FilmLab (Primary Off, Print None) is **identical to the
+  original Cine16 DCTL** over 786,272 samples:
+  - every profile, at defaults, random and extreme slider settings, and with Show Skin Mask
+  - inputs: RGB grid, grey ramp, skin, saturated and extended-range values, random pixels
+- **Secondary Off:** identical to Version 7, including with every FilmLab control randomised.
+- **Chaining:** Primary + Secondary + Print is identical to running v7's look, the original
+  Cine16 and v7's print as separate programs.
+- **Older regressions:** all still bit-exact.
+- **Safety suite (`tests/math_test_v8.c`):** passes for all 14 × 17 × 6
+  primary × secondary × print combinations.
+
+Not yet done: compiling in Resolve, and an A/B difference matte against the original Cine16 node.
+
+**Notes:**
+- **Neutral is not Off:** Neutral is a gentle look of its own. Use Off for no secondary processing.
+- **Range limit:** Cine16's original output clamp ([−0.5, 2.0] DI) is kept. It never engaged on
+  normal-range input in testing.
 
 ## Version 7: thirteen film stocks
 

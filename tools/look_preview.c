@@ -1,5 +1,5 @@
 // =============================================================================
-//  Gradelux FilmLab — look preview renderer (Version 7; -DFILMLAB_V4 for Version 4)
+//  Gradelux FilmLab — look preview renderer (Version 8; -DFILMLAB_V4 for Version 4)
 // -----------------------------------------------------------------------------
 //  Renders a synthetic test scene through any Film Look / Film Print
 //  combinations (reference configuration) using the DCTL source itself.
@@ -35,7 +35,14 @@ static float3 make_float3(float a, float b, float c) { float3 r = {a, b, c}; ret
 #define _cosf cosf
 #define _sinf sinf
 static float _clampf(float x, float a, float b) { return fminf(fmaxf(x, a), b); }
+#define __CONSTANT__ static const
+#define __CONSTANTREF__ const
+#define _fmod fmodf
+static float _saturatef(float x) { return fminf(fmaxf(x, 0.0f), 1.0f); }
+static int min(int a, int b) { return a < b ? a : b; }
+static int max(int a, int b) { return a > b ? a : b; }
 #define DEFINE_UI_PARAMS(...)
+#define DEFINE_UI_TOOLTIP(...)
 #ifdef FILMLAB_V4
 enum { GLX_LOOK_OFF, GLX_LOOK_PURE, GLX_LOOK_EMBER, GLX_LOOK_SLATE, GLX_LOOK_SOLACE, GLX_LOOK_CHROME,
        GLX_LOOK_DUNE, GLX_LOOK_NOIR, GLX_LOOK_BLOOM, GLX_LOOK_HAZE, GLX_LOOK_VIVID, GLX_LOOK_MUSE,
@@ -63,12 +70,16 @@ static const char *LOOK_NAMES[] = { "Off", "Verona250D", "Verdant250D", "Midnigh
                                     "Nocturne800", "Pastelle400" };
 static const char *PRINT_NAMES[] = { "None", "Cinechrome2383", "Velachrome2393", "Lumachrome3513",
                                      "Retrochrome3510", "Silkchrome2383" };
-#ifndef FILMLAB_SOURCE   /* Version 7 by default; -DFILMLAB_SOURCE='"../Gradelux_FilmLab_v6_1.dctl"' for 6.1 */
-#define FILMLAB_SOURCE "../Gradelux_FilmLab_v7.dctl"
+#ifndef FILMLAB_SOURCE   /* Version 8 by default; -DFILMLAB_SOURCE='"../Gradelux_FilmLab_v7.dctl"' for 7 */
+#define FILMLAB_SOURCE "../Gradelux_FilmLab_v8.dctl"
 #endif
 #endif
 
 // UI globals: reference configuration (defaults; Film Look / Film Print set per tile)
+enum { GLX_SEC_OFF };
+static int   ui_SecLook = 0, ui_SecShowSkin = 0;
+static float ui_SecStrength = 1, ui_SecSep = 1, ui_SecSat = 1, ui_SecSubtr = 1, ui_SecBias = 1,
+             ui_SecTone = 1, ui_SecSkinProt = 1;
 static int   ui_Look = 0, ui_Print = 0;
 static float ui_CreativeIntensity = 100, ui_PrintStrength = 100, ui_PrintContrast = 0, ui_PrintDensity = 0,
              ui_PrintSaturation = 0, ui_PrintRolloff = 0;
@@ -106,9 +117,9 @@ int main(int argc, char **argv){
   static float img[H][W][3];
   int tiles = (argc > 2) ? argc - 2 : GLX_LOOK_COUNT;
   for(int t=0;t<tiles;t++){
-    int look = t, pr = 0;
-    if (argc > 2) sscanf(argv[t + 2], "%d:%d", &look, &pr);
-    ui_Look=look; ui_Print=pr;
+    int look = t, pr = 0, sec = 0;      // tile spec  look:print[:secondary]
+    if (argc > 2) sscanf(argv[t + 2], "%d:%d:%d", &look, &pr, &sec);
+    ui_Look=look; ui_Print=pr; ui_SecLook=sec;
     for(int y=0;y<H;y++)for(int x=0;x<W;x++){ float o[3]; scene(x,y,o);
       float3 c=transform(0,0,0,0,glx_lin_to_di(o[0]),glx_lin_to_di(o[1]),glx_lin_to_di(o[2]));
       img[y][x][0]=c.x;img[y][x][1]=c.y;img[y][x][2]=c.z; }

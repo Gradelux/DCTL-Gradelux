@@ -1,11 +1,13 @@
 // =============================================================================
-//  Gradelux FilmLab — reference LUT generator / validator (Version 7; -DFILMLAB_V4 for Version 4)
+//  Gradelux FilmLab — reference LUT generator / validator (Version 8; -DFILMLAB_V4 for Version 4)
 // -----------------------------------------------------------------------------
-//  Compiles Gradelux_FilmLab_v7.dctl (or v4 with -DFILMLAB_V4) itself (through a small C shim) and
+//  Compiles Gradelux_FilmLab_v8.dctl (or v4 with -DFILMLAB_V4) itself (through a small C shim) and
 //  samples its transform() in one of three reference configurations:
 //      A. Film Look only      : Look = <look>,  Print = None
 //      B. Film Print only     : Look = Off,     Print = <print>
 //      C. Film Look + Print   : Look = <look>,  Print = <print>
+//      D. any of the above with a Secondary Film Look (Cine16 profile), or the
+//         secondary profile alone (Look Off, Print None)
 //  with Creative Intensity 100%, Print Strength 100%, print controls 0 and
 //  every other control at its default (Global Intensity 100%). That IS the
 //  reference transform. Because the generator runs the same source code as
@@ -16,11 +18,14 @@
 //
 //  USAGE
 //      gradelux_lut list
-//      gradelux_lut cube     <look #> <print 0-5> <dwg|rec709> <33|65>  > file.cube
-//      gradelux_lut validate <look #> <print 0-5> <dwg|rec709> <33|65>
+//      gradelux_lut cube     <look #> <print 0-5> <dwg|rec709> <33|65> [secondary 0-16]  > file.cube
+//      gradelux_lut validate <look #> <print 0-5> <dwg|rec709> <33|65> [secondary 0-16]
 //      gradelux_lut all      <print 0-5> <dwg|rec709> <33|65> <output dir>
-//    look 0 = Off, print 0 = None (not both). "all" writes every look with
-//    the given print (0 = look-only LUTs).
+//      gradelux_lut secondaries <dwg|rec709> <33|65> <output dir>
+//    look 0 = Off, print 0 = None, secondary 0 = Off (not all three). "all"
+//    writes every look with the given print (0 = look-only LUTs);
+//    "secondaries" writes the 16 Cine16 profiles alone. Secondary sliders stay
+//    at their original Cine16 defaults (1.00).
 //
 //  PIPELINES
 //    dwg    : DaVinci Intermediate (DWG) in -> look -> DaVinci Intermediate out.
@@ -56,7 +61,14 @@ static float3 make_float3(float a, float b, float c) { float3 r = {a, b, c}; ret
 #define _cosf cosf
 #define _sinf sinf
 static float _clampf(float x, float a, float b) { return fminf(fmaxf(x, a), b); }
+#define __CONSTANT__ static const
+#define __CONSTANTREF__ const
+#define _fmod fmodf
+static float _saturatef(float x) { return fminf(fmaxf(x, 0.0f), 1.0f); }
+static int min(int a, int b) { return a < b ? a : b; }
+static int max(int a, int b) { return a > b ? a : b; }
 #define DEFINE_UI_PARAMS(...)
+#define DEFINE_UI_TOOLTIP(...)
 #ifdef FILMLAB_V4
 enum { GLX_LOOK_OFF, GLX_LOOK_PURE, GLX_LOOK_EMBER, GLX_LOOK_SLATE, GLX_LOOK_SOLACE, GLX_LOOK_CHROME,
        GLX_LOOK_DUNE, GLX_LOOK_NOIR, GLX_LOOK_BLOOM, GLX_LOOK_HAZE, GLX_LOOK_VIVID, GLX_LOOK_MUSE,
@@ -84,12 +96,27 @@ static const char *LOOK_NAMES[] = { "Off", "Verona250D", "Verdant250D", "Midnigh
                                     "Nocturne800", "Pastelle400" };
 static const char *PRINT_NAMES[] = { "None", "Cinechrome2383", "Velachrome2393", "Lumachrome3513",
                                      "Retrochrome3510", "Silkchrome2383" };
-#ifndef FILMLAB_SOURCE   /* Version 7 by default; -DFILMLAB_SOURCE='"../Gradelux_FilmLab_v6_1.dctl"' for 6.1 */
-#define FILMLAB_SOURCE "../Gradelux_FilmLab_v7.dctl"
+#ifndef FILMLAB_SOURCE   /* Version 8 by default (with the Cine16 secondary engine) */
+#define FILMLAB_SOURCE "../Gradelux_FilmLab_v8.dctl"
+#define HAS_SECONDARY 1
 #endif
 #endif
 
-// UI globals: reference configuration (defaults; Film Look / Film Print set per call)
+#ifndef HAS_SECONDARY
+#define HAS_SECONDARY 0
+#endif
+enum { GLX_SEC_OFF, GLX_SEC_NEUTRAL, GLX_SEC_WARM, GLX_SEC_COOL, GLX_SEC_PASTEL, GLX_SEC_RICH, GLX_SEC_GOLDEN,
+       GLX_SEC_FADED, GLX_SEC_REVERSAL, GLX_SEC_NIGHT_500T, GLX_SEC_DAYLIGHT_250D, GLX_SEC_PORTRAIT_400,
+       GLX_SEC_CHROME_64, GLX_SEC_EMERALD_400, GLX_SEC_STEEL_CHROME, GLX_SEC_VIVID_50, GLX_SEC_CINEMA_E,
+       GLX_SEC_COUNT };
+static const char *SEC_NAMES[] = { "Off", "Neutral", "Warm", "Cool", "Pastel", "Rich", "Golden", "Faded",
+                                   "Reversal", "Night500T", "Daylight250D", "Portrait400", "Chrome64",
+                                   "Emerald400", "SteelChrome", "Vivid50", "CinemaE" };
+
+// UI globals: reference configuration (defaults; Film Look / Secondary / Film Print set per call)
+static int   ui_SecLook = 0, ui_SecShowSkin = 0;
+static float ui_SecStrength = 1, ui_SecSep = 1, ui_SecSat = 1, ui_SecSubtr = 1, ui_SecBias = 1,
+             ui_SecTone = 1, ui_SecSkinProt = 1;
 static int   ui_Look = 0, ui_Print = 0;
 static float ui_CreativeIntensity = 100, ui_PrintStrength = 100, ui_PrintContrast = 0, ui_PrintDensity = 0,
              ui_PrintSaturation = 0, ui_PrintRolloff = 0;
@@ -110,19 +137,21 @@ static void dwg_to_rec709(const double *i, double *o) {
     o[2] = -0.1215391606 * i[0] - 0.3156758531 * i[1] + 1.4372150137 * i[2];
 }
 
-// A configuration packs look and print: cfg = look * 16 + print.
-static int  cfg_look(int cfg)  { return cfg >> 4; }
+// A configuration packs look, print and secondary: cfg = secondary * 256 + look * 16 + print.
+static int  cfg_look(int cfg)  { return (cfg >> 4) & 15; }
 static int  cfg_print(int cfg) { return cfg & 15; }
+static int  cfg_sec(int cfg)   { return cfg >> 8; }
 static void cfg_name(int cfg, char *buf, size_t len) {
-    int l = cfg_look(cfg), p = cfg_print(cfg);
-    if (l && p) snprintf(buf, len, "%s + %s", LOOK_NAMES[l], PRINT_NAMES[p]);
-    else if (l)  snprintf(buf, len, "%s", LOOK_NAMES[l]);
-    else         snprintf(buf, len, "%s", PRINT_NAMES[p]);
+    int l = cfg_look(cfg), p = cfg_print(cfg), s = cfg_sec(cfg);
+    buf[0] = 0;
+    if (l) snprintf(buf + strlen(buf), len - strlen(buf), "%s", LOOK_NAMES[l]);
+    if (s) snprintf(buf + strlen(buf), len - strlen(buf), "%s%s", buf[0] ? " + " : "", SEC_NAMES[s]);
+    if (p) snprintf(buf + strlen(buf), len - strlen(buf), "%s%s", buf[0] ? " + " : "", PRINT_NAMES[p]);
 }
 
 // Reference transform on DaVinci Intermediate code values.
 static void look_di(int look, const double *in, double *out) {
-    ui_Look = cfg_look(look); ui_Print = cfg_print(look);
+    ui_Look = cfg_look(look); ui_Print = cfg_print(look); ui_SecLook = cfg_sec(look);
     float3 o = transform(0, 0, 0, 0, (float)in[0], (float)in[1], (float)in[2]);
     out[0] = o.x; out[1] = o.y; out[2] = o.z;
 }
@@ -154,7 +183,11 @@ static double *build(int look, int rec709, int n) {
 static void write_cube(FILE *f, int look, int rec709, int n, const double *lut) {
     char name[128]; cfg_name(look, name, sizeof name);
     fprintf(f, "TITLE \"Gradelux %s (%s)\"\n", name, rec709 ? "Rec.709 Gamma 2.4" : "DWG Intermediate");
+#ifdef FILMLAB_V4
     fprintf(f, "# Gradelux FilmLab v4 reference transform: %s (Creative Intensity 100%%, Print Strength 100%%, print controls 0)\n", name);
+#else
+    fprintf(f, "# Gradelux FilmLab v8 reference transform: %s (Creative Intensity 100%%, Print Strength 100%%, print controls 0, secondary controls 1.00)\n", name);
+#endif
     if (rec709)
         fprintf(f, "# Input and output: Rec.709 / Gamma 2.4 code values (output clipped to 0..1)\n");
     else
@@ -255,15 +288,17 @@ int main(int argc, char **argv) {
     if (argc >= 2 && !strcmp(argv[1], "list")) {
         for (int i = 1; i < GLX_LOOK_COUNT; i++) printf("look  %2d %s\n", i, LOOK_NAMES[i]);
         for (int i = 1; i < GLX_PRINT_COUNT; i++) printf("print %2d %s\n", i, PRINT_NAMES[i]);
+        if (HAS_SECONDARY) for (int i = 1; i < GLX_SEC_COUNT; i++) printf("secondary %2d %s\n", i, SEC_NAMES[i]);
         return 0;
     }
-    if (argc == 6 && (!strcmp(argv[1], "cube") || !strcmp(argv[1], "validate"))) {
+    if ((argc == 6 || argc == 7) && (!strcmp(argv[1], "cube") || !strcmp(argv[1], "validate"))) {
         int look = parse_range(argv[2], 0, GLX_LOOK_COUNT - 1, "look");
         int pr   = parse_range(argv[3], 0, GLX_PRINT_COUNT - 1, "print");
+        int sec  = (argc == 7) ? parse_range(argv[6], 0, HAS_SECONDARY ? GLX_SEC_COUNT - 1 : 0, "secondary") : 0;
         int rec = !strcmp(argv[4], "rec709"), n = atoi(argv[5]);
-        if (!look && !pr) { fprintf(stderr, "choose a look, a print, or both\n"); return 1; }
+        if (!look && !pr && !sec) { fprintf(stderr, "choose a look, a secondary, a print, or a combination\n"); return 1; }
         if (n < 2 || n > 129) { fprintf(stderr, "size must be 2..129\n"); return 1; }
-        int cfg = look * 16 + pr;
+        int cfg = sec * 256 + look * 16 + pr;
         if (!strcmp(argv[1], "validate")) { validate(cfg, rec, n); return 0; }
         double *lut = build(cfg, rec, n);
         write_cube(stdout, cfg, rec, n, lut);
@@ -287,7 +322,24 @@ int main(int argc, char **argv) {
         }
         return 0;
     }
-    fprintf(stderr, "usage: gradelux_lut list | cube <look #> <print 0-5> <dwg|rec709> <size>\n"
-                    "       | validate <look> <print> <dwg|rec709> <size> | all <print 0-5> <dwg|rec709> <size> <dir>\n");
+    if (argc == 5 && !strcmp(argv[1], "secondaries") && HAS_SECONDARY) {
+        int rec = !strcmp(argv[2], "rec709"), n = atoi(argv[3]);
+        for (int sec = 1; sec < GLX_SEC_COUNT; sec++) {
+            char path[1024];
+            snprintf(path, sizeof path, "%s/Gradelux_S%02d_%s_%s_%d.cube", argv[4], sec, SEC_NAMES[sec],
+                     rec ? "Rec709" : "DWG", n);
+            FILE *f = fopen(path, "w");
+            if (!f) { perror(path); return 1; }
+            int cfg = sec * 256;
+            double *lut = build(cfg, rec, n);
+            write_cube(f, cfg, rec, n, lut);
+            fclose(f); free(lut);
+            fprintf(stderr, "wrote %s\n", path);
+        }
+        return 0;
+    }
+    fprintf(stderr, "usage: gradelux_lut list | cube <look #> <print 0-5> <dwg|rec709> <size> [secondary 0-16]\n"
+                    "       | validate <look> <print> <dwg|rec709> <size> [secondary]\n"
+                    "       | all <print 0-5> <dwg|rec709> <size> <dir> | secondaries <dwg|rec709> <size> <dir>\n");
     return 1;
 }
