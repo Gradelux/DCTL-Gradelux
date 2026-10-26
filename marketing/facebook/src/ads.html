@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Gradelux Facebook Ads</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500;1,600&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #0c0b0a;
+    --paper: #f3ede3;
+    --muted: rgba(243, 237, 227, 0.62);
+    --faint: rgba(243, 237, 227, 0.28);
+    --gold: #e9c27a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #222; font-family: Inter, sans-serif; color: var(--paper); }
+  .ad {
+    width: 1080px; height: 1350px; position: relative; overflow: hidden;
+    background: var(--ink); margin: 40px auto;
+  }
+  .layer { position: absolute; inset: 0; }
+  .serif { font-family: "Cormorant Garamond", serif; }
+  .mono { font-family: "JetBrains Mono", monospace; }
+  .eyebrow {
+    font-size: 22px; letter-spacing: 0.32em; text-transform: uppercase;
+    font-weight: 500; color: var(--muted);
+  }
+  .brand {
+    position: absolute; left: 80px; top: 72px; display: flex; align-items: center; gap: 18px;
+    font-size: 24px; letter-spacing: 0.42em; font-weight: 600; z-index: 5;
+  }
+  .brand .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--gold); }
+  .brand .sub { font-weight: 400; color: var(--muted); letter-spacing: 0.32em; }
+  .footer {
+    position: absolute; left: 80px; right: 80px; bottom: 72px; z-index: 5;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 20px; letter-spacing: 0.24em; text-transform: uppercase; color: var(--muted);
+  }
+  .pill {
+    border: 1.5px solid var(--paper); color: var(--paper); border-radius: 999px;
+    padding: 14px 30px; letter-spacing: 0.3em; font-weight: 600; font-size: 20px;
+  }
+  .pill.solid { background: var(--paper); color: var(--ink); }
+  .bokeh { position: absolute; border-radius: 50%; }
+  .vignette { background: radial-gradient(ellipse at 50% 45%, transparent 45%, rgba(0,0,0,0.55) 100%); }
+  .swatches { display: flex; gap: 22px; }
+  .swatch { display: flex; flex-direction: column; gap: 12px; font-size: 16px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); }
+  .swatch i { display: block; width: 136px; height: 64px; border-radius: 6px; }
+
+  /* film strip */
+  .strip {
+    position: absolute; left: -40px; right: -40px; height: 330px; background: #050505;
+    display: flex; gap: 18px; padding: 52px 18px; align-items: stretch;
+  }
+  .strip::before, .strip::after {
+    content: ""; position: absolute; left: 0; right: 0; height: 22px;
+    background: repeating-linear-gradient(90deg, transparent 0 18px, #d8d2c6 18px 44px, transparent 44px 62px);
+    opacity: 0.85;
+  }
+  .strip::before { top: 15px; border-radius: 3px; }
+  .strip::after { bottom: 15px; }
+  .frame { flex: 1; border-radius: 6px; position: relative; overflow: hidden; }
+  .frame .label {
+    position: absolute; left: 16px; bottom: 14px; font-family: "Cormorant Garamond", serif;
+    font-style: italic; font-size: 30px; font-weight: 600; color: #fff; text-shadow: 0 2px 14px rgba(0,0,0,0.6);
+  }
+  .frame .num { position: absolute; right: 14px; top: 12px; font-family: "JetBrains Mono", monospace; font-size: 15px; color: rgba(255,255,255,0.7); }
+
+  /* lineup grid */
+  .grid { position: absolute; left: 80px; right: 80px; top: 330px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .tile { height: 132px; border-radius: 8px; position: relative; overflow: hidden; }
+  .tile .label {
+    position: absolute; left: 18px; bottom: 12px; font-family: "Cormorant Garamond", serif;
+    font-style: italic; font-weight: 600; font-size: 34px; color: #fff; text-shadow: 0 2px 16px rgba(0,0,0,0.55);
+  }
+  .tile .num { position: absolute; left: 20px; top: 14px; font-family: "JetBrains Mono", monospace; font-size: 15px; color: rgba(255,255,255,0.75); }
+  .tile .dots { position: absolute; right: 16px; top: 16px; display: flex; gap: 6px; }
+  .tile .dots b { width: 14px; height: 14px; border-radius: 50%; display: block; box-shadow: 0 0 0 1.5px rgba(255,255,255,0.35); }
+
+  h1, h2 { font-weight: 600; }
+</style>
+</head>
+<body>
+
+<!-- 01 HERO -->
+<section class="ad" id="ad01_hero">
+  <div class="layer" style="background: radial-gradient(ellipse at 50% 30%, #1c1712 0%, #0c0b0a 70%);"></div>
+  <div class="brand"><span class="dot"></span>GRADELUX <span class="sub">COLORLAB</span></div>
+  <div class="strip" id="heroStrip" style="top: 250px; transform: rotate(-3deg);"></div>
+  <div style="position:absolute; left:80px; right:80px; top:680px; z-index:5;">
+    <div class="eyebrow" style="margin-bottom:28px;">For DaVinci Resolve</div>
+    <h1 class="serif" style="font-size:118px; line-height:0.98; letter-spacing:-0.01em;">Eighteen film looks.<br><em style="color:var(--gold);">One DCTL.</em></h1>
+    <p style="margin-top:36px; font-size:31px; line-height:1.45; color:var(--muted); font-weight:300; max-width:860px;">
+      Rich, cinematic film color for your grade, without crushed blacks, faded shadows or heavy contrast.
+    </p>
+  </div>
+  <div class="footer"><span>Rec.709 · Gamma 2.4</span><span class="pill solid">Coming soon</span></div>
+</section>
+
+<!-- 02 LINEUP -->
+<section class="ad" id="ad02_lineup">
+  <div class="layer" style="background: linear-gradient(180deg, #13110f 0%, #0b0a09 100%);"></div>
+  <div class="brand"><span class="dot"></span>GRADELUX <span class="sub">COLORLAB</span></div>
+  <div style="position:absolute; left:80px; right:80px; top:150px;">
+    <h1 class="serif" style="font-size:84px; line-height:1;">The collection</h1>
+    <p style="margin-top:18px; font-size:27px; color:var(--muted); font-weight:300;">18 looks. Each one with its own palette, hue by hue.</p>
+  </div>
+  <div class="grid" id="lineupGrid"></div>
+  <div class="footer"><span>Neutral to Sandlot</span><span class="pill">Coming soon</span></div>
+</section>
+
+<!-- 03 SANDLOT -->
+<section class="ad" id="ad03_sandlot">
+  <div class="layer" style="background: linear-gradient(180deg, #0f1b3d 0%, #0b1530 45%, #0a1a22 100%);"></div>
+  <div class="layer" id="sandlotBokeh"></div>
+  <div class="layer" style="background: linear-gradient(180deg, rgba(8,12,26,0) 40%, rgba(8,12,26,0.92) 78%);"></div>
+  <div class="layer vignette"></div>
+  <div class="brand"><span class="dot"></span>GRADELUX <span class="sub">COLORLAB</span></div>
+  <div style="position:absolute; left:80px; right:80px; top:700px; z-index:5;">
+    <div class="eyebrow mono" style="letter-spacing:0.22em;">Look 17 · Signature</div>
+    <h1 class="serif" style="font-size:168px; line-height:0.95; font-style:italic; margin-top:10px;">Sandlot</h1>
+    <p style="margin-top:22px; font-size:30px; line-height:1.45; color:var(--muted); font-weight:300; max-width:860px;">
+      Vintage carnival reds and golden ride lights against deep navy shadows.
+    </p>
+    <div class="swatches" style="margin-top:44px;" id="sandlotSwatches"></div>
+  </div>
+  <div class="footer"><span>The signature Gradelux look</span><span class="pill">Coming soon</span></div>
+</section>
+
+<!-- 04 HONEY -->
+<section class="ad" id="ad04_honey">
+  <div class="layer" style="background: radial-gradient(ellipse at 60% 25%, #5a4228 0%, #2e2017 45%, #1a120d 100%);"></div>
+  <div class="layer" id="honeyBokeh"></div>
+  <div class="layer" style="background: linear-gradient(180deg, rgba(20,13,9,0) 38%, rgba(20,13,9,0.9) 76%);"></div>
+  <div class="layer vignette"></div>
+  <div class="brand"><span class="dot"></span>GRADELUX <span class="sub">COLORLAB</span></div>
+  <div style="position:absolute; left:80px; right:80px; top:690px; z-index:5;">
+    <div class="eyebrow mono" style="letter-spacing:0.22em;">Look 16</div>
+    <h1 class="serif" style="font-size:168px; line-height:0.95; font-style:italic; margin-top:10px; color:#f0dfb4;">Honey</h1>
+    <p style="margin-top:22px; font-size:30px; line-height:1.45; color:var(--muted); font-weight:300; max-width:880px;">
+      Champagne-gold highlights, chocolate shadows, and whites that stay white.
+    </p>
+    <div class="swatches" style="margin-top:44px;" id="honeySwatches"></div>
+  </div>
+  <div class="footer"><span>Refined golden film color</span><span class="pill">Coming soon</span></div>
+</section>
+
+<!-- 05 NIGHT -->
+<section class="ad" id="ad05_night">
+  <div class="layer" style="background:#07080c;"></div>
+  <div class="brand"><span class="dot"></span>GRADELUX <span class="sub">COLORLAB</span></div>
+  <div style="position:absolute; left:80px; right:80px; top:150px;">
+    <h1 class="serif" style="font-size:92px; line-height:1;">Made for the <em style="color:#8fb2ff;">night.</em></h1>
+    <p style="margin-top:20px; font-size:28px; line-height:1.45; color:var(--muted); font-weight:300; max-width:880px;">
+      Four night looks that keep your shadow detail. Exposure stays put and blacks stay open.
+    </p>
+  </div>
+  <div id="nightGrid" style="position:absolute; left:80px; right:80px; top:420px; height:740px; display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:16px;"></div>
+  <div class="footer"><span>Looks 05 · 06 · 12 · 17</span><span class="pill">Coming soon</span></div>
+</section>
+
+<!-- 06 BLACK & WHITE -->
+<section class="ad" id="ad06_bw">
+  <div class="layer" style="background: linear-gradient(180deg, #171717 0%, #0b0b0b 100%);"></div>
+  <div class="brand"><span class="dot" style="background:#ddd;"></span>GRADELUX <span class="sub">COLORLAB</span></div>
+  <div style="position:absolute; left:80px; right:80px; top:150px;">
+    <h1 class="serif" style="font-size:86px; line-height:1.02;">Two ways to see<br>in black &amp; white.</h1>
+  </div>
+  <div style="position:absolute; left:0; right:0; top:420px; display:grid; grid-template-columns:1fr 1fr;">
+    <div style="padding:0 60px 0 80px;">
+      <div class="eyebrow mono" style="letter-spacing:0.2em;">Look 13</div>
+      <h2 class="serif" style="font-size:96px; font-style:italic; margin-top:6px;">Timeless</h2>
+      <p style="font-size:25px; color:var(--muted); line-height:1.45; margin-top:10px; font-weight:300;">Smooth, classic tonality. Luminous skin.</p>
+    </div>
+    <div style="padding:0 80px 0 60px; border-left:1px solid rgba(255,255,255,0.14);">
+      <div class="eyebrow mono" style="letter-spacing:0.2em;">Look 14</div>
+      <h2 class="serif" style="font-size:96px; font-style:italic; margin-top:6px;">Shadow</h2>
+      <p style="font-size:25px; color:var(--muted); line-height:1.45; margin-top:10px; font-weight:300;">Dramatic separation. Deeper skies.</p>
+    </div>
+  </div>
+  <div style="position:absolute; left:80px; right:80px; top:780px;">
+    <div class="eyebrow" style="font-size:18px; margin-bottom:22px;">Each color, translated differently</div>
+    <div id="bwMap"></div>
+  </div>
+  <div class="footer"><span>Custom color-to-gray response</span><span class="pill">Coming soon</span></div>
+</section>
+
+<!-- 07 PHILOSOPHY -->
+<section class="ad" id="ad07_philosophy">
+  <div class="layer" style="background:#0d0c0b;"></div>
+  <div class="layer" id="philoBand" style="height:300px; top:0;"></div>
+  <div class="layer" style="background: linear-gradient(180deg, rgba(13,12,11,0.15) 0%, rgba(13,12,11,1) 300px);"></div>
+  <div class="brand"><span class="dot"></span>GRADELUX <span class="sub">COLORLAB</span></div>
+  <div style="position:absolute; left:80px; right:80px; top:330px; z-index:5;">
+    <h1 class="serif" style="font-size:128px; line-height:0.95;">Color first.<br><em style="color:var(--gold);">Contrast later.</em></h1>
+    <p style="margin-top:34px; font-size:29px; line-height:1.5; color:var(--muted); font-weight:300; max-width:880px;">
+      ColorLab builds rich film color without leaning on heavy contrast, so your image stays dimensional, not crunchy.
+    </p>
+    <div style="margin-top:56px; display:grid; gap:0; border-top:1px solid var(--faint);">
+      <div class="row" style="display:flex; justify-content:space-between; padding:26px 0; border-bottom:1px solid var(--faint); font-size:30px;"><span>Film color density</span><span class="mono" style="color:var(--muted); font-size:20px;">01</span></div>
+      <div class="row" style="display:flex; justify-content:space-between; padding:26px 0; border-bottom:1px solid var(--faint); font-size:30px;"><span>Subtractive saturation</span><span class="mono" style="color:var(--muted); font-size:20px;">02</span></div>
+      <div class="row" style="display:flex; justify-content:space-between; padding:26px 0; border-bottom:1px solid var(--faint); font-size:30px;"><span>Hue-by-hue color separation</span><span class="mono" style="color:var(--muted); font-size:20px;">03</span></div>
+      <div class="row" style="display:flex; justify-content:space-between; padding:26px 0; border-bottom:1px solid var(--faint); font-size:30px;"><span>Skin tone protection</span><span class="mono" style="color:var(--muted); font-size:20px;">04</span></div>
+    </div>
+  </div>
+  <div class="footer"><span>No crushed blacks · No faded shadows</span></div>
+</section>
+
+<!-- 08 SUITE -->
+<section class="ad" id="ad08_suite">
+  <div class="layer" style="background: linear-gradient(180deg, #121110 0%, #0a0909 100%);"></div>
+  <div class="brand"><span class="dot"></span>GRADELUX</div>
+  <div style="position:absolute; left:80px; right:80px; top:150px;">
+    <h1 class="serif" style="font-size:96px; line-height:1;">One film pipeline.<br><em style="color:var(--gold);">Four tools.</em></h1>
+    <p style="margin-top:22px; font-size:28px; color:var(--muted); font-weight:300;">A complete film emulation suite for DaVinci Resolve.</p>
+  </div>
+  <div id="suiteList" style="position:absolute; left:80px; right:80px; top:500px; display:grid; gap:18px;"></div>
+  <div class="footer"><span>ColorLab arrives first</span><span class="pill">Coming soon</span></div>
+</section>
+
+<!-- 09 MONITOR LUT PACK -->
+<section class="ad" id="ad09_lutpack">
+  <div class="layer" style="background: radial-gradient(ellipse at 80% 10%, #1d2633 0%, #0b0c0e 60%);"></div>
+  <div class="brand"><span class="dot"></span>GRADELUX <span class="sub">MONITOR LUT PACK</span></div>
+  <div style="position:absolute; left:80px; right:80px; top:160px;">
+    <h1 class="serif" style="font-size:112px; line-height:0.92;">Take the looks<br><em style="color:var(--gold);">on set.</em></h1>
+    <p style="margin-top:28px; font-size:29px; line-height:1.45; color:var(--muted); font-weight:300; max-width:880px;">
+      All 18 ColorLab looks as .cube LUTs for monitors and cameras. Same color math as the DCTL.
+    </p>
+  </div>
+  <div id="lutList" class="mono" style="position:absolute; left:80px; right:80px; top:610px; height:470px; overflow:hidden; font-size:25px; line-height:1.9;
+       -webkit-mask-image: linear-gradient(180deg, #000 55%, transparent 100%); mask-image: linear-gradient(180deg, #000 55%, transparent 100%);"></div>
+  <div style="position:absolute; left:80px; right:80px; bottom:150px; font-size:21px; line-height:1.5; color:var(--muted);">
+    For Rec.709 Gamma 2.4 input. Log footage needs your camera's conversion first.
+  </div>
+  <div class="footer"><span>17 · 33 · 65-point</span><span class="pill">Coming soon</span></div>
+</section>
+
+<script>
+// Palette illustrations taken from the ColorLab look briefs.
+// Each look: shadow, mid, highlight, accents.
+const LOOKS = [
+  { n: "Neutral",    s: "#1c1c1c", m: "#7c7b78", h: "#ece9e3", a: ["#c79a82", "#7d8f7a", "#8fa3b5"] },
+  { n: "Daydream",   s: "#3a2a1f", m: "#c98f52", h: "#f4e2bf", a: ["#bf3d2e", "#dba62f", "#3aa7b3"] },
+  { n: "Cinema",     s: "#16313a", m: "#9a6a52", h: "#ecc28a", a: ["#a8302c", "#e0a35c", "#2c5f6e"] },
+  { n: "Dusk",       s: "#0f2b2b", m: "#4d6a6c", h: "#d9dcd6", a: ["#9c2f2a", "#e0a05a", "#6f7f45"] },
+  { n: "Sundaze",    s: "#22201c", m: "#d68f3d", h: "#f6d27a", a: ["#f2c14e", "#2f6fb5", "#c2582f"] },
+  { n: "Bluehour",   s: "#0b1d52", m: "#2457d6", h: "#a6ecff", a: ["#2f6bff", "#5fe0f0", "#f0a050"] },
+  { n: "Nightfall",  s: "#13233a", m: "#3c6d7a", h: "#f4cd7e", a: ["#e8a048", "#f5c870", "#b0352d"] },
+  { n: "Wildflower", s: "#1f2320", m: "#c56a4a", h: "#f3ece0", a: ["#d0302c", "#1f5fbf", "#3f9a3a"] },
+  { n: "Evergreen",  s: "#1a2a27", m: "#4a8a6e", h: "#e3ebe7", a: ["#3f8a6a", "#3f9ab8", "#b8383a"] },
+  { n: "Yesterday",  s: "#2e211a", m: "#b0683a", h: "#f2e3c6", a: ["#b52a26", "#d4a431", "#1f3f7a"] },
+  { n: "Seaside",    s: "#1d2a33", m: "#1fa6ad", h: "#f5d98f", a: ["#1fb0b8", "#c0583a", "#1f4f9a"] },
+  { n: "Woodland",   s: "#132925", m: "#2e6a45", h: "#e8c372", a: ["#1f6a45", "#6b7a2f", "#6b4a2f"] },
+  { n: "Afterhours", s: "#1c0f3a", m: "#7a2fa8", h: "#7fe8ff", a: ["#e0308f", "#2f5fff", "#ff3b4a"] },
+  { n: "Timeless",   s: "#161616", m: "#8a8a8a", h: "#f1f1f1", a: ["#4a4a4a", "#a5a5a5", "#d6d6d6"], bw: true },
+  { n: "Shadow",     s: "#070707", m: "#5c5c5c", h: "#f7f7f7", a: ["#222222", "#777777", "#e2e2e2"], bw: true },
+  { n: "October",    s: "#2a2a18", m: "#c2622a", h: "#ecc160", a: ["#c8622a", "#a8302a", "#23457f"] },
+  { n: "Honey",      s: "#3a2820", m: "#b58d55", h: "#eedcae", a: ["#c9a05a", "#8a8445", "#c99a78"] },
+  { n: "Sandlot",    s: "#121f45", m: "#9c4a3a", h: "#f6c760", a: ["#c0302f", "#e8903a", "#2f4f9f"] },
+];
+const byName = Object.fromEntries(LOOKS.map((l, i) => [l.n, { ...l, i }]));
+const pad = i => String(i).padStart(2, "0");
+
+// Deterministic RNG so renders are repeatable.
+function rng(seed) { let t = seed >>> 0; return () => { t += 0x6D2B79F5; let r = Math.imul(t ^ (t >>> 15), 1 | t); r ^= r + Math.imul(r ^ (r >>> 7), 61 | r); return ((r ^ (r >>> 14)) >>> 0) / 4294967296; }; }
+
+// Soft out-of-focus light discs, like carnival or street lights.
+function bokeh(el, { seed, colors, count, x = [0, 1], y = [0, 1], size = [30, 160], blur = [0, 14], alpha = [0.35, 0.9], W, H }) {
+  const r = rng(seed);
+  W = W || el.clientWidth || 1080; H = H || el.clientHeight || 1350;
+  for (let k = 0; k < count; k++) {
+    const d = document.createElement("div");
+    const s = size[0] + (size[1] - size[0]) * Math.pow(r(), 1.6);
+    const c = colors[Math.floor(r() * colors.length)];
+    const px = (x[0] + (x[1] - x[0]) * r()) * W - s / 2;
+    const py = (y[0] + (y[1] - y[0]) * r()) * H - s / 2;
+    d.className = "bokeh";
+    Object.assign(d.style, {
+      width: s + "px", height: s + "px", left: px + "px", top: py + "px",
+      background: `radial-gradient(circle, ${c} 0%, ${c} 52%, ${c}cc 64%, transparent 71%)`,
+      opacity: alpha[0] + (alpha[1] - alpha[0]) * r(),
+      filter: `blur(${blur[0] + (blur[1] - blur[0]) * r()}px)`,
+    });
+    el.appendChild(d);
+  }
+}
+function glow(el, color, cx, cy, r, op = 1) {
+  const d = document.createElement("div");
+  Object.assign(d.style, { position: "absolute", inset: 0, opacity: op,
+    background: `radial-gradient(circle at ${cx}% ${cy}%, ${color} 0%, transparent ${r}%)` });
+  el.appendChild(d);
+}
+// A small abstract "frame" for a look: tonal ramp plus its accent lights.
+function paintFrame(el, look, seed, { lights = 9, size = [20, 70] } = {}) {
+  el.style.background = `linear-gradient(160deg, ${look.h} 0%, ${look.m} 48%, ${look.s} 100%)`;
+  const inner = document.createElement("div");
+  inner.style.cssText = "position:absolute; inset:0;";
+  el.appendChild(inner);
+  glow(inner, look.a[0] + "aa", 75, 30, 55);
+  glow(inner, look.a[2] + "88", 15, 85, 55);
+  requestAnimationFrame(() => {});
+  bokeh(inner, { seed, colors: look.a.concat([look.h]), count: lights, size, blur: [1, 6], alpha: [0.25, 0.7],
+    W: el.clientWidth, H: el.clientHeight });
+  const shade = document.createElement("div");
+  shade.style.cssText = "position:absolute; inset:0; background:linear-gradient(180deg, transparent 45%, rgba(0,0,0,0.45) 100%);";
+  el.appendChild(shade);
+}
+function swatches(el, items) {
+  el.innerHTML = items.map(([c, label]) => `<div class="swatch"><i style="background:${c}"></i>${label}</div>`).join("");
+}
+
+// 01 hero strip
+{
+  const strip = document.getElementById("heroStrip");
+  ["Daydream", "Cinema", "Bluehour", "Honey", "Afterhours", "Sandlot"].forEach((name, k) => {
+    const f = document.createElement("div"); f.className = "frame"; strip.appendChild(f);
+    const l = byName[name];
+    paintFrame(f, l, 100 + k, { lights: 10, size: [16, 64] });
+    f.insertAdjacentHTML("beforeend", `<span class="num">${pad(l.i)}</span><span class="label">${name}</span>`);
+  });
+}
+// 02 lineup grid
+{
+  const g = document.getElementById("lineupGrid");
+  LOOKS.forEach((l, i) => {
+    const t = document.createElement("div"); t.className = "tile"; g.appendChild(t);
+    paintFrame(t, l, 200 + i, { lights: 7, size: [14, 52] });
+    t.insertAdjacentHTML("beforeend",
+      `<span class="num">${pad(i)}</span><span class="dots">${l.a.map(c => `<b style="background:${c}"></b>`).join("")}</span><span class="label">${l.n}</span>`);
+  });
+}
+// 03 sandlot carnival lights
+{
+  const el = document.getElementById("sandlotBokeh");
+  glow(el, "#2a4c8a", 50, 10, 70, 0.9);
+  glow(el, "#1f4a52", 20, 70, 50, 0.8);
+  glow(el, "#e8903a", 72, 30, 34, 0.55);
+  glow(el, "#c0302f", 22, 32, 30, 0.45);
+  bokeh(el, { seed: 7, colors: ["#f2b84a", "#e8862e", "#f6c760", "#c8282a", "#b3201f", "#ffd98a"], count: 64, y: [0.02, 0.62], size: [24, 170], blur: [0, 10], alpha: [0.55, 0.95] });
+  bokeh(el, { seed: 8, colors: ["#2f4f9f", "#3f6fb8", "#1f5560"], count: 16, y: [0.3, 0.75], size: [60, 220], blur: [8, 20], alpha: [0.35, 0.65] });
+  // string of ride bulbs
+  for (let k = 0; k < 26; k++) {
+    const t = k / 25, x = 70 + t * 940, y = 180 + Math.sin(t * Math.PI) * 140;
+    const b = document.createElement("div"); b.className = "bokeh";
+    Object.assign(b.style, { width: "18px", height: "18px", left: x + "px", top: y + "px",
+      background: "radial-gradient(circle, #fff6d8 0%, #f6c760 45%, transparent 72%)", boxShadow: "0 0 26px 8px rgba(246,199,96,0.45)" });
+    el.appendChild(b);
+  }
+  swatches(document.getElementById("sandlotSwatches"), [["#f6c760", "Gold"], ["#e8903a", "Amber"], ["#c0302f", "Red"], ["#14224a", "Navy"], ["#1f4a52", "Teal"]]);
+}
+// 04 honey
+{
+  const el = document.getElementById("honeyBokeh");
+  glow(el, "#e9cf95", 64, 22, 45, 0.55);
+  glow(el, "#8a8445", 18, 55, 40, 0.35);
+  bokeh(el, { seed: 21, colors: ["#e8cf92", "#d6ad62", "#c9983f", "#f2dfae", "#b8862f"], count: 46, y: [0.02, 0.6], size: [40, 230], blur: [3, 16], alpha: [0.35, 0.85] });
+  swatches(document.getElementById("honeySwatches"), [["#eedcae", "Champagne"], ["#c9a05a", "Gold"], ["#8a8445", "Olive"], ["#3a2820", "Chocolate"], ["#c99a78", "Skin"]]);
+}
+// 05 night grid
+{
+  const g = document.getElementById("nightGrid");
+  const night = {
+    Bluehour:   { bg: "linear-gradient(170deg,#173a8f,#0b1d52 60%,#081236)", c: ["#2f6bff", "#5fe0f0", "#a6ecff", "#2f6bff", "#f0a050"] },
+    Nightfall:  { bg: "linear-gradient(170deg,#24425a,#13233a 60%,#0c1624)", c: ["#e8a048", "#f5c870", "#f5c870", "#3c6d7a", "#b0352d"] },
+    Afterhours: { bg: "linear-gradient(170deg,#3a1a6a,#1c0f3a 60%,#120a26)", c: ["#e0308f", "#2f5fff", "#ff3b4a", "#7fe8ff", "#b04fe0"] },
+    Sandlot:    { bg: "linear-gradient(170deg,#1d3366,#121f45 60%,#0b1a22)", c: ["#f6c760", "#e8903a", "#c0302f", "#f6c760", "#2f4f9f"] },
+  };
+  Object.entries(night).forEach(([name, cfg], k) => {
+    const p = document.createElement("div");
+    p.style.cssText = `position:relative; overflow:hidden; border-radius:10px; background:${cfg.bg};`;
+    g.appendChild(p);
+    const inner = document.createElement("div"); inner.style.cssText = "position:absolute; inset:0;"; p.appendChild(inner);
+    bokeh(inner, { seed: 300 + k, colors: cfg.c, count: 26, y: [0.02, 0.75], size: [18, 110], blur: [0, 9], alpha: [0.35, 0.95], W: 452, H: 362 });
+    p.insertAdjacentHTML("beforeend",
+      `<div style="position:absolute; inset:0; background:linear-gradient(180deg, transparent 50%, rgba(0,0,0,0.6));"></div>
+       <span class="mono" style="position:absolute; left:24px; top:20px; font-size:16px; color:rgba(255,255,255,0.75);">${pad(byName[name].i)}</span>
+       <span class="serif" style="position:absolute; left:24px; bottom:16px; font-size:52px; font-style:italic; font-weight:600;">${name}</span>`);
+  });
+}
+// 06 B&W color-to-gray map (illustrative weightings)
+{
+  const cols = [["#c0302f", "Red"], ["#e0803a", "Orange"], ["#c99a78", "Skin"], ["#e0c240", "Yellow"], ["#3f9a3a", "Green"], ["#2f6fb5", "Sky"]];
+  const toGray = (hex, w, gamma) => {
+    const v = [1, 3, 5].map(o => parseInt(hex.substr(o, 2), 16) / 255);
+    let y = v[0] * w[0] + v[1] * w[1] + v[2] * w[2];
+    y = Math.pow(Math.min(Math.max(y, 0), 1), gamma);
+    const g = Math.round(y * 255); return `rgb(${g},${g},${g})`;
+  };
+  const timeless = c => toGray(c, [0.36, 0.52, 0.12], 0.95); // close to natural, slightly warm-bright skin
+  const shadow   = c => toGray(c, [0.56, 0.38, 0.06], 1.12); // red-filter feel: bright skin, darker skies
+  const row = (label, fn) => `
+    <div style="display:grid; grid-template-columns:170px repeat(6,1fr); gap:12px; align-items:center; margin-bottom:12px;">
+      <span style="font-size:18px; letter-spacing:0.2em; text-transform:uppercase; color:var(--muted);">${label}</span>
+      ${cols.map(([c]) => `<i style="display:block; height:74px; border-radius:6px; background:${fn(c)};"></i>`).join("")}
+    </div>`;
+  document.getElementById("bwMap").innerHTML =
+    row("Color", c => c) + row("Timeless", timeless) + row("Shadow", shadow) +
+    `<div style="display:grid; grid-template-columns:170px repeat(6,1fr); gap:12px; margin-top:6px;">
+       <span></span>${cols.map(([, n]) => `<span style="font-size:16px; letter-spacing:0.16em; text-transform:uppercase; color:var(--faint); text-align:center;">${n}</span>`).join("")}
+     </div>`;
+}
+// 07 philosophy hue band
+{
+  const el = document.getElementById("philoBand");
+  el.style.background = "linear-gradient(90deg, #c0302f, #e8903a, #f6c760, #8a8445, #1f6a45, #1fa6ad, #2f5fff, #5a2fa8, #e0308f)";
+  el.style.filter = "blur(30px) saturate(0.9)"; el.style.opacity = "0.75"; el.style.transform = "scale(1.2)";
+}
+// 08 suite
+{
+  const tools = [
+    ["01", "ColorLab", "18 film looks, film density, subtractive saturation", "#e9c27a", true],
+    ["02", "PrintLab", "Print emulation, toe, shoulder and print density", "#c56a4a", false],
+    ["03", "Halation & Glow", "Film halation, highlight bloom and diffusion", "#e0308f", false],
+    ["04", "GrainLab", "Film grain with size, intensity and character", "#8a8a8a", false],
+  ];
+  document.getElementById("suiteList").innerHTML = tools.map(([n, name, desc, c, first]) => `
+    <div style="display:grid; grid-template-columns:90px 1fr auto; align-items:center; padding:34px 36px; border-radius:12px;
+                background:${first ? "rgba(233,194,122,0.09)" : "rgba(255,255,255,0.035)"}; border:1px solid ${first ? "rgba(233,194,122,0.45)" : "rgba(255,255,255,0.08)"};">
+      <span class="mono" style="font-size:22px; color:${c};">${n}</span>
+      <div>
+        <div class="serif" style="font-size:54px; font-weight:600; line-height:1;">${name}</div>
+        <div style="font-size:22px; color:var(--muted); margin-top:10px; font-weight:300;">${desc}</div>
+      </div>
+      <span style="width:16px; height:16px; border-radius:50%; background:${c}; box-shadow:0 0 22px ${c};"></span>
+    </div>`).join("");
+}
+// 09 LUT filenames
+{
+  document.getElementById("lutList").innerHTML = LOOKS.map((l, i) =>
+    `<div style="display:flex; gap:22px; align-items:center;"><b style="width:14px; height:14px; border-radius:3px; background:${l.a[0]}; display:block;"></b>
+      <span style="color:var(--paper);">Gradelux_${l.n}_Rec709_33<span style="color:var(--muted);">.cube</span></span></div>`).join("");
+}
+</script>
+</body>
+</html>
