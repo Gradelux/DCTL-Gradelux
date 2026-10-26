@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """FrameLab tests: compiles the DCTL as C and checks it numerically.
 
-Run from the repo root:  python3 tests/framelab/run_tests.py [--preview out.png]
+Run from the repo root:
+    python3 tests/framelab/run_tests.py [--dctl Gradelux_FrameLab_v1.dctl] [--preview out.png]
+Tests v2 by default.
 
 Checks
   1. Pass-through: with Frame Style None and every effect off, output equals
@@ -11,30 +13,43 @@ Checks
   3. Resolutions: tiny, portrait, ultra-wide and 4K frames render cleanly.
   4. Determinism: the same frame and settings give identical output.
 """
-import os, subprocess, sys, tempfile
+import os, re, subprocess, sys, tempfile
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
-DCTL = os.path.join(ROOT, 'Gradelux_FrameLab_v1.dctl')
+DCTL = os.path.join(ROOT, 'Gradelux_FrameLab_v2.dctl')
+if '--dctl' in sys.argv:
+    DCTL = os.path.abspath(sys.argv[sys.argv.index('--dctl') + 1])
 TMP = tempfile.mkdtemp(prefix='framelab_')
 BIN = os.path.join(TMP, 'render')
 
-PARAMS = {  # name: (kind, lo, hi)
-    'frameStyle': ('i', 0, 10), 'filmBase': ('i', 0, 3), 'background': ('i', 0, 3),
-    'frameSize': ('f', 0.5, 1.5), 'filmRoll': ('f', -10, 10), 'rotation': ('f', -20, 20),
-    'cornerRound': ('f', 0, 2), 'gateSoft': ('f', 0, 1), 'roughness': ('f', 0, 1),
-    'edgeMarks': ('i', 0, 1), 'soundtrack': ('i', 0, 1), 'dustAmt': ('f', 0, 1),
-    'scratchAmt': ('f', 0, 1), 'weaveAmt': ('f', 0, 1), 'flickerAmt': ('f', 0, 1),
-    'vignetteAmt': ('f', 0, 1), 'leakAmt': ('f', 0, 1), 'leakColor': ('i', 0, 3),
-    'leakPos': ('f', -1, 1), 'leakSize': ('f', 0.2, 2), 'dateOn': ('i', 0, 1),
-    'dateFmt': ('i', 0, 2), 'dateYear': ('i', 0, 99), 'dateMonth': ('i', 1, 12),
-    'dateDay': ('i', 1, 31), 'stampSize': ('f', 0.5, 2), 'leaderOn': ('i', 0, 1),
-    'leaderFps': ('i', 12, 60), 'animSource': ('i', 0, 1), 'animTime': ('f', 0, 10000),
-    'variation': ('i', 0, 100),
-}
-OFF = {'frameStyle': 0, 'dustAmt': 0, 'scratchAmt': 0, 'weaveAmt': 0, 'flickerAmt': 0,
-       'vignetteAmt': 0, 'leakAmt': 0, 'dateOn': 0, 'leaderOn': 0}
+def read_params(path):
+    """name -> (kind, lo, hi), read from the DCTL's DEFINE_UI_PARAMS lines."""
+    out = {}
+    for line in open(path):
+        m = re.match(r'^DEFINE_UI_PARAMS\((.*)\)\s*$', line.strip())
+        if not m:
+            continue
+        parts = [x.strip() for x in m.group(1).split(',')]
+        name, kind = parts[0], parts[2]
+        if kind == 'DCTLUI_COMBO_BOX':
+            n = len(re.search(r'\{([^}]*)\}', m.group(1)).group(1).split(','))
+            out[name] = ('i', 0, n - 1)
+        elif kind == 'DCTLUI_CHECK_BOX':
+            out[name] = ('i', 0, 1)
+        elif kind == 'DCTLUI_SLIDER_INT':
+            out[name] = ('i', int(parts[4]), int(parts[5]))
+        else:
+            out[name] = ('f', float(parts[4]), float(parts[5]))
+    return out
+
+PARAMS = read_params(DCTL)
+# every setting that switches an effect on, at its "off" value
+OFF = {k: v for k, v in {
+    'preset': 0, 'frameStyle': 0, 'dustAmt': 0, 'scratchAmt': 0, 'weaveAmt': 0, 'flickerAmt': 0,
+    'vignetteAmt': 0, 'leakAmt': 0, 'dateOn': 0, 'leaderOn': 0, 'edgeFog': 0, 'burnAmt': 0,
+    'gateHair': 0, 'cueMarks': 0, 'picZoom': 1, 'picPanX': 0, 'picPanY': 0}.items() if k in PARAMS}
 
 def build():
     gen = os.path.join(HERE, 'framelab_gen.c')
@@ -117,7 +132,7 @@ def main():
             print('robustness FAIL', e); fails += 1; break
     else:
         print('robustness: %d random settings on extreme input, all finite, no out-of-range reads: OK' % n)
-    for style in range(11):
+    for style in range(PARAMS['frameStyle'][2] + 1):
         out = run(ext, {'frameStyle': style, 'dustAmt': 1, 'scratchAmt': 1, 'weaveAmt': 1, 'flickerAmt': 1,
                         'leakAmt': 1, 'dateOn': 1, 'leaderOn': 1, 'animSource': 1, 'animTime': 30})
         if not np.isfinite(out).all():
@@ -127,7 +142,7 @@ def main():
     # 3. resolutions
     for w, h in [(17, 9), (64, 36), (1080, 1920), (2400, 600), (3840, 2160)]:
         try:
-            out = run(scene(w, h), {'frameStyle': int(rng.integers(1, 11)), 'dateOn': 1, 'leakAmt': 0.5})
+            out = run(scene(w, h), {'frameStyle': int(rng.integers(1, PARAMS['frameStyle'][2] + 1)), 'dateOn': 1, 'leakAmt': 0.5})
             print('resolution %4dx%-4d OK' % (w, h) if np.isfinite(out).all() else 'resolution FAIL')
         except RuntimeError as e:
             print('resolution %dx%d FAIL %s' % (w, h, e)); fails += 1
@@ -139,29 +154,50 @@ def main():
     fails += not np.array_equal(a, b)
 
     if '--preview' in sys.argv:
-        preview(sys.argv[sys.argv.index('--preview') + 1])
+        out = sys.argv[sys.argv.index('--preview') + 1]
+        preview(out)
+        if 'preset' in PARAMS:
+            preview(out.replace('.png', '_features.png'), V2_FEATURES)
     print('\nALL PASSED' if fails == 0 else '\n%d FAILURES' % fails)
     sys.exit(1 if fails else 0)
 
-def preview(path):
+V1_SHEET = [
+    ('Super 8', {'frameStyle': 1}),
+    ('Regular 8', {'frameStyle': 2, 'leakAmt': 0.6, 'leakPos': 0.1}),
+    ('16mm + soundtrack', {'frameStyle': 3}),
+    ('35mm Motion Picture', {'frameStyle': 4, 'background': 2}),
+    ('35mm Still, Orange Negative', {'frameStyle': 5, 'background': 2, 'filmBase': 1, 'rotation': -5}),
+    ('120 Medium Format', {'frameStyle': 6, 'background': 3}),
+    ('Instant Print + date', {'frameStyle': 7, 'background': 1, 'rotation': 4, 'dateOn': 1}),
+    ('Slide Mount', {'frameStyle': 8, 'background': 2}),
+    ('Filed Gate', {'frameStyle': 9}),
+    ('Projector Gate', {'frameStyle': 10, 'leakAmt': 0.5, 'leakColor': 1, 'leakPos': 0.75}),
+    ('Countdown Leader', {'frameStyle': 3, 'leaderOn': 1, 'animSource': 1, 'animTime': 30}),
+    ('Date stamp + warm leak', {'frameStyle': 0, 'dateOn': 1, 'leakAmt': 0.8, 'leakPos': 0.0}),
+]
+V2_PRESETS = [(n, {'preset': i + 1}) for i, n in enumerate([
+    'Home Movie', 'Slide Show', 'Negative Scan', 'Cinema Print', 'Silent Era Projector', '16mm Documentary',
+    'Instant Memory', 'Contact Sheet', 'Damaged Reel', 'Vintage Print', 'Super 16 Indie', 'Regular 8 Reel'])]
+V2_FEATURES = [
+    ('Film Burn 0.25', {'frameStyle': 1, 'burnAmt': 0.25}),
+    ('Film Burn 0.6', {'frameStyle': 0, 'burnAmt': 0.6, 'burnPos': 0.3, 'vignetteAmt': 0}),
+    ('Edge Fog + Hair In The Gate', {'frameStyle': 3, 'edgeFog': 0.8, 'gateHair': 1}),
+    ('Cue Marks (Cinema)', {'frameStyle': 5, 'cueMarks': 1}),
+    ('Grease Pencil on Super 8', {'frameStyle': 1, 'greasePencil': 1, 'background': 2, 'filmBase': 2}),
+    ('Picture Zoom 1.5, Pan', {'frameStyle': 9, 'picZoom': 1.5, 'picPanX': 0.8}),
+    ('Black Slide Mount', {'frameStyle': 11, 'filmBase': 0, 'background': 3}),
+    ('Super 16, Safety Film text', {'frameStyle': 4, 'edgeText': 1, 'background': 2}),
+    ('Red date stamp, size 1.4', {'frameStyle': 10, 'dateOn': 1, 'stampColor': 1, 'stampSize': 1.4, 'background': 1}),
+]
+
+def preview(path, looks=None):
     from PIL import Image, ImageDraw, ImageFont
+    if looks is None:
+        looks = V2_PRESETS if 'preset' in PARAMS else V1_SHEET
     src = scene(1920, 1080)
-    looks = [
-        ('Super 8', {'frameStyle': 1}),
-        ('Regular 8', {'frameStyle': 2, 'leakAmt': 0.6, 'leakPos': 0.1}),
-        ('16mm + soundtrack', {'frameStyle': 3}),
-        ('35mm Motion Picture', {'frameStyle': 4, 'background': 2}),
-        ('35mm Still, Orange Negative', {'frameStyle': 5, 'background': 2, 'filmBase': 1, 'rotation': -5}),
-        ('120 Medium Format', {'frameStyle': 6, 'background': 3}),
-        ('Instant Print + date', {'frameStyle': 7, 'background': 1, 'rotation': 4, 'dateOn': 1}),
-        ('Slide Mount', {'frameStyle': 8, 'background': 2}),
-        ('Filed Gate', {'frameStyle': 9}),
-        ('Projector Gate', {'frameStyle': 10, 'leakAmt': 0.5, 'leakColor': 1, 'leakPos': 0.75}),
-        ('Countdown Leader', {'frameStyle': 3, 'leaderOn': 1, 'animSource': 1, 'animTime': 30}),
-        ('Date stamp + warm leak', {'frameStyle': 0, 'dateOn': 1, 'leakAmt': 0.8, 'leakPos': 0.0}),
-    ]
     tw, th, pad = 640, 360, 44
-    sheet = Image.new('RGB', (tw * 3, (th + pad) * 4), (18, 18, 18))
+    rows = (len(looks) + 2) // 3
+    sheet = Image.new('RGB', (tw * 3, (th + pad) * rows), (18, 18, 18))
     draw = ImageDraw.Draw(sheet)
     try:
         font = ImageFont.truetype('DejaVuSans.ttf', 22)
