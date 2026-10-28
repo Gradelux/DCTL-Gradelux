@@ -13,7 +13,7 @@ DEFINE_UI_PARAMS(ui_size, Matte Size, DCTLUI_SLIDER_FLOAT, 1.0, 0.85, 1.15, 0.01
 DEFINE_UI_PARAMS(ui_soft, Edge Softness, DCTLUI_SLIDER_FLOAT, 0.60, 0.0, 1.0, 0.01)
 DEFINE_UI_PARAMS(ui_rough, Edge Roughness, DCTLUI_SLIDER_FLOAT, 0.5, 0.0, 1.0, 0.01)
 DEFINE_UI_PARAMS(ui_shade, Edge Shade, DCTLUI_SLIDER_FLOAT, 0.55, 0.0, 1.0, 0.01)
-DEFINE_UI_PARAMS(ui_weave, Gate Weave, DCTLUI_SLIDER_FLOAT, 0.2, 0.0, 1.0, 0.01)
+DEFINE_UI_PARAMS(ui_motion, Film Motion, DCTLUI_SLIDER_FLOAT, 0.5, 0.0, 1.0, 0.01)
 DEFINE_UI_PARAMS(ui_mix, Opacity, DCTLUI_SLIDER_FLOAT, 1.0, 0.0, 1.0, 0.01)
 
 // -----------------------------------------------------------------------------
@@ -92,9 +92,9 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
         float aspect = W / H;
         float pxu = 1.0f / H;                      // one pixel, in frame-height units
 
-        // per-frame random seed from a few footage pixels (drives the weave)
+        // per-frame random seed from a few footage pixels (drives the film motion)
         float seed = 0.0f;
-        if (ui_weave > 0.0f) {
+        if (ui_motion > 0.0f) {
             float acc = 0.0f;
             for (int i = 0; i < 6; i++) {
                 float fi = (float)i;
@@ -105,8 +105,15 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
             }
             seed = glx_floor(glx_hash1(acc * 1000.0f + 0.5f) * 997.0f);
         }
-        float wx = ui_weave * 0.0030f * ((glx_hash1(seed + 0.31f) - 0.5f) * 2.0f);
-        float wy = ui_weave * 0.0024f * ((glx_hash1(seed + 0.77f) - 0.5f) * 2.0f);
+        // gate weave: the frame and picture jitter together, a few pixels per
+        // frame, with an occasional bigger jump
+        float j1 = (glx_hash1(seed + 0.31f) - 0.5f) * 2.0f;
+        float j2 = (glx_hash1(seed + 0.77f) - 0.5f) * 2.0f;
+        j1 = 0.7f * j1 + 0.3f * j1 * j1 * j1;
+        j2 = 0.7f * j2 + 0.3f * j2 * j2 * j2;
+        float jump = (glx_hash1(seed + 9.13f) > 0.9f) ? 1.8f : 1.0f;
+        float wx = ui_motion * 0.0065f * j1 * jump;
+        float wy = ui_motion * 0.0050f * j2 * jump;
 
         // picture window, in frame-height units, centre origin
         float hv = 0.5f * 0.840f * ui_size;
@@ -125,6 +132,8 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
         float qx = _fabs(u) - hu, qy = _fabs(v) - hv;
         float along = (qx > qy) ? (v * 6.0f + (u > 0.0f ? 31.0f : 0.0f)) : (u * 6.0f + 57.0f + (v > 0.0f ? 83.0f : 0.0f));
         dWin += glx_gateEdge(along, ui_rough * 0.30f * 2.0f, ui_rough * 0.10f * 2.0f);
+        // edge boil: the edge shimmers a little from frame to frame
+        dWin += ui_motion * 0.0016f * (glx_noise1(along * 14.0f + seed * 3.17f) - 0.5f) * 2.0f;
 
         float edgeW = 0.8f * pxu + 0.0045f * ui_soft;
         float winCov = glx_smooth(edgeW, -edgeW, dWin);
@@ -150,6 +159,9 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
         // gentle shade just inside the gate edge
         float depth = _fmaxf(-dWin, 0.0f);
         pic = glx_scale3(pic, 1.0f - ui_shade * 0.38f * _expf(-depth / 0.010f) - ui_shade * 0.10f * _expf(-depth / 0.05f));
+
+        // a very slight exposure flicker, like a projector
+        pic = glx_scale3(pic, 1.0f + ui_motion * 0.03f * (glx_hash1(seed + 5.5f) - 0.5f) * 2.0f);
 
         // black surround with a faint glow of the picture right at the edge
         float rim = 0.12f * _expf(-_fmaxf(dWin, 0.0f) / 0.0025f);

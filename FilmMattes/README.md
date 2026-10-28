@@ -23,7 +23,9 @@ Two of them also have a dark perforation with a thin amber rim.
 - **Edge Softness:** how sharp the gate edge is.
 - **Edge Roughness:** how wavy and notched the edge is. At 0 the edge is clean.
 - **Edge Shade:** the slight darkening just inside the edge.
-- **Gate Weave:** a tiny frame-to-frame jitter. It follows your footage automatically.
+- **Film Motion:** makes the matte move like real film. The frame and picture jitter a few pixels each
+  frame (gate weave), the edge shimmers slightly (edge boil) and the exposure flickers very slightly.
+  It changes every frame on its own, driven by your footage. On a still image it stays put.
 - **Perforation:** on or off (Super 8 and 16mm only).
 - **Opacity:** fades the matte. At 0 the picture is untouched.
 
