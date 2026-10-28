@@ -1,0 +1,279 @@
+#!/usr/bin/env python3
+"""Builds the Gradelux Film Mattes pack: small, standalone matte DCTLs.
+
+Look: pure black surround, the picture inside a slightly rounded frame with an
+organic, slightly uneven gate edge, a gentle shade just inside the edge and,
+on some mattes, a dark perforation with a thin amber rim.
+
+Each file is self-contained, so it can be dropped into the Resolve LUT folder
+on its own. All of them are written in the plain style Resolve accepted in
+testing: controls named ui_..., plain labels, no quote characters outside the
+control lines, footage read only inside transform(), one return at the end.
+
+Usage: python3 tools/filmborders/build.py   (writes FilmMattes/*.dctl)
+"""
+import os
+
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+OUT = os.path.join(ROOT, 'FilmMattes')
+
+# name, title, description, settings
+# aspect: picture width / height. height: picture height / frame height.
+# radius: corner radius (fraction of picture height). wobble/nicks: edge character.
+# perf: 0 none, 1 right side middle, 2 left side at the frame line.
+MATTES = [
+    ('Gradelux_Matte_01_Super8', 'Super 8',
+     'Super 8 frame with rounded corners, a soft uneven gate and a perforation on the right.',
+     dict(aspect=1.36, height=0.80, radius=0.075, wobble=0.55, nicks=0.35, soft=0.35, shade=0.45, perf=1)),
+    ('Gradelux_Matte_02_Wide', 'Wide',
+     'Wide 1.85 frame that fills most of the screen, small corners, gently uneven edges.',
+     dict(aspect=1.85, height=0.80, radius=0.030, wobble=0.35, nicks=0.15, soft=0.30, shade=0.40, perf=0)),
+    ('Gradelux_Matte_03_Portrait', 'Portrait',
+     'Tall, almost square frame for vertical subjects, softly rounded corners.',
+     dict(aspect=0.92, height=0.84, radius=0.040, wobble=0.40, nicks=0.20, soft=0.30, shade=0.45, perf=0)),
+    ('Gradelux_Matte_04_16mm', '16mm',
+     '16mm frame with a perforation at the top left frame line.',
+     dict(aspect=1.37, height=0.82, radius=0.045, wobble=0.40, nicks=0.25, soft=0.30, shade=0.40, perf=2)),
+    ('Gradelux_Matte_05_Scope', 'Scope',
+     'Anamorphic 2.39 frame with slightly rounded corners, like a projection matte.',
+     dict(aspect=2.39, height=0.64, radius=0.035, wobble=0.30, nicks=0.10, soft=0.40, shade=0.35, perf=0)),
+    ('Gradelux_Matte_06_Rough', 'Rough Gate',
+     '35mm 3:2 frame cut by a hand-filed gate: wavy edges and small notches.',
+     dict(aspect=1.50, height=0.80, radius=0.030, wobble=1.00, nicks=0.90, soft=0.30, shade=0.50, perf=0)),
+    ('Gradelux_Matte_07_Academy', 'Academy',
+     'Academy 1.37 frame, softer edge and rounder corners, like a projected print.',
+     dict(aspect=1.37, height=0.84, radius=0.090, wobble=0.30, nicks=0.10, soft=0.60, shade=0.55, perf=0)),
+    ('Gradelux_Matte_08_Super16', 'Super 16',
+     'Super 16 frame at 1.66, crisp edges with a light wobble.',
+     dict(aspect=1.66, height=0.82, radius=0.035, wobble=0.30, nicks=0.15, soft=0.20, shade=0.35, perf=0)),
+]
+
+COMMON = r'''
+// -----------------------------------------------------------------------------
+//  Helpers
+// -----------------------------------------------------------------------------
+
+__DEVICE__ float glx_floor(float x)
+{
+    x = _fminf(_fmaxf(x, -16777216.0f), 16777216.0f);
+    float t = (float)((int)x);
+    return (t > x) ? t - 1.0f : t;
+}
+__DEVICE__ float glx_fract(float x) { return x - glx_floor(x); }
+__DEVICE__ float glx_clamp(float x, float a, float b) { return _fminf(_fmaxf(x, a), b); }
+__DEVICE__ float glx_sat(float x) { return glx_clamp(x, 0.0f, 1.0f); }
+__DEVICE__ float glx_mix(float a, float b, float t) { return a + (b - a) * t; }
+__DEVICE__ int glx_clampi(int x, int a, int b) { return x < a ? a : (x > b ? b : x); }
+__DEVICE__ float glx_smooth(float e0, float e1, float x)
+{
+    float t = glx_sat((x - e0) / (e1 - e0));
+    return t * t * (3.0f - 2.0f * t);
+}
+__DEVICE__ float3 glx_mix3(float3 a, float3 b, float t)
+{
+    return make_float3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t);
+}
+__DEVICE__ float3 glx_scale3(float3 a, float s) { return make_float3(a.x * s, a.y * s, a.z * s); }
+__DEVICE__ float3 glx_add3(float3 a, float3 b) { return make_float3(a.x + b.x, a.y + b.y, a.z + b.z); }
+
+__DEVICE__ float glx_hash1(float p)
+{
+    p = glx_fract(p * 0.1031f);
+    p *= p + 33.33f;
+    p *= p + p;
+    return glx_fract(p);
+}
+__DEVICE__ float glx_noise1(float x)
+{
+    float i = glx_floor(x);
+    float f = x - i;
+    f = f * f * (3.0f - 2.0f * f);
+    return glx_mix(glx_hash1(i), glx_hash1(i + 1.0f), f);
+}
+
+// Signed distance to a rounded box centred at the origin (negative inside).
+__DEVICE__ float glx_sdBox(float px, float py, float bx, float by, float r)
+{
+    r = _fmaxf(_fminf(r, _fminf(bx, by)), 0.0f);
+    float qx = _fabs(px) - bx + r;
+    float qy = _fabs(py) - by + r;
+    float ox = _fmaxf(qx, 0.0f);
+    float oy = _fmaxf(qy, 0.0f);
+    return _sqrtf(ox * ox + oy * oy) + _fminf(_fmaxf(qx, qy), 0.0f) - r;
+}
+
+// Uneven gate edge. along runs around the frame; returns how far the edge
+// moves inward (positive) at this point.
+__DEVICE__ float glx_gateEdge(float along, float wobble, float nicks)
+{
+    float slow = glx_noise1(along * 1.3f) - 0.5f;
+    float mid = glx_noise1(along * 4.1f + 17.0f) - 0.5f;
+    float fine = glx_noise1(along * 23.0f + 5.0f) - 0.5f;
+    float edge = wobble * (0.0050f * slow + 0.0022f * mid + 0.0007f * fine);
+    // occasional small notches cut into the picture
+    float n = glx_smooth(0.80f, 0.93f, glx_noise1(along * 2.7f + 41.0f));
+    return edge + nicks * 0.0060f * n;
+}
+'''
+
+TRANSFORM = r'''
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+    float3 src = make_float3(_tex2D(p_TexR, p_X, p_Y), _tex2D(p_TexG, p_X, p_Y), _tex2D(p_TexB, p_X, p_Y));
+    float3 col = src;
+
+    if (ui_mix > 0.0f) {
+        float W = (float)p_Width, H = (float)p_Height;
+        float aspect = W / H;
+        float pxu = 1.0f / H;                      // one pixel, in frame-height units
+
+        // per-frame random seed from a few footage pixels (drives the weave)
+        float seed = 0.0f;
+        if (ui_weave > 0.0f) {
+            float acc = 0.0f;
+            for (int i = 0; i < 6; i++) {
+                float fi = (float)i;
+                int sx0 = glx_clampi((int)((0.1f + 0.8f * glx_hash1(fi * 1.7f + 0.3f)) * W), 0, p_Width - 1);
+                int sy0 = glx_clampi((int)((0.1f + 0.8f * glx_hash1(fi * 2.9f + 0.7f)) * H), 0, p_Height - 1);
+                float sv = _tex2D(p_TexG, sx0, sy0) + 0.37f * _tex2D(p_TexR, sx0, sy0) + 0.21f * _tex2D(p_TexB, sx0, sy0);
+                acc = glx_fract(acc * 1.618f + glx_fract(sv * 917.13f) + fi * 0.0731f);
+            }
+            seed = glx_floor(glx_hash1(acc * 1000.0f + 0.5f) * 997.0f);
+        }
+        float wx = ui_weave * 0.0030f * ((glx_hash1(seed + 0.31f) - 0.5f) * 2.0f);
+        float wy = ui_weave * 0.0024f * ((glx_hash1(seed + 0.77f) - 0.5f) * 2.0f);
+
+        // picture window, in frame-height units, centre origin
+        float hv = 0.5f * PIC_HEIGHT * ui_size;
+        float hu = hv * PIC_ASPECT;
+        float maxU = 0.5f * aspect - 0.04f;
+        if (hu > maxU) { hv = hv * maxU / hu; hu = maxU; }
+        float u = ((float)p_X + 0.5f - 0.5f * W) / H - wx;
+        float v = ((float)p_Y + 0.5f - 0.5f * H) / H - wy;
+
+        // each corner is rounded a little differently, like a real gate
+        float ci = (u > 0.0f ? 1.0f : 0.0f) + (v > 0.0f ? 2.0f : 0.0f);
+        float rad = 2.0f * hv * CORNER * (0.8f + 0.4f * glx_hash1(ci * 3.7f + 1.3f));
+        float dWin = glx_sdBox(u, v, hu, hv, rad);
+
+        // uneven gate edge: a coordinate running around the frame
+        float qx = _fabs(u) - hu, qy = _fabs(v) - hv;
+        float along = (qx > qy) ? (v * 6.0f + (u > 0.0f ? 31.0f : 0.0f)) : (u * 6.0f + 57.0f + (v > 0.0f ? 83.0f : 0.0f));
+        dWin += glx_gateEdge(along, ui_rough * WOBBLE * 2.0f, ui_rough * NICKS * 2.0f);
+
+        float edgeW = 0.8f * pxu + 0.0045f * ui_soft;
+        float winCov = glx_smooth(edgeW, -edgeW, dWin);
+
+        // the picture: footage scaled to fill the window
+        float3 pic = make_float3(0.0f, 0.0f, 0.0f);
+        if (winCov > 0.0f || dWin < 0.01f) {
+            float s = _fmaxf(2.0f * hu * H / W, 2.0f * hv);
+            float qu = glx_clamp(u, -hu, hu), qv = glx_clamp(v, -hv, hv);
+            float bx = glx_clamp(0.5f * W + qu * H / s - 0.5f, 0.0f, W - 1.0f);
+            float by = glx_clamp(0.5f * H + qv * H / s - 0.5f, 0.0f, H - 1.0f);
+            float bx0 = glx_floor(bx), by0 = glx_floor(by);
+            float tx = bx - bx0, ty = by - by0;
+            int x0 = glx_clampi((int)bx0, 0, p_Width - 1), x1 = glx_clampi((int)bx0 + 1, 0, p_Width - 1);
+            int y0 = glx_clampi((int)by0, 0, p_Height - 1), y1 = glx_clampi((int)by0 + 1, 0, p_Height - 1);
+            float3 a = make_float3(_tex2D(p_TexR, x0, y0), _tex2D(p_TexG, x0, y0), _tex2D(p_TexB, x0, y0));
+            float3 b = make_float3(_tex2D(p_TexR, x1, y0), _tex2D(p_TexG, x1, y0), _tex2D(p_TexB, x1, y0));
+            float3 c = make_float3(_tex2D(p_TexR, x0, y1), _tex2D(p_TexG, x0, y1), _tex2D(p_TexB, x0, y1));
+            float3 d = make_float3(_tex2D(p_TexR, x1, y1), _tex2D(p_TexG, x1, y1), _tex2D(p_TexB, x1, y1));
+            pic = glx_mix3(glx_mix3(a, b, tx), glx_mix3(c, d, tx), ty);
+        }
+
+        // gentle shade just inside the gate edge
+        float depth = _fmaxf(-dWin, 0.0f);
+        pic = glx_scale3(pic, 1.0f - ui_shade * 0.38f * _expf(-depth / 0.010f) - ui_shade * 0.10f * _expf(-depth / 0.05f));
+
+        // black surround with a faint glow of the picture right at the edge
+        float rim = 0.12f * _expf(-_fmaxf(dWin, 0.0f) / 0.0025f);
+        float3 border = glx_scale3(pic, rim);
+PERF_CODE
+        col = glx_mix3(border, pic, winCov);
+        col = glx_mix3(src, col, ui_mix);
+    }
+
+    return col;
+}
+'''
+
+# Perforation: a dark rounded hole with a thin amber rim of light around it.
+PERF = r'''
+        if (ui_perf != 0) {
+            float pw = 0.060f, ph = 0.080f;
+            float pcx = PERF_X, pcy = PERF_Y;
+            float dp = glx_sdBox(u - pcx, v - pcy, pw, ph, 0.022f);
+            float pa = (u - pcx) * 11.0f + (v - pcy) * 7.0f;
+            dp += glx_gateEdge(pa + 7.0f, 0.6f, 0.0f) * 0.5f;
+            // the rim of light is uneven: brighter on some sides than others
+            float lit = 0.55f + 0.45f * glx_noise1(pa * 0.8f + 3.0f);
+            float ring = _fabs(dp) - 0.0010f;
+            float rimC = glx_smooth(1.6f * pxu, -1.6f * pxu, ring) * lit;
+            float rimG = 0.30f * lit * _expf(-_fmaxf(ring, 0.0f) / 0.0040f);
+            float3 amber = make_float3(0.92f, 0.58f, 0.18f);
+            float inHole = glx_smooth(pxu, -pxu, dp);
+            border = glx_scale3(border, 1.0f - inHole);
+            border = glx_add3(border, glx_scale3(amber, rimG));
+            border = glx_mix3(border, amber, rimC * 0.75f);
+        }
+'''
+
+
+def control_lines(m):
+    lines = [
+        'DEFINE_UI_PARAMS(ui_size, Matte Size, DCTLUI_SLIDER_FLOAT, 1.0, 0.85, 1.15, 0.01)',
+        'DEFINE_UI_PARAMS(ui_soft, Edge Softness, DCTLUI_SLIDER_FLOAT, %.2f, 0.0, 1.0, 0.01)' % m['soft'],
+        'DEFINE_UI_PARAMS(ui_rough, Edge Roughness, DCTLUI_SLIDER_FLOAT, 0.5, 0.0, 1.0, 0.01)',
+        'DEFINE_UI_PARAMS(ui_shade, Edge Shade, DCTLUI_SLIDER_FLOAT, %.2f, 0.0, 1.0, 0.01)' % m['shade'],
+        'DEFINE_UI_PARAMS(ui_weave, Gate Weave, DCTLUI_SLIDER_FLOAT, 0.2, 0.0, 1.0, 0.01)',
+    ]
+    if m['perf']:
+        lines.append('DEFINE_UI_PARAMS(ui_perf, Perforation, DCTLUI_CHECK_BOX, 1)')
+    lines.append('DEFINE_UI_PARAMS(ui_mix, Opacity, DCTLUI_SLIDER_FLOAT, 1.0, 0.0, 1.0, 0.01)')
+    return '\n'.join(lines)
+
+
+def wrap(text, width):
+    words, lines, cur = text.split(), [], ''
+    for w in words:
+        if cur and len(cur) + len(w) + 1 > width:
+            lines.append(cur); cur = w
+        else:
+            cur = (cur + ' ' + w).strip()
+    lines.append(cur)
+    return lines
+
+
+def build():
+    os.makedirs(OUT, exist_ok=True)
+    paths = []
+    for name, title, desc, m in MATTES:
+        perf = ''
+        if m['perf'] == 1:     # right side, middle of the frame
+            perf = PERF.replace('PERF_X', '(hu + pw - 0.004f)').replace('PERF_Y', '0.0f')
+        elif m['perf'] == 2:   # left side, at the top frame line
+            perf = PERF.replace('PERF_X', '(-hu - pw + 0.004f)').replace('PERF_Y', '(-hv + 0.13f)')
+        body = TRANSFORM.replace('PERF_CODE\n', perf)
+        body = body.replace('PIC_HEIGHT', '%.3ff' % m['height']).replace('PIC_ASPECT', '%.3ff' % m['aspect'])
+        body = body.replace('CORNER', '%.3ff' % m['radius']).replace('WOBBLE', '%.2ff' % m['wobble'])
+        body = body.replace('NICKS', '%.2ff' % m['nicks'])
+        head = '// =============================================================================\n'
+        head += '//  GRADELUX FILM MATTES - %s\n' % title.upper()
+        head += '// =============================================================================\n//\n'
+        for line in wrap(desc, 74):
+            head += '//  %s\n' % line
+        head += '//\n//  Put it on the last node, after your output conversion to Rec.709.\n'
+        head += '//  Opacity fades the matte in and out. At 0 the picture is untouched.\n'
+        head += '// =============================================================================\n\n'
+        src = head + control_lines(m) + '\n' + COMMON + body
+        path = os.path.join(OUT, name + '.dctl')
+        open(path, 'w').write(src)
+        paths.append(path)
+        print('wrote', os.path.relpath(path, ROOT))
+    return paths
+
+
+
+if __name__ == '__main__':
+    build()
