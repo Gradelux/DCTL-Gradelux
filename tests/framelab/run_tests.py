@@ -112,10 +112,35 @@ def random_params(rng):
         p[k] = int(rng.integers(lo, hi + 1)) if kind == 'i' else float(rng.uniform(lo, hi))
     return p
 
+def lint(path):
+    """Text rules that keep simple parsers in Resolve happy. Returns problems."""
+    raw = open(path, 'rb').read()
+    probs = []
+    if b'\r' in raw: probs.append('Windows line endings')
+    if any(c > 127 for c in raw): probs.append('non-ASCII characters')
+    text = raw.decode('ascii', 'replace')
+    names = re.findall(r'^DEFINE_UI_PARAMS\(([A-Za-z0-9_]+)', text, flags=re.M)
+    body = '\n'.join(l for l in text.split('\n') if not l.startswith('DEFINE_UI_PARAMS'))
+    for n, line in enumerate(text.split('\n'), 1):
+        if line.startswith('DEFINE_UI_PARAMS'):
+            if line.count('(') != 1 or line.count(')') != 1 or "'" in line:
+                probs.append('line %d: brackets or apostrophe inside a control line' % n)
+        elif "'" in line or '"' in line:
+            probs.append('line %d: quote character outside control lines' % n)
+    for nm in names:   # a control name used as a struct field or local variable
+        if re.search(r'(\.|->)%s\b|\b(int|float|float3)\s+%s\b' % (nm, nm), body):
+            probs.append('control name %s reused inside the code' % nm)
+    if body.count('transform') != 1: probs.append('the word transform must appear exactly once')
+    return probs
+
 def main():
     build()
     rng = np.random.default_rng(7)
     fails = 0
+
+    probs = lint(DCTL)
+    print('Resolve text rules: %s' % ('OK' if not probs else 'FAIL ' + '; '.join(probs)))
+    fails += bool(probs)
 
     # 1. pass-through
     img = scene(320, 180)

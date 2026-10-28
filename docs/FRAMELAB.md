@@ -133,22 +133,26 @@ the animation seed. When no damage effect is on, it skips the seed reads entirel
 
 ## Fixes
 
-Resolve rejected v2 three times with "main DCTL function's return value must be float3 to
-represent RGB". Resolve shows that message when the code fails to compile. The fixes:
+Resolve rejected v2 four times with "main DCTL function's return value must be float3 to
+represent RGB". On the Blackmagic forum, a single missing semicolon produced the same message.
+So it means Resolve could not read the file, not that the return value is wrong. Changes so far:
 
-1. **Control names reused inside the code (most likely cause).** v2 used 13 control names,
-   such as `leakPos` and `dateOn`, as internal field names too. If Resolve substitutes control
-   names as text, those fields break. Every v2 control is now named `ui_...`, so no name
-   can clash. The labels in Resolve are unchanged. v1 never had this problem.
-2. A local variable was named `half`, which is a reserved type in Metal and OpenCL. It is renamed.
-3. Footage is read only inside the main function.
+1. **Dropdown labels with brackets or apostrophes** ("Custom (Use Sliders)", "'YY M D").
+   If Resolve reads control lines with a simple pattern, a bracket inside a label ends the line
+   early and leaves broken code behind. The labels are now plain words: "Custom",
+   "Year Month Day" and so on.
+2. **Quote characters in comments** (glyph's, o'clock) are removed, in case Resolve's scanner
+   reads them as text literals.
+3. **Control names reused inside the code.** Every v2 control is now named `ui_...`.
+4. A variable named `half` (reserved in Metal and OpenCL) is renamed, `float2` is no longer
+   used, and footage is read only inside the main function.
 
-Output is bit-identical to before (200 random settings checked for each version).
-`tests/framelab/build_cl.py` now compiles the DCTL as OpenCL, with every control turned into a
-text macro, so this kind of problem is caught before release.
+Output is bit-identical to before (200 random settings checked for each version). The tests now
+enforce all of these rules (`Resolve text rules` in `run_tests.py`).
 
-If Resolve still refuses it, load `tests/framelab/Gradelux_Resolve_Check.dctl`. It is a tiny DCTL
-of the same type, and it shows whether Resolve accepts this kind of DCTL at all.
+If Resolve still refuses it, load the three check files in `tests/framelab/`:
+`Gradelux_Check_A_Basic`, `Gradelux_Check_B_Struct` and `Gradelux_Check_C_Features`. Each one
+tests one group of DCTL features, so the one that fails shows what Resolve rejects.
 
 ## Not yet tested in Resolve
 

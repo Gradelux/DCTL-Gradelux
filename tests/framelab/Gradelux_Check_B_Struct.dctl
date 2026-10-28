@@ -1,6 +1,6 @@
-// Gradelux Resolve Check
-// A tiny test: if this loads, Resolve accepts DCTLs that read neighbouring
-// pixels (the kind FrameLab is). It draws a gold border around the picture.
+// Gradelux Check B: dropdown + struct
+// Tests a dropdown and a helper that returns a struct.
+// Draws a gold or red border around the picture.
 
 DEFINE_UI_PARAMS(ui_border, Border Size, DCTLUI_SLIDER_FLOAT, 0.05, 0.0, 0.2, 0.01)
 DEFINE_UI_PARAMS(ui_style, Border Color, DCTLUI_COMBO_BOX, 0, { CHK_GOLD, CHK_RED }, { "Gold", "Red" })

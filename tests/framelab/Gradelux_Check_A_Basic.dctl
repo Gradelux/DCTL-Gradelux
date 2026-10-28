@@ -1,0 +1,16 @@
+// Gradelux Check A: the most basic pixel-reading DCTL.
+// Draws a gold border around the picture.
+
+DEFINE_UI_PARAMS(ui_border, Border Size, DCTLUI_SLIDER_FLOAT, 0.05, 0.0, 0.2, 0.01)
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+    float m = ui_border * (float)p_Height;
+    float x = (float)p_X;
+    float y = (float)p_Y;
+    float3 c = make_float3(_tex2D(p_TexR, p_X, p_Y), _tex2D(p_TexG, p_X, p_Y), _tex2D(p_TexB, p_X, p_Y));
+    if (x < m || y < m || x > (float)p_Width - m || y > (float)p_Height - m) {
+        c = make_float3(0.95f, 0.75f, 0.30f);
+    }
+    return c;
+}

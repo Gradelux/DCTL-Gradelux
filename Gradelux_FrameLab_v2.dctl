@@ -4,7 +4,7 @@
 // =============================================================================
 //
 //  Presets: pick one for a finished look in one click, or choose
-//  "Custom (Use Sliders)" to build your own with the sliders below.
+//  Custom to build your own with the sliders below.
 //  While a preset is active, it sets the frame, film and damage controls.
 //  These sliders always stay yours: Frame Size, Film Roll, Rotation,
 //  Picture Zoom / Pan, Film Burn, the date values, the countdown leader and
@@ -29,7 +29,7 @@
 //  This is a spatial effect: it cannot be exported as a 3D LUT.
 // =============================================================================
 
-DEFINE_UI_PARAMS(ui_preset, Preset, DCTLUI_COMBO_BOX, 0, { PR_CUSTOM, PR_HOME, PR_SLIDESHOW, PR_NEGSCAN, PR_CINEMA, PR_SILENT, PR_DOC16, PR_INSTANT, PR_CONTACT, PR_DAMAGED, PR_VINTAGE, PR_INDIE16, PR_REEL8 }, { "Custom (Use Sliders)", "Home Movie", "Slide Show", "Negative Scan", "Cinema Print", "Silent Era Projector", "16mm Documentary", "Instant Memory", "Contact Sheet", "Damaged Reel", "Vintage Print", "Super 16 Indie", "Regular 8 Reel" })
+DEFINE_UI_PARAMS(ui_preset, Preset, DCTLUI_COMBO_BOX, 0, { PR_CUSTOM, PR_HOME, PR_SLIDESHOW, PR_NEGSCAN, PR_CINEMA, PR_SILENT, PR_DOC16, PR_INSTANT, PR_CONTACT, PR_DAMAGED, PR_VINTAGE, PR_INDIE16, PR_REEL8 }, { "Custom", "Home Movie", "Slide Show", "Negative Scan", "Cinema Print", "Silent Era Projector", "16mm Documentary", "Instant Memory", "Contact Sheet", "Damaged Reel", "Vintage Print", "Super 16 Indie", "Regular 8 Reel" })
 DEFINE_UI_PARAMS(ui_frameStyle, Frame Style, DCTLUI_COMBO_BOX, 1, { FS_NONE, FS_SUPER8, FS_REGULAR8, FS_16MM, FS_SUPER16, FS_35MP, FS_35STILL, FS_CONTACT, FS_120, FS_INSTANT, FS_VINTAGE, FS_SLIDE, FS_FILED, FS_PROJECTOR }, { "None", "Super 8", "Regular 8", "16mm", "Super 16", "35mm Motion Picture", "35mm Still Strip", "Contact Sheet", "120 Medium Format", "Instant Print", "Vintage Print", "Slide Mount", "Filed Gate", "Projector Gate" })
 DEFINE_UI_PARAMS(ui_filmBase, Film Base, DCTLUI_COMBO_BOX, 0, { FB_BLACK, FB_ORANGE, FB_CLEAR, FB_BROWN }, { "Black Reversal", "Orange Negative", "Clear", "Aged Brown" })
 DEFINE_UI_PARAMS(ui_background, Background, DCTLUI_COMBO_BOX, 0, { BG_BLACK, BG_CHARCOAL, BG_LIGHTTABLE, BG_PAPER }, { "Black", "Charcoal", "Light Table", "White Paper" })
@@ -61,7 +61,7 @@ DEFINE_UI_PARAMS(ui_burnPos, Burn Position, DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0,
 DEFINE_UI_PARAMS(ui_cueMarks, Cue Marks, DCTLUI_CHECK_BOX, 0)
 DEFINE_UI_PARAMS(ui_greasePencil, Grease Pencil Mark, DCTLUI_CHECK_BOX, 0)
 DEFINE_UI_PARAMS(ui_dateOn, Date Stamp, DCTLUI_CHECK_BOX, 0)
-DEFINE_UI_PARAMS(ui_dateFmt, Date Format, DCTLUI_COMBO_BOX, 0, { DF_YMD, DF_MDY, DF_DMY }, { "'YY M D", "M D 'YY", "D M 'YY" })
+DEFINE_UI_PARAMS(ui_dateFmt, Date Format, DCTLUI_COMBO_BOX, 0, { DF_YMD, DF_MDY, DF_DMY }, { "Year Month Day", "Month Day Year", "Day Month Year" })
 DEFINE_UI_PARAMS(ui_dateYear, Year, DCTLUI_SLIDER_INT, 98, 0, 99, 1)
 DEFINE_UI_PARAMS(ui_dateMonth, Month, DCTLUI_SLIDER_INT, 7, 1, 12, 1)
 DEFINE_UI_PARAMS(ui_dateDay, Day, DCTLUI_SLIDER_INT, 14, 1, 31, 1)
@@ -383,7 +383,7 @@ __DEVICE__ int glx_glyphBit(int code, int row, int col)
     return (GLX_FONT[code * 7 + row] >> (4 - col)) & 1;
 }
 
-// Strings: 0 "GRADELUX > NN", 1 "SAFETY FILM > NN", 2 "> NN", 3 "GRADELUX"
+// Strings: 0 GRADELUX > NN, 1 SAFETY FILM > NN, 2 > NN, 3 GRADELUX
 __DEVICE__ int glx_strLen(int s)
 {
     if (s == 0) return 13;
@@ -456,7 +456,7 @@ __DEVICE__ float glx_text(float along, float fromTop, float h, int s, int num, f
     return glx_cov(d, pxu);
 }
 
-// One large solid glyph (countdown number). x, y from the glyph's top-left.
+// One large solid glyph (countdown number). x, y from the glyph top-left.
 __DEVICE__ float glx_bigGlyph(float x, float y, float unit, int code, float pxu)
 {
     float best = 0.0f;
@@ -516,7 +516,7 @@ __DEVICE__ int glx_dateCode(int fmt, int slot, int yy, int mm, int dd)
     int y1 = (yy / 10) % 10, y0 = yy % 10;
     int m1 = (mm >= 10) ? 1 : 10, m0 = mm % 10;
     int d1 = (dd >= 10) ? (dd / 10) : 10, d0 = dd % 10;
-    if (fmt == 0) {   // 'YY M D
+    if (fmt == 0) {   // YY M D
         if (slot == 0) return 11;
         if (slot == 1) return y1;
         if (slot == 2) return y0;
@@ -587,7 +587,7 @@ __DEVICE__ float3 glx_leader(float u, float v, float hv, int number, float sweep
     float x = u / s, y = v / s;
     float px = pxu / s;
     float r = _sqrtf(x * x + y * y);
-    float ang = _atan2f(x, -y);     // 0 at 12 o'clock, clockwise
+    float ang = _atan2f(x, -y);     // 0 at 12 o clock, clockwise
     float a01 = glx_fract(ang / (2.0f * GLX_PI) + 1.0f);
     float shade = (a01 < sweep) ? 0.70f : 0.50f;
     float3 col = glx_rgb(shade, shade * 0.985f, shade * 0.96f);
@@ -608,7 +608,7 @@ __DEVICE__ float3 glx_leader(float u, float v, float hv, int number, float sweep
 // -----------------------------------------------------------------------------
 
 // Returns (dark coverage, light coverage).
-__DEVICE__ float2 glx_dust(float sx, float sy, float seed, float amt, float pxu)
+__DEVICE__ float3 glx_dust(float sx, float sy, float seed, float amt, float pxu)
 {
     float dark = 0.0f, light = 0.0f;
     float cell = 0.045f;
@@ -655,11 +655,11 @@ __DEVICE__ float2 glx_dust(float sx, float sy, float seed, float amt, float pxu)
             dark = _fmaxf(dark, glx_cov(d, pxu * 1.2f) * 0.85f);
         }
     }
-    return make_float2(dark, light);
+    return make_float3(dark, light, 0.0f);
 }
 
 // Scratches run along sy. lo/hi: range of sx. Returns (bright, dark).
-__DEVICE__ float2 glx_scratches(float sx, float sy, float lo, float hi, float seed, float slow, float amt, float pxu)
+__DEVICE__ float3 glx_scratches(float sx, float sy, float lo, float hi, float seed, float slow, float amt, float pxu)
 {
     float bright = 0.0f, dark = 0.0f;
     for (int i = 0; i < 5; i++) {
@@ -676,7 +676,7 @@ __DEVICE__ float2 glx_scratches(float sx, float sy, float lo, float hi, float se
         if (glx_hash1(fi * 7.7f + slow * 0.01f) < 0.7f) bright = _fmaxf(bright, c);
         else dark = _fmaxf(dark, c);
     }
-    return make_float2(bright, dark);
+    return make_float3(bright, dark, 0.0f);
 }
 
 // A hair caught in the gate, entering from the bottom-left of the picture.
@@ -1138,7 +1138,7 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
         col = glx_scale3(col, 1.0f - 0.45f * (1.0f - glx_smooth(-0.02f, 0.07f, shD)));
         float cardD = glx_sdBox(X, Y, cw, ch, (kind == LK_INSTANT) ? 0.012f : 0.0f);
         if (kind == LK_DECKLE) {
-            // scalloped "deckle" edge
+            // scalloped deckle edge
             float qx = _fabs(X) - cw, qy = _fabs(Y) - ch;
             float along = (qx > qy) ? Y : X;
             cardD += 0.010f * (0.5f + 0.5f * _cosf(along * 2.0f * GLX_PI / 0.05f));
@@ -1262,12 +1262,12 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     // ---- Film damage, light and flicker -------------------------------------
     if (filmCov > 0.0f) {
         if (cfg.dust > 0.0f) {
-            float2 dd = glx_dust(sx, sy, seed, cfg.dust, pxu);
+            float3 dd = glx_dust(sx, sy, seed, cfg.dust, pxu);
             col = glx_mix3(col, glx_rgb(0.025f, 0.022f, 0.02f), dd.x * filmCov);
             col = glx_mix3(col, glx_rgb(0.95f, 0.95f, 0.92f), dd.y * filmCov * 0.85f);
         }
         if (cfg.scratch > 0.0f) {
-            float2 sc = glx_scratches(sx, sy, sLo, sHi, seed, slow, cfg.scratch, pxu);
+            float3 sc = glx_scratches(sx, sy, sLo, sHi, seed, slow, cfg.scratch, pxu);
             col = glx_screen3(col, glx_scale3(glx_rgb(0.95f, 0.97f, 1.0f), sc.x * 0.8f * filmCov));
             col = glx_mix3(col, glx_rgb(0.05f, 0.05f, 0.05f), sc.y * 0.6f * filmCov);
         }
