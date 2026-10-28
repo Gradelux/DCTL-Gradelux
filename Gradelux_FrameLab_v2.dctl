@@ -29,49 +29,49 @@
 //  This is a spatial effect: it cannot be exported as a 3D LUT.
 // =============================================================================
 
-DEFINE_UI_PARAMS(preset, Preset, DCTLUI_COMBO_BOX, 0, { PR_CUSTOM, PR_HOME, PR_SLIDESHOW, PR_NEGSCAN, PR_CINEMA, PR_SILENT, PR_DOC16, PR_INSTANT, PR_CONTACT, PR_DAMAGED, PR_VINTAGE, PR_INDIE16, PR_REEL8 }, { "Custom (Use Sliders)", "Home Movie", "Slide Show", "Negative Scan", "Cinema Print", "Silent Era Projector", "16mm Documentary", "Instant Memory", "Contact Sheet", "Damaged Reel", "Vintage Print", "Super 16 Indie", "Regular 8 Reel" })
-DEFINE_UI_PARAMS(frameStyle, Frame Style, DCTLUI_COMBO_BOX, 1, { FS_NONE, FS_SUPER8, FS_REGULAR8, FS_16MM, FS_SUPER16, FS_35MP, FS_35STILL, FS_CONTACT, FS_120, FS_INSTANT, FS_VINTAGE, FS_SLIDE, FS_FILED, FS_PROJECTOR }, { "None", "Super 8", "Regular 8", "16mm", "Super 16", "35mm Motion Picture", "35mm Still Strip", "Contact Sheet", "120 Medium Format", "Instant Print", "Vintage Print", "Slide Mount", "Filed Gate", "Projector Gate" })
-DEFINE_UI_PARAMS(filmBase, Film Base, DCTLUI_COMBO_BOX, 0, { FB_BLACK, FB_ORANGE, FB_CLEAR, FB_BROWN }, { "Black Reversal", "Orange Negative", "Clear", "Aged Brown" })
-DEFINE_UI_PARAMS(background, Background, DCTLUI_COMBO_BOX, 0, { BG_BLACK, BG_CHARCOAL, BG_LIGHTTABLE, BG_PAPER }, { "Black", "Charcoal", "Light Table", "White Paper" })
-DEFINE_UI_PARAMS(frameSize, Frame Size, DCTLUI_SLIDER_FLOAT, 1.0, 0.5, 1.5, 0.01)
-DEFINE_UI_PARAMS(filmRoll, Film Roll, DCTLUI_SLIDER_FLOAT, 0.0, -10.0, 10.0, 0.01)
-DEFINE_UI_PARAMS(rotation, Rotation, DCTLUI_SLIDER_FLOAT, 0.0, -20.0, 20.0, 0.1)
-DEFINE_UI_PARAMS(picZoom, Picture Zoom, DCTLUI_SLIDER_FLOAT, 1.0, 1.0, 2.0, 0.01)
-DEFINE_UI_PARAMS(picPanX, Picture Pan X, DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.01)
-DEFINE_UI_PARAMS(picPanY, Picture Pan Y, DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.01)
-DEFINE_UI_PARAMS(cornerRound, Corner Roundness, DCTLUI_SLIDER_FLOAT, 1.0, 0.0, 2.0, 0.01)
-DEFINE_UI_PARAMS(gateSoft, Gate Softness, DCTLUI_SLIDER_FLOAT, 0.25, 0.0, 1.0, 0.01)
-DEFINE_UI_PARAMS(roughness, Edge Roughness, DCTLUI_SLIDER_FLOAT, 0.4, 0.0, 1.0, 0.01)
-DEFINE_UI_PARAMS(edgeMarks, Edge Markings, DCTLUI_CHECK_BOX, 1)
-DEFINE_UI_PARAMS(edgeText, Edge Text, DCTLUI_COMBO_BOX, 0, { ET_GRADELUX, ET_SAFETY, ET_NUMBERS }, { "GRADELUX", "SAFETY FILM", "Frame Numbers Only" })
-DEFINE_UI_PARAMS(soundtrack, Soundtrack, DCTLUI_CHECK_BOX, 1)
-DEFINE_UI_PARAMS(dustAmt, Dust, DCTLUI_SLIDER_FLOAT, 0.25, 0.0, 1.0, 0.01)
-DEFINE_UI_PARAMS(scratchAmt, Scratches, DCTLUI_SLIDER_FLOAT, 0.15, 0.0, 1.0, 0.01)
-DEFINE_UI_PARAMS(gateHair, Hair In The Gate, DCTLUI_CHECK_BOX, 0)
-DEFINE_UI_PARAMS(weaveAmt, Gate Weave, DCTLUI_SLIDER_FLOAT, 0.3, 0.0, 1.0, 0.01)
-DEFINE_UI_PARAMS(flickerAmt, Flicker, DCTLUI_SLIDER_FLOAT, 0.2, 0.0, 1.0, 0.01)
-DEFINE_UI_PARAMS(vignetteAmt, Vignette, DCTLUI_SLIDER_FLOAT, 0.3, 0.0, 1.0, 0.01)
-DEFINE_UI_PARAMS(leakAmt, Light Leak, DCTLUI_SLIDER_FLOAT, 0.0, 0.0, 1.0, 0.01)
-DEFINE_UI_PARAMS(leakColor, Leak Color, DCTLUI_COMBO_BOX, 0, { LC_WARM, LC_GOLDEN, LC_RED, LC_PRISM }, { "Warm Orange", "Golden", "Deep Red", "Prism" })
-DEFINE_UI_PARAMS(leakPos, Leak Position, DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.01)
-DEFINE_UI_PARAMS(leakSize, Leak Size, DCTLUI_SLIDER_FLOAT, 1.0, 0.2, 2.0, 0.01)
-DEFINE_UI_PARAMS(edgeFog, Edge Fog, DCTLUI_SLIDER_FLOAT, 0.0, 0.0, 1.0, 0.01)
-DEFINE_UI_PARAMS(burnAmt, Film Burn, DCTLUI_SLIDER_FLOAT, 0.0, 0.0, 1.0, 0.001)
-DEFINE_UI_PARAMS(burnPos, Burn Position, DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.01)
-DEFINE_UI_PARAMS(cueMarks, Cue Marks, DCTLUI_CHECK_BOX, 0)
-DEFINE_UI_PARAMS(greasePencil, Grease Pencil Mark, DCTLUI_CHECK_BOX, 0)
-DEFINE_UI_PARAMS(dateOn, Date Stamp, DCTLUI_CHECK_BOX, 0)
-DEFINE_UI_PARAMS(dateFmt, Date Format, DCTLUI_COMBO_BOX, 0, { DF_YMD, DF_MDY, DF_DMY }, { "'YY M D", "M D 'YY", "D M 'YY" })
-DEFINE_UI_PARAMS(dateYear, Year, DCTLUI_SLIDER_INT, 98, 0, 99, 1)
-DEFINE_UI_PARAMS(dateMonth, Month, DCTLUI_SLIDER_INT, 7, 1, 12, 1)
-DEFINE_UI_PARAMS(dateDay, Day, DCTLUI_SLIDER_INT, 14, 1, 31, 1)
-DEFINE_UI_PARAMS(stampSize, Stamp Size, DCTLUI_SLIDER_FLOAT, 1.0, 0.5, 2.0, 0.01)
-DEFINE_UI_PARAMS(stampColor, Stamp Color, DCTLUI_COMBO_BOX, 0, { SC_ORANGE, SC_RED, SC_YELLOW }, { "Orange", "Red", "Yellow" })
-DEFINE_UI_PARAMS(leaderOn, Countdown Leader, DCTLUI_CHECK_BOX, 0)
-DEFINE_UI_PARAMS(leaderFps, Leader Frame Rate, DCTLUI_SLIDER_INT, 24, 12, 60, 1)
-DEFINE_UI_PARAMS(animSource, Animation Source, DCTLUI_COMBO_BOX, 0, { AS_AUTO, AS_TIME }, { "Auto From Footage", "Time Slider" })
-DEFINE_UI_PARAMS(animTime, Time, DCTLUI_SLIDER_FLOAT, 0.0, 0.0, 10000.0, 1.0)
-DEFINE_UI_PARAMS(variation, Variation, DCTLUI_SLIDER_INT, 0, 0, 100, 1)
+DEFINE_UI_PARAMS(ui_preset, Preset, DCTLUI_COMBO_BOX, 0, { PR_CUSTOM, PR_HOME, PR_SLIDESHOW, PR_NEGSCAN, PR_CINEMA, PR_SILENT, PR_DOC16, PR_INSTANT, PR_CONTACT, PR_DAMAGED, PR_VINTAGE, PR_INDIE16, PR_REEL8 }, { "Custom (Use Sliders)", "Home Movie", "Slide Show", "Negative Scan", "Cinema Print", "Silent Era Projector", "16mm Documentary", "Instant Memory", "Contact Sheet", "Damaged Reel", "Vintage Print", "Super 16 Indie", "Regular 8 Reel" })
+DEFINE_UI_PARAMS(ui_frameStyle, Frame Style, DCTLUI_COMBO_BOX, 1, { FS_NONE, FS_SUPER8, FS_REGULAR8, FS_16MM, FS_SUPER16, FS_35MP, FS_35STILL, FS_CONTACT, FS_120, FS_INSTANT, FS_VINTAGE, FS_SLIDE, FS_FILED, FS_PROJECTOR }, { "None", "Super 8", "Regular 8", "16mm", "Super 16", "35mm Motion Picture", "35mm Still Strip", "Contact Sheet", "120 Medium Format", "Instant Print", "Vintage Print", "Slide Mount", "Filed Gate", "Projector Gate" })
+DEFINE_UI_PARAMS(ui_filmBase, Film Base, DCTLUI_COMBO_BOX, 0, { FB_BLACK, FB_ORANGE, FB_CLEAR, FB_BROWN }, { "Black Reversal", "Orange Negative", "Clear", "Aged Brown" })
+DEFINE_UI_PARAMS(ui_background, Background, DCTLUI_COMBO_BOX, 0, { BG_BLACK, BG_CHARCOAL, BG_LIGHTTABLE, BG_PAPER }, { "Black", "Charcoal", "Light Table", "White Paper" })
+DEFINE_UI_PARAMS(ui_frameSize, Frame Size, DCTLUI_SLIDER_FLOAT, 1.0, 0.5, 1.5, 0.01)
+DEFINE_UI_PARAMS(ui_filmRoll, Film Roll, DCTLUI_SLIDER_FLOAT, 0.0, -10.0, 10.0, 0.01)
+DEFINE_UI_PARAMS(ui_rotation, Rotation, DCTLUI_SLIDER_FLOAT, 0.0, -20.0, 20.0, 0.1)
+DEFINE_UI_PARAMS(ui_picZoom, Picture Zoom, DCTLUI_SLIDER_FLOAT, 1.0, 1.0, 2.0, 0.01)
+DEFINE_UI_PARAMS(ui_picPanX, Picture Pan X, DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.01)
+DEFINE_UI_PARAMS(ui_picPanY, Picture Pan Y, DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.01)
+DEFINE_UI_PARAMS(ui_cornerRound, Corner Roundness, DCTLUI_SLIDER_FLOAT, 1.0, 0.0, 2.0, 0.01)
+DEFINE_UI_PARAMS(ui_gateSoft, Gate Softness, DCTLUI_SLIDER_FLOAT, 0.25, 0.0, 1.0, 0.01)
+DEFINE_UI_PARAMS(ui_roughness, Edge Roughness, DCTLUI_SLIDER_FLOAT, 0.4, 0.0, 1.0, 0.01)
+DEFINE_UI_PARAMS(ui_edgeMarks, Edge Markings, DCTLUI_CHECK_BOX, 1)
+DEFINE_UI_PARAMS(ui_edgeText, Edge Text, DCTLUI_COMBO_BOX, 0, { ET_GRADELUX, ET_SAFETY, ET_NUMBERS }, { "GRADELUX", "SAFETY FILM", "Frame Numbers Only" })
+DEFINE_UI_PARAMS(ui_soundtrack, Soundtrack, DCTLUI_CHECK_BOX, 1)
+DEFINE_UI_PARAMS(ui_dustAmt, Dust, DCTLUI_SLIDER_FLOAT, 0.25, 0.0, 1.0, 0.01)
+DEFINE_UI_PARAMS(ui_scratchAmt, Scratches, DCTLUI_SLIDER_FLOAT, 0.15, 0.0, 1.0, 0.01)
+DEFINE_UI_PARAMS(ui_gateHair, Hair In The Gate, DCTLUI_CHECK_BOX, 0)
+DEFINE_UI_PARAMS(ui_weaveAmt, Gate Weave, DCTLUI_SLIDER_FLOAT, 0.3, 0.0, 1.0, 0.01)
+DEFINE_UI_PARAMS(ui_flickerAmt, Flicker, DCTLUI_SLIDER_FLOAT, 0.2, 0.0, 1.0, 0.01)
+DEFINE_UI_PARAMS(ui_vignetteAmt, Vignette, DCTLUI_SLIDER_FLOAT, 0.3, 0.0, 1.0, 0.01)
+DEFINE_UI_PARAMS(ui_leakAmt, Light Leak, DCTLUI_SLIDER_FLOAT, 0.0, 0.0, 1.0, 0.01)
+DEFINE_UI_PARAMS(ui_leakColor, Leak Color, DCTLUI_COMBO_BOX, 0, { LC_WARM, LC_GOLDEN, LC_RED, LC_PRISM }, { "Warm Orange", "Golden", "Deep Red", "Prism" })
+DEFINE_UI_PARAMS(ui_leakPos, Leak Position, DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.01)
+DEFINE_UI_PARAMS(ui_leakSize, Leak Size, DCTLUI_SLIDER_FLOAT, 1.0, 0.2, 2.0, 0.01)
+DEFINE_UI_PARAMS(ui_edgeFog, Edge Fog, DCTLUI_SLIDER_FLOAT, 0.0, 0.0, 1.0, 0.01)
+DEFINE_UI_PARAMS(ui_burnAmt, Film Burn, DCTLUI_SLIDER_FLOAT, 0.0, 0.0, 1.0, 0.001)
+DEFINE_UI_PARAMS(ui_burnPos, Burn Position, DCTLUI_SLIDER_FLOAT, 0.0, -1.0, 1.0, 0.01)
+DEFINE_UI_PARAMS(ui_cueMarks, Cue Marks, DCTLUI_CHECK_BOX, 0)
+DEFINE_UI_PARAMS(ui_greasePencil, Grease Pencil Mark, DCTLUI_CHECK_BOX, 0)
+DEFINE_UI_PARAMS(ui_dateOn, Date Stamp, DCTLUI_CHECK_BOX, 0)
+DEFINE_UI_PARAMS(ui_dateFmt, Date Format, DCTLUI_COMBO_BOX, 0, { DF_YMD, DF_MDY, DF_DMY }, { "'YY M D", "M D 'YY", "D M 'YY" })
+DEFINE_UI_PARAMS(ui_dateYear, Year, DCTLUI_SLIDER_INT, 98, 0, 99, 1)
+DEFINE_UI_PARAMS(ui_dateMonth, Month, DCTLUI_SLIDER_INT, 7, 1, 12, 1)
+DEFINE_UI_PARAMS(ui_dateDay, Day, DCTLUI_SLIDER_INT, 14, 1, 31, 1)
+DEFINE_UI_PARAMS(ui_stampSize, Stamp Size, DCTLUI_SLIDER_FLOAT, 1.0, 0.5, 2.0, 0.01)
+DEFINE_UI_PARAMS(ui_stampColor, Stamp Color, DCTLUI_COMBO_BOX, 0, { SC_ORANGE, SC_RED, SC_YELLOW }, { "Orange", "Red", "Yellow" })
+DEFINE_UI_PARAMS(ui_leaderOn, Countdown Leader, DCTLUI_CHECK_BOX, 0)
+DEFINE_UI_PARAMS(ui_leaderFps, Leader Frame Rate, DCTLUI_SLIDER_INT, 24, 12, 60, 1)
+DEFINE_UI_PARAMS(ui_animSource, Animation Source, DCTLUI_COMBO_BOX, 0, { AS_AUTO, AS_TIME }, { "Auto From Footage", "Time Slider" })
+DEFINE_UI_PARAMS(ui_animTime, Time, DCTLUI_SLIDER_FLOAT, 0.0, 0.0, 10000.0, 1.0)
+DEFINE_UI_PARAMS(ui_variation, Variation, DCTLUI_SLIDER_INT, 0, 0, 100, 1)
 
 // -----------------------------------------------------------------------------
 //  Fixed settings
@@ -899,22 +899,24 @@ __DEVICE__ float3 glx_background(int bg, float sx, float sy)
 __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
 {
     // ---- Gather settings, then apply the preset -----------------------------
+    // Controls are read only here. Their names all start with ui_ so they can
+    // never clash with any other name in this file.
     GlxCfg cfg;
-    cfg.style = frameStyle; cfg.base = filmBase; cfg.bg = background;
-    cfg.size = frameSize; cfg.roll = filmRoll; cfg.rot = rotation;
-    cfg.zoom = picZoom; cfg.panX = picPanX; cfg.panY = picPanY;
-    cfg.corner = cornerRound; cfg.soft = gateSoft; cfg.rough = roughness;
-    cfg.edgeMarks = edgeMarks; cfg.edgeText = edgeText; cfg.sound = soundtrack;
-    cfg.dust = dustAmt; cfg.scratch = scratchAmt; cfg.hair = gateHair;
-    cfg.weave = weaveAmt; cfg.flicker = flickerAmt; cfg.vignette = vignetteAmt;
-    cfg.leak = leakAmt; cfg.leakColor = leakColor; cfg.leakPos = leakPos; cfg.leakSize = leakSize;
-    cfg.fog = edgeFog; cfg.burn = burnAmt; cfg.burnPos = burnPos;
-    cfg.cue = cueMarks; cfg.grease = greasePencil;
-    cfg.dateOn = dateOn; cfg.dateFmt = dateFmt; cfg.year = dateYear; cfg.month = dateMonth; cfg.day = dateDay;
-    cfg.stampSize = stampSize; cfg.stampColor = stampColor;
-    cfg.leaderOn = leaderOn; cfg.fps = leaderFps; cfg.animSource = animSource;
-    cfg.time = _fmaxf(animTime, 0.0f); cfg.variation = variation;
-    cfg = glx_preset(cfg, preset);
+    cfg.style = ui_frameStyle; cfg.base = ui_filmBase; cfg.bg = ui_background;
+    cfg.size = ui_frameSize; cfg.roll = ui_filmRoll; cfg.rot = ui_rotation;
+    cfg.zoom = ui_picZoom; cfg.panX = ui_picPanX; cfg.panY = ui_picPanY;
+    cfg.corner = ui_cornerRound; cfg.soft = ui_gateSoft; cfg.rough = ui_roughness;
+    cfg.edgeMarks = ui_edgeMarks; cfg.edgeText = ui_edgeText; cfg.sound = ui_soundtrack;
+    cfg.dust = ui_dustAmt; cfg.scratch = ui_scratchAmt; cfg.hair = ui_gateHair;
+    cfg.weave = ui_weaveAmt; cfg.flicker = ui_flickerAmt; cfg.vignette = ui_vignetteAmt;
+    cfg.leak = ui_leakAmt; cfg.leakColor = ui_leakColor; cfg.leakPos = ui_leakPos; cfg.leakSize = ui_leakSize;
+    cfg.fog = ui_edgeFog; cfg.burn = ui_burnAmt; cfg.burnPos = ui_burnPos;
+    cfg.cue = ui_cueMarks; cfg.grease = ui_greasePencil;
+    cfg.dateOn = ui_dateOn; cfg.dateFmt = ui_dateFmt; cfg.year = ui_dateYear; cfg.month = ui_dateMonth; cfg.day = ui_dateDay;
+    cfg.stampSize = ui_stampSize; cfg.stampColor = ui_stampColor;
+    cfg.leaderOn = ui_leaderOn; cfg.fps = ui_leaderFps; cfg.animSource = ui_animSource;
+    cfg.time = _fmaxf(ui_animTime, 0.0f); cfg.variation = ui_variation;
+    cfg = glx_preset(cfg, ui_preset);
 
     // Nothing enabled: exact pass-through.
     if (cfg.style == GLX_FS_NONE && cfg.dust <= 0.0f && cfg.scratch <= 0.0f && cfg.weave <= 0.0f &&

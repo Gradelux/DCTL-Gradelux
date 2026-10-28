@@ -1,0 +1,29 @@
+// Gradelux Resolve Check
+// A tiny test: if this loads, Resolve accepts DCTLs that read neighbouring
+// pixels (the kind FrameLab is). It draws a gold border around the picture.
+
+DEFINE_UI_PARAMS(ui_border, Border Size, DCTLUI_SLIDER_FLOAT, 0.05, 0.0, 0.2, 0.01)
+DEFINE_UI_PARAMS(ui_style, Border Color, DCTLUI_COMBO_BOX, 0, { CHK_GOLD, CHK_RED }, { "Gold", "Red" })
+
+typedef struct {
+    float r, g, b;
+} ChkColor;
+
+__DEVICE__ ChkColor chk_color(int which)
+{
+    ChkColor c;
+    c.r = 0.95f; c.g = 0.75f; c.b = 0.30f;
+    if (which == 1) { c.r = 0.90f; c.g = 0.15f; c.b = 0.10f; }
+    return c;
+}
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+    float m = ui_border * (float)p_Height;
+    float x = (float)p_X, y = (float)p_Y;
+    if (x < m || y < m || x > (float)p_Width - m || y > (float)p_Height - m) {
+        ChkColor c = chk_color(ui_style);
+        return make_float3(c.r, c.g, c.b);
+    }
+    return make_float3(_tex2D(p_TexR, p_X, p_Y), _tex2D(p_TexG, p_X, p_Y), _tex2D(p_TexB, p_X, p_Y));
+}

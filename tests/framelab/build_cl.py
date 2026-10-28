@@ -33,14 +33,18 @@ def main(src, out):
         args = m.group(1)
         parts = [p.strip() for p in args.split(',')]
         name, kind, default = parts[0], parts[2], parts[3]
+        # Controls become text macros, the way Resolve may implement them, so any
+        # other use of a control's name in the file (a struct field, a local
+        # variable) turns into a compile error here.
         if kind == 'DCTLUI_COMBO_BOX':
             enums = re.search(r'\{([^}]*)\}', args).group(1)
             decls.append('enum { %s };' % enums)
-            decls.append('__constant int %s = %s;' % (name, default))
+            decls.append('__constant int glx_ui_%s = %s;' % (name, default))
         elif kind in ('DCTLUI_SLIDER_INT', 'DCTLUI_CHECK_BOX'):
-            decls.append('__constant int %s = %s;' % (name, default))
+            decls.append('__constant int glx_ui_%s = %s;' % (name, default))
         else:
-            decls.append('__constant float %s = %sf;' % (name, default if '.' in default else default + '.0'))
+            decls.append('__constant float glx_ui_%s = %sf;' % (name, default if '.' in default else default + '.0'))
+        decls.append('#define %s (glx_ui_%s)' % (name, name))
         return ''
     body = re.sub(r'^DEFINE_UI_PARAMS\((.*)\)\s*$', repl, text, flags=re.M)
     kernel = '''

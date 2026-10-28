@@ -133,15 +133,22 @@ the animation seed. When no damage effect is on, it skips the seed reads entirel
 
 ## Fixes
 
-- **Build error "main DCTL function's return value must be float3"** (first Resolve tests, v2).
-  Resolve shows this message when the code fails to compile on the GPU. The cause was a
-  variable named `half`. That is a built-in type name in Apple Metal and OpenCL, so the
-  code compiled on a computer but not in Resolve. It is renamed in v1 and v2. Footage reads
-  also now happen only inside the main function. Output is bit-identical to before
-  (200 random settings checked for each version).
-- The tests now also compile the DCTL as **OpenCL** with clang
-  (`tests/framelab/build_cl.py`). This catches GPU-only problems like reserved words and
-  doubles.
+Resolve rejected v2 three times with "main DCTL function's return value must be float3 to
+represent RGB". Resolve shows that message when the code fails to compile. The fixes:
+
+1. **Control names reused inside the code (most likely cause).** v2 used 13 control names,
+   such as `leakPos` and `dateOn`, as internal field names too. If Resolve substitutes control
+   names as text, those fields break. Every v2 control is now named `ui_...`, so no name
+   can clash. The labels in Resolve are unchanged. v1 never had this problem.
+2. A local variable was named `half`, which is a reserved type in Metal and OpenCL. It is renamed.
+3. Footage is read only inside the main function.
+
+Output is bit-identical to before (200 random settings checked for each version).
+`tests/framelab/build_cl.py` now compiles the DCTL as OpenCL, with every control turned into a
+text macro, so this kind of problem is caught before release.
+
+If Resolve still refuses it, load `tests/framelab/Gradelux_Resolve_Check.dctl`. It is a tiny DCTL
+of the same type, and it shows whether Resolve accepts this kind of DCTL at all.
 
 ## Not yet tested in Resolve
 

@@ -45,11 +45,18 @@ def read_params(path):
     return out
 
 PARAMS = read_params(DCTL)
+
+def pname(k):
+    """Control name as used in the DCTL (v2 prefixes every control with ui_)."""
+    return k if k in PARAMS or 'ui_' + k not in PARAMS else 'ui_' + k
+
+def has(k):
+    return pname(k) in PARAMS
 # every setting that switches an effect on, at its "off" value
 OFF = {k: v for k, v in {
     'preset': 0, 'frameStyle': 0, 'dustAmt': 0, 'scratchAmt': 0, 'weaveAmt': 0, 'flickerAmt': 0,
     'vignetteAmt': 0, 'leakAmt': 0, 'dateOn': 0, 'leaderOn': 0, 'edgeFog': 0, 'burnAmt': 0,
-    'gateHair': 0, 'cueMarks': 0, 'picZoom': 1, 'picPanX': 0, 'picPanY': 0}.items() if k in PARAMS}
+    'gateHair': 0, 'cueMarks': 0, 'picZoom': 1, 'picPanX': 0, 'picPanY': 0}.items() if has(k)}
 
 def build():
     gen = os.path.join(HERE, 'framelab_gen.c')
@@ -61,7 +68,7 @@ def run(img, params):
     h, w, _ = img.shape
     inp, out = os.path.join(TMP, 'in.f32'), os.path.join(TMP, 'out.f32')
     img.astype(np.float32).tofile(inp)
-    r = subprocess.run([BIN, inp, str(w), str(h), out] + ['%s=%s' % kv for kv in params.items()],
+    r = subprocess.run([BIN, inp, str(w), str(h), out] + ['%s=%s' % (pname(k), v) for k, v in params.items()],
                        capture_output=True, text=True)
     if r.returncode:
         raise RuntimeError('render failed (%d): %s %s' % (r.returncode, r.stderr.strip(), params))
@@ -132,7 +139,7 @@ def main():
             print('robustness FAIL', e); fails += 1; break
     else:
         print('robustness: %d random settings on extreme input, all finite, no out-of-range reads: OK' % n)
-    for style in range(PARAMS['frameStyle'][2] + 1):
+    for style in range(PARAMS[pname('frameStyle')][2] + 1):
         out = run(ext, {'frameStyle': style, 'dustAmt': 1, 'scratchAmt': 1, 'weaveAmt': 1, 'flickerAmt': 1,
                         'leakAmt': 1, 'dateOn': 1, 'leaderOn': 1, 'animSource': 1, 'animTime': 30})
         if not np.isfinite(out).all():
@@ -142,7 +149,7 @@ def main():
     # 3. resolutions
     for w, h in [(17, 9), (64, 36), (1080, 1920), (2400, 600), (3840, 2160)]:
         try:
-            out = run(scene(w, h), {'frameStyle': int(rng.integers(1, PARAMS['frameStyle'][2] + 1)), 'dateOn': 1, 'leakAmt': 0.5})
+            out = run(scene(w, h), {'frameStyle': int(rng.integers(1, PARAMS[pname('frameStyle')][2] + 1)), 'dateOn': 1, 'leakAmt': 0.5})
             print('resolution %4dx%-4d OK' % (w, h) if np.isfinite(out).all() else 'resolution FAIL')
         except RuntimeError as e:
             print('resolution %dx%d FAIL %s' % (w, h, e)); fails += 1
@@ -156,7 +163,7 @@ def main():
     if '--preview' in sys.argv:
         out = sys.argv[sys.argv.index('--preview') + 1]
         preview(out)
-        if 'preset' in PARAMS:
+        if has('preset'):
             preview(out.replace('.png', '_features.png'), V2_FEATURES)
     print('\nALL PASSED' if fails == 0 else '\n%d FAILURES' % fails)
     sys.exit(1 if fails else 0)
@@ -193,7 +200,7 @@ V2_FEATURES = [
 def preview(path, looks=None):
     from PIL import Image, ImageDraw, ImageFont
     if looks is None:
-        looks = V2_PRESETS if 'preset' in PARAMS else V1_SHEET
+        looks = V2_PRESETS if has('preset') else V1_SHEET
     src = scene(1920, 1080)
     tw, th, pad = 640, 360, 44
     rows = (len(looks) + 2) // 3
