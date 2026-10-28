@@ -131,6 +131,12 @@ FrameLab draws everything with math from the pixel's own position. It never blur
 cost stays the same at any setting. Each pixel reads at most 4 footage pixels, plus 6 for
 the animation seed. When no damage effect is on, it skips the seed reads entirely.
 
+## Fixes
+
+- **Build error "main DCTL function's return value must be float3"** (first Resolve test, v2).
+  Helper functions no longer take the footage textures. All footage reads now happen inside
+  `transform()`. Output is bit-identical to before (200 random settings checked for v1 and v2).
+
 ## Not yet tested in Resolve
 
 These were checked on a computer only. They still need checking in DaVinci Resolve Studio:

@@ -203,43 +203,13 @@ __DEVICE__ float3 glx_hsv(float h, float s, float v)
 //  Footage sampling
 // -----------------------------------------------------------------------------
 
-__DEVICE__ float3 glx_fetch(__TEXTURE__ tr, __TEXTURE__ tg, __TEXTURE__ tb, int x, int y)
-{
-    return make_float3(_tex2D(tr, x, y), _tex2D(tg, x, y), _tex2D(tb, x, y));
-}
+// Reads one footage pixel. A macro (not a function) so that only transform()
+// ever touches the footage textures.
+#define GLX_FETCH(x, y) make_float3(_tex2D(p_TexR, (x), (y)), _tex2D(p_TexG, (x), (y)), _tex2D(p_TexB, (x), (y)))
 
-// Bilinear sample at a pixel position (pixel centres sit at i + 0.5).
-// fy is measured from the top of the frame.
-__DEVICE__ float3 glx_sample(__TEXTURE__ tr, __TEXTURE__ tg, __TEXTURE__ tb, float fx, float fy, int W, int H)
+__DEVICE__ float3 glx_bilerp(float3 a, float3 b, float3 c, float3 d, float tx, float ty)
 {
-    float sx = glx_clamp(fx - 0.5f, 0.0f, (float)(W - 1));
-    float sy = glx_clamp(fy - 0.5f, 0.0f, (float)(H - 1));
-    float x0f = glx_floor(sx), y0f = glx_floor(sy);
-    float tx = sx - x0f, ty = sy - y0f;
-    int x0 = glx_clampi((int)x0f, 0, W - 1), x1 = glx_clampi((int)x0f + 1, 0, W - 1);
-    int y0 = glx_clampi((int)y0f, 0, H - 1), y1 = glx_clampi((int)y0f + 1, 0, H - 1);
-#if GLX_Y_DOWN == 0
-    y0 = H - 1 - y0; y1 = H - 1 - y1;
-#endif
-    float3 a = glx_fetch(tr, tg, tb, x0, y0);
-    float3 b = glx_fetch(tr, tg, tb, x1, y0);
-    float3 c = glx_fetch(tr, tg, tb, x0, y1);
-    float3 d = glx_fetch(tr, tg, tb, x1, y1);
     return glx_mix3(glx_mix3(a, b, tx), glx_mix3(c, d, tx), ty);
-}
-
-// A per-frame random seed made from a handful of footage pixels.
-__DEVICE__ float glx_footageSeed(__TEXTURE__ tr, __TEXTURE__ tg, __TEXTURE__ tb, int W, int H)
-{
-    float acc = 0.0f;
-    for (int i = 0; i < 12; i++) {
-        float fi = (float)i;
-        int x = glx_clampi((int)((0.08f + 0.84f * glx_hash1(fi * 1.7f + 0.3f)) * (float)W), 0, W - 1);
-        int y = glx_clampi((int)((0.08f + 0.84f * glx_hash1(fi * 2.9f + 0.7f)) * (float)H), 0, H - 1);
-        float v = _tex2D(tg, x, y) + 0.37f * _tex2D(tr, x, y) + 0.21f * _tex2D(tb, x, y);
-        acc = glx_fract(acc * 1.618f + glx_fract(v * 917.13f) + fi * 0.0731f);
-    }
-    return glx_floor(glx_hash1(acc * 1000.0f + 0.5f) * 997.0f);
 }
 
 // -----------------------------------------------------------------------------
@@ -688,7 +658,7 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     // Nothing enabled: exact pass-through.
     if (frameStyle == FS_NONE && dustAmt <= 0.0f && scratchAmt <= 0.0f && weaveAmt <= 0.0f &&
         flickerAmt <= 0.0f && vignetteAmt <= 0.0f && leakAmt <= 0.0f && dateOn == 0 && leaderOn == 0) {
-        return glx_fetch(p_TexR, p_TexG, p_TexB, p_X, p_Y);
+        return GLX_FETCH(p_X, p_Y);
     }
 
     float W = (float)p_Width, H = (float)p_Height;
@@ -701,7 +671,16 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
         seed = glx_floor(tSmooth) + (float)variation * 101.0f;
         slow = glx_floor(tSmooth / 12.0f) + (float)variation * 31.0f;
     } else {
-        seed = glx_footageSeed(p_TexR, p_TexG, p_TexB, p_Width, p_Height) + (float)variation * 101.0f;
+        // per-frame seed from a few footage pixels
+        float acc = 0.0f;
+        for (int i = 0; i < 12; i++) {
+            float fi = (float)i;
+            int sx0 = glx_clampi((int)((0.08f + 0.84f * glx_hash1(fi * 1.7f + 0.3f)) * W), 0, p_Width - 1);
+            int sy0 = glx_clampi((int)((0.08f + 0.84f * glx_hash1(fi * 2.9f + 0.7f)) * H), 0, p_Height - 1);
+            float sv = _tex2D(p_TexG, sx0, sy0) + 0.37f * _tex2D(p_TexR, sx0, sy0) + 0.21f * _tex2D(p_TexB, sx0, sy0);
+            acc = glx_fract(acc * 1.618f + glx_fract(sv * 917.13f) + fi * 0.0731f);
+        }
+        seed = glx_floor(glx_hash1(acc * 1000.0f + 0.5f) * 997.0f) + (float)variation * 101.0f;
         slow = seed;
     }
     seed = seed - glx_floor(seed / 4096.0f) * 4096.0f;
@@ -714,9 +693,7 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
 
     float posX = (float)p_X + 0.5f - wx;
     float posYraw = (float)p_Y + 0.5f;
-#if GLX_Y_DOWN == 0
-    posYraw = H - posYraw;
-#endif
+    if (GLX_Y_DOWN == 0) posYraw = H - posYraw;
     float posY = posYraw - wy;   // measured from the top
 
     // Screen position in output-height units (centre origin), for backgrounds.
@@ -870,16 +847,29 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
     // ---- Picture inside the window ------------------------------------------
     if (winCov > 0.0f) {
         float3 pic;
+        float fx = 0.0f, fy = 0.0f;
+        int exact = 0;
         if (kind == LK_CANVAS) {
-            if (wx == 0.0f && wy == 0.0f) pic = glx_fetch(p_TexR, p_TexG, p_TexB, p_X, p_Y);
-            else pic = glx_sample(p_TexR, p_TexG, p_TexB, posX, posY, p_Width, p_Height);
+            if (wx == 0.0f && wy == 0.0f) exact = 1;
+            else { fx = posX; fy = posY; }
         } else {
             // crop-to-fill the footage into the window
             float winWpx = 2.0f * hu * fhPx, winHpx = 2.0f * hv * fhPx;
             float s = _fmaxf(winWpx / W, winHpx / H);
-            float fx = 0.5f * W + u * fhPx / s;
-            float fy = 0.5f * H + v * fhPx / s;
-            pic = glx_sample(p_TexR, p_TexG, p_TexB, fx, fy, p_Width, p_Height);
+            fx = 0.5f * W + u * fhPx / s;
+            fy = 0.5f * H + v * fhPx / s;
+        }
+        if (exact != 0) {
+            pic = GLX_FETCH(p_X, p_Y);
+        } else {
+            // bilinear read (pixel centres at i + 0.5, fy from the top)
+            float bx = glx_clamp(fx - 0.5f, 0.0f, W - 1.0f);
+            float by = glx_clamp(fy - 0.5f, 0.0f, H - 1.0f);
+            float bx0 = glx_floor(bx), by0 = glx_floor(by);
+            int x0 = glx_clampi((int)bx0, 0, p_Width - 1), x1 = glx_clampi((int)bx0 + 1, 0, p_Width - 1);
+            int y0 = glx_clampi((int)by0, 0, p_Height - 1), y1 = glx_clampi((int)by0 + 1, 0, p_Height - 1);
+            if (GLX_Y_DOWN == 0) { y0 = p_Height - 1 - y0; y1 = p_Height - 1 - y1; }
+            pic = glx_bilerp(GLX_FETCH(x0, y0), GLX_FETCH(x1, y0), GLX_FETCH(x0, y1), GLX_FETCH(x1, y1), bx - bx0, by - by0);
         }
 
         // countdown leader
