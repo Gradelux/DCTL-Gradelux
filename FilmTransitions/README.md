@@ -21,18 +21,28 @@ clip happens hidden under the brightest moment, and the leak fades off the new c
 
 ## Install and use
 
-1. Copy the `.dctl` files into Resolve's LUT folder (a subfolder such as `LUT/Gradelux Transitions/` is fine):
+1. Copy all the files, including `00_Gradelux_Dissolve.dctl`, straight into Resolve's LUT folder, not a subfolder:
    - macOS: `/Library/Application Support/Blackmagic Design/DaVinci Resolve/LUT/`
    - Windows: `C:\ProgramData\Blackmagic Design\DaVinci Resolve\Support\LUT\`
-2. Restart Resolve.
-3. On the Edit page, open **Effects > OpenFX > Transitions > ResolveFX Color > DCTL** and drag it onto
-   the cut between two clips.
-4. In the Inspector, pick a Gradelux transition from the **DCTL List**.
-5. Set the length on the timeline. About 12 to 24 frames feels like the reference; longer gives a
-   slower, dreamier leak.
+2. Remove old test files you no longer need from the LUT folder (`Gradelux_Check_A/B/C`,
+   `FrameLab_Test_1/2/3`).
+3. Quit and restart Resolve.
+4. On the Edit page, open **Effects > OpenFX > Transitions > ResolveFX Color > DCTL** and drag it onto
+   the **cut between two clips** that have spare frames (handles).
+5. In the Inspector, pick a Gradelux transition from the **DCTL List**.
+6. Set the length on the timeline. About 12 to 24 frames feels like the reference.
+
+**Why the 00 dissolve exists:** when you first drop the DCTL transition, Resolve loads the first file in
+its DCTL List. If that file is a colour DCTL or a matte, not a transition, it cannot compile as a
+transition, and Resolve can crash. `00_Gradelux_Dissolve` sorts first, so the plugin always starts on a
+valid transition.
 
 The transitions have no sliders. Each file is one finished look, and its timing follows the transition
 length on the timeline. They look richest on darker footage, like real light leaks.
+
+| File | Look |
+|---|---|
+| `00_Gradelux_Dissolve` | Plain cross dissolve (the safe first file) |
 
 ## Rebuilding and testing
 

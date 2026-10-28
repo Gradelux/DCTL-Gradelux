@@ -1,0 +1,23 @@
+// =============================================================================
+//  GRADELUX FILM TRANSITIONS - PLAIN DISSOLVE
+// =============================================================================
+//
+//  A simple cross dissolve. Its name starts with 00 so it is the first file
+//  in the DCTL List, which keeps the DCTL transition plugin on a valid
+//  transition when you first drop it on the timeline. Pick any other
+//  Gradelux transition from the list afterwards.
+//
+//  Edit page: Effects, OpenFX, Transitions, ResolveFX Color, DCTL.
+// =============================================================================
+
+__DEVICE__ float4 transition(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_FromTexR, __TEXTURE__ p_FromTexG, __TEXTURE__ p_FromTexB, __TEXTURE__ p_FromTexA, __TEXTURE__ p_ToTexR, __TEXTURE__ p_ToTexG, __TEXTURE__ p_ToTexB, __TEXTURE__ p_ToTexA)
+{
+    float t = TRANSITION_PROGRESS;
+    float s = 1.0f - t;
+    float r = _tex2D(p_FromTexR, p_X, p_Y) * s + _tex2D(p_ToTexR, p_X, p_Y) * t;
+    float g = _tex2D(p_FromTexG, p_X, p_Y) * s + _tex2D(p_ToTexG, p_X, p_Y) * t;
+    float b = _tex2D(p_FromTexB, p_X, p_Y) * s + _tex2D(p_ToTexB, p_X, p_Y) * t;
+    float a = _tex2D(p_FromTexA, p_X, p_Y) * s + _tex2D(p_ToTexA, p_X, p_Y) * t;
+    float4 result = make_float4(r, g, b, a);
+    return result;
+}
