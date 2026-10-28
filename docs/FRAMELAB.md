@@ -133,9 +133,15 @@ the animation seed. When no damage effect is on, it skips the seed reads entirel
 
 ## Fixes
 
-- **Build error "main DCTL function's return value must be float3"** (first Resolve test, v2).
-  Helper functions no longer take the footage textures. All footage reads now happen inside
-  `transform()`. Output is bit-identical to before (200 random settings checked for v1 and v2).
+- **Build error "main DCTL function's return value must be float3"** (first Resolve tests, v2).
+  Resolve shows this message when the code fails to compile on the GPU. The cause was a
+  variable named `half`. That is a built-in type name in Apple Metal and OpenCL, so the
+  code compiled on a computer but not in Resolve. It is renamed in v1 and v2. Footage reads
+  also now happen only inside the main function. Output is bit-identical to before
+  (200 random settings checked for each version).
+- The tests now also compile the DCTL as **OpenCL** with clang
+  (`tests/framelab/build_cl.py`). This catches GPU-only problems like reserved words and
+  doubles.
 
 ## Not yet tested in Resolve
 

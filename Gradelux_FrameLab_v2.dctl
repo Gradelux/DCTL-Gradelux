@@ -333,9 +333,9 @@ __DEVICE__ float3 glx_hsv(float h, float s, float v)
 //  Footage sampling
 // -----------------------------------------------------------------------------
 
-// Reads one footage pixel. A macro (not a function) so that only transform()
-// ever touches the footage textures.
-#define GLX_FETCH(x, y) make_float3(_tex2D(p_TexR, (x), (y)), _tex2D(p_TexG, (x), (y)), _tex2D(p_TexB, (x), (y)))
+// Reads one footage pixel. A macro (not a function) so that only the main
+// function ever touches the footage textures.
+#define GLX_FETCH(fx_, fy_) make_float3(_tex2D(p_TexR, (fx_), (fy_)), _tex2D(p_TexG, (fx_), (fy_)), _tex2D(p_TexB, (fx_), (fy_)))
 
 __DEVICE__ float3 glx_bilerp(float3 a, float3 b, float3 c, float3 d, float tx, float ty)
 {
@@ -1085,11 +1085,11 @@ __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTU
         // optical soundtrack (variable area)
         if (cfg.sound != 0 && g.sndC1 > g.sndC0) {
             float sc = 0.5f * (g.sndC0 + g.sndC1);
-            float half = 0.5f * (g.sndC1 - g.sndC0);
-            float band = glx_cov(_fabs(c - sc) - half, pxu);
+            float halfW = 0.5f * (g.sndC1 - g.sndC0);
+            float band = glx_cov(_fabs(c - sc) - halfW, pxu);
             float env = 0.35f + 0.65f * glx_noise1(a * 2.5f + 1.0f);
             float wave = 0.5f * _sinf(a * 41.0f) + 0.3f * _sinf(a * 97.0f + 1.3f) + 0.2f * _sinf(a * 233.0f + 0.4f);
-            float open = half * glx_clamp(0.12f + 0.80f * env * _fabs(wave), 0.0f, 0.95f);
+            float open = halfW * glx_clamp(0.12f + 0.80f * env * _fabs(wave), 0.0f, 0.95f);
             float clear = glx_cov(_fabs(c - sc) - open, pxu);
             col = glx_mix3(col, glx_rgb(0.03f, 0.03f, 0.03f), band * filmCov);
             col = glx_mix3(col, backlight, clear * band * filmCov * 0.92f);
