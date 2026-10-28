@@ -1,0 +1,148 @@
+// =============================================================================
+//  GRADELUX FILM TRANSITIONS - TWIN LEAKS
+// =============================================================================
+//
+//  Warm leaks enter from both sides and meet in the middle.
+//
+//  Edit page: Effects, OpenFX, Transitions, ResolveFX Color, DCTL.
+//  Drop it between two clips, then pick this file in the DCTL List.
+//  The effect follows the transition length set on the timeline.
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+//  Helpers
+// -----------------------------------------------------------------------------
+
+__DEVICE__ float glx_floor(float x)
+{
+    x = _fminf(_fmaxf(x, -16777216.0f), 16777216.0f);
+    float t = (float)((int)x);
+    return (t > x) ? t - 1.0f : t;
+}
+__DEVICE__ float glx_fract(float x) { return x - glx_floor(x); }
+__DEVICE__ float glx_clamp(float x, float a, float b) { return _fminf(_fmaxf(x, a), b); }
+__DEVICE__ float glx_sat(float x) { return glx_clamp(x, 0.0f, 1.0f); }
+__DEVICE__ float glx_mix(float a, float b, float t) { return a + (b - a) * t; }
+__DEVICE__ float glx_smooth(float e0, float e1, float x)
+{
+    float t = glx_sat((x - e0) / (e1 - e0));
+    return t * t * (3.0f - 2.0f * t);
+}
+__DEVICE__ float3 glx_mix3(float3 a, float3 b, float t)
+{
+    return make_float3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t);
+}
+__DEVICE__ float3 glx_scale3(float3 a, float s) { return make_float3(a.x * s, a.y * s, a.z * s); }
+
+__DEVICE__ float glx_hash2(float x, float y)
+{
+    float a = glx_fract(x * 0.1031f);
+    float b = glx_fract(y * 0.1030f);
+    float c = glx_fract(x * 0.0973f);
+    float d = a * (b + 33.33f) + b * (c + 33.33f) + c * (a + 33.33f);
+    a += d; b += d; c += d;
+    return glx_fract((a + b) * c);
+}
+__DEVICE__ float glx_noise2(float x, float y)
+{
+    float ix = glx_floor(x), iy = glx_floor(y);
+    float fx = x - ix, fy = y - iy;
+    fx = fx * fx * (3.0f - 2.0f * fx);
+    fy = fy * fy * (3.0f - 2.0f * fy);
+    float a = glx_hash2(ix, iy), b = glx_hash2(ix + 1.0f, iy);
+    float c = glx_hash2(ix, iy + 1.0f), d = glx_hash2(ix + 1.0f, iy + 1.0f);
+    return glx_mix(glx_mix(a, b, fx), glx_mix(c, d, fx), fy);
+}
+__DEVICE__ float glx_fbm2(float x, float y)
+{
+    return 0.55f * glx_noise2(x, y) + 0.30f * glx_noise2(x * 2.1f + 3.1f, y * 2.1f - 1.7f)
+         + 0.15f * glx_noise2(x * 4.3f - 2.3f, y * 4.3f + 5.9f);
+}
+
+// One soft blob of leaked light. nx, ny: frame-normalised position.
+__DEVICE__ float glx_blob(float nx, float ny, float ox, float oy, float R, float sx, float sy, float n)
+{
+    float dx = (nx - ox) / sx, dy = (ny - oy) / sy;
+    float d = _sqrtf(dx * dx + dy * dy) / _fmaxf(R, 0.001f);
+    d += n;
+    return _expf(-d * d * 3.4f);
+}
+
+// Colour of leaked light at intensity I: deep red when faint, then orange,
+// amber and, at its hottest, cream white.
+__DEVICE__ float3 glx_leakColor(float I, int palette)
+{
+    float3 c0 = make_float3(0.50f, 0.035f, 0.012f);
+    float3 c1 = make_float3(1.00f, 0.38f, 0.08f);
+    float3 c2 = make_float3(1.00f, 0.70f, 0.26f);
+    float3 c3 = make_float3(1.00f, 0.95f, 0.80f);
+    if (palette == 1) { c0 = make_float3(0.70f, 0.30f, 0.04f); c1 = make_float3(1.00f, 0.62f, 0.15f); c2 = make_float3(1.00f, 0.80f, 0.36f); }
+    if (palette == 2) { c0 = make_float3(0.50f, 0.02f, 0.03f); c1 = make_float3(0.95f, 0.16f, 0.07f); c2 = make_float3(1.00f, 0.50f, 0.30f); }
+    if (palette == 3) { c2 = make_float3(1.00f, 0.82f, 0.45f); c3 = make_float3(1.00f, 0.97f, 0.86f); }
+    float3 c = glx_scale3(c0, glx_smooth(0.02f, 0.38f, I));
+    c = glx_mix3(c, c1, glx_smooth(0.25f, 0.65f, I));
+    c = glx_mix3(c, c2, glx_smooth(0.60f, 0.95f, I));
+    c = glx_mix3(c, c3, glx_smooth(0.95f, 1.40f, I));
+    return c;
+}
+
+// Adds light like an overexposure: highlights roll off instead of clipping.
+__DEVICE__ float glx_expose(float p, float l)
+{
+    float base = _fmaxf(p, 0.0f);
+    return base + _fmaxf(1.0f - base, 0.0f) * glx_sat(l) + (p < 0.0f ? p : 0.0f);
+}
+
+// =============================================================================
+//  MAIN
+// =============================================================================
+
+__DEVICE__ float4 transition(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_FromTexR, __TEXTURE__ p_FromTexG, __TEXTURE__ p_FromTexB, __TEXTURE__ p_FromTexA, __TEXTURE__ p_ToTexR, __TEXTURE__ p_ToTexG, __TEXTURE__ p_ToTexB, __TEXTURE__ p_ToTexA)
+{
+    float t = glx_sat(TRANSITION_PROGRESS);
+
+    float3 fromC = make_float3(_tex2D(p_FromTexR, p_X, p_Y), _tex2D(p_FromTexG, p_X, p_Y), _tex2D(p_FromTexB, p_X, p_Y));
+    float3 toC = make_float3(_tex2D(p_ToTexR, p_X, p_Y), _tex2D(p_ToTexG, p_X, p_Y), _tex2D(p_ToTexB, p_X, p_Y));
+    float fromA = _tex2D(p_FromTexA, p_X, p_Y);
+    float toA = _tex2D(p_ToTexA, p_X, p_Y);
+
+    // the cut happens hidden under the brightest moment of the leak
+    float cutMix = glx_smooth(0.4800f, 0.5200f, t);
+    float3 pic = glx_mix3(fromC, toC, cutMix);
+    float alpha = glx_mix(fromA, toA, cutMix);
+
+    // strength of the leak over time
+    float env = glx_smooth(0.0000f, 0.5000f, t) * (1.0f - glx_smooth(0.5200f, 0.9000f, t));
+    if (0 != 0) {
+        float f1 = _expf(-((t - 0.26f) * (t - 0.26f)) / 0.0005f);
+        float f2 = _expf(-((t - 0.36f) * (t - 0.36f)) / 0.0004f);
+        env = _fmaxf(env, _fmaxf(0.55f * f1, 0.80f * f2));
+    }
+
+    // frame-normalised position, -1 to 1 across the frame
+    float nx = ((float)p_X + 0.5f) / (float)p_Width * 2.0f - 1.0f;
+    float ny = ((float)p_Y + 0.5f) / (float)p_Height * 2.0f - 1.0f;
+
+    // the leak drifts and grows; its edge is uneven and slowly changes shape
+    float travel = glx_smooth(0.0f, 1.0f, t);
+    float ox = glx_mix(1.3000f, 0.7000f, travel), oy = glx_mix(0.1000f, -0.0500f, travel);
+    // the leak grows while it builds, then stays large and simply fades
+    float grow = glx_smooth(0.0000f, 0.5000f, t);
+    if (0 != 0) grow = _fmaxf(grow, glx_smooth(0.2f, 0.4f, t));
+    float R = glx_mix(0.3000f, 1.8000f, grow * grow * (3.0f - 2.0f * grow) * grow);
+    float n = 0.3500f * (glx_fbm2(nx * 1.3f + t * 0.9f + 3.0f, ny * 1.3f - t * 0.6f) - 0.5f) * 1.6f;
+    float I = glx_blob(nx, ny, ox, oy, R, 1.0000f, 1.4000f, n);
+    if (1 != 0) I = _fmaxf(I, glx_blob(nx, ny, -ox, oy, R, 1.0000f, 1.4000f, -n * 0.8f));
+    float floodI = 0.5000f * env * env * env * env * (0.85f + 0.3f * glx_fbm2(nx * 0.8f - t * 0.5f, ny * 0.8f + 2.0f));
+    I = _fmaxf(I * env, floodI) * 1.0500f;
+
+    float3 light = glx_leakColor(I, 0);
+    float3 outC = make_float3(glx_expose(pic.x, light.x), glx_expose(pic.y, light.y), glx_expose(pic.z, light.z));
+
+    // past full brightness the film overexposes towards the light itself
+    float over = glx_smooth(0.95f, 1.45f, I);
+    outC = glx_mix3(outC, light, over * 0.85f);
+
+    float4 result = make_float4(outC.x, outC.y, outC.z, alpha);
+    return result;
+}
