@@ -1,0 +1,541 @@
+// FrameLab test 2: the first half of the code. Passes the picture through.
+
+DEFINE_UI_PARAMS(ui_testAmount, Test Amount, DCTLUI_SLIDER_FLOAT, 0.0, 0.0, 1.0, 0.01)
+// -----------------------------------------------------------------------------
+//  Fixed settings
+// -----------------------------------------------------------------------------
+
+// 1: pixel row 0 is the top of the frame (expected in Resolve).
+// Set to 0 if text and the date stamp ever appear upside down.
+#define GLX_Y_DOWN 1
+
+#define GLX_PI 3.14159265f
+
+// Layout kinds
+#define LK_CANVAS   0   // footage fills the frame (None, Filed Gate, Projector Gate)
+#define LK_VSTRIP   1   // film runs vertically (8mm, 16mm, 35mm motion picture)
+#define LK_HSTRIP   2   // film runs horizontally (35mm still, contact sheet, 120)
+#define LK_INSTANT  3
+#define LK_SLIDE    4
+#define LK_DECKLE   5
+
+// Dropdown values as plain numbers for helper functions. They must match the
+// order of the dropdown lists above.
+#define GLX_FS_NONE       0
+#define GLX_FS_SUPER8     1
+#define GLX_FS_REGULAR8   2
+#define GLX_FS_16MM       3
+#define GLX_FS_SUPER16    4
+#define GLX_FS_35MP       5
+#define GLX_FS_35STILL    6
+#define GLX_FS_CONTACT    7
+#define GLX_FS_120        8
+#define GLX_FS_INSTANT    9
+#define GLX_FS_VINTAGE    10
+#define GLX_FS_SLIDE      11
+#define GLX_FS_FILED      12
+#define GLX_FS_PROJECTOR  13
+
+#define GLX_FB_BLACK      0
+#define GLX_FB_ORANGE     1
+#define GLX_FB_CLEAR      2
+#define GLX_FB_BROWN      3
+
+#define GLX_BG_BLACK      0
+#define GLX_BG_CHARCOAL   1
+#define GLX_BG_LIGHTTABLE 2
+#define GLX_BG_PAPER      3
+
+// -----------------------------------------------------------------------------
+//  Settings bundle (so presets can replace values in one place)
+// -----------------------------------------------------------------------------
+
+typedef struct {
+    int style, base, bg;
+    float size, roll, rot, zoom, panX, panY, corner, soft, rough;
+    int edgeMarks, edgeText, sound;
+    float dust, scratch;
+    int hair;
+    float weave, flicker, vignette;
+    float leak;
+    int leakColor;
+    float leakPos, leakSize, fog, burn, burnPos;
+    int cue, grease;
+    int dateOn, dateFmt, year, month, day;
+    float stampSize;
+    int stampColor, leaderOn, fps, animSource;
+    float time;
+    int variation;
+} GlxCfg;
+
+// Sets the frame, film and damage controls for a preset.
+__DEVICE__ GlxCfg glx_preset(GlxCfg c, int p)
+{
+    if (p == 0) return c;
+    // common starting point for every preset
+    c.corner = 1.0f; c.soft = 0.3f; c.rough = 0.4f;
+    c.edgeMarks = 1; c.edgeText = 0; c.sound = 1;
+    c.dust = 0.0f; c.scratch = 0.0f; c.hair = 0;
+    c.weave = 0.0f; c.flicker = 0.0f; c.vignette = 0.0f;
+    c.leak = 0.0f; c.leakColor = 0; c.leakPos = 0.0f; c.leakSize = 1.0f;
+    c.fog = 0.0f; c.cue = 0; c.grease = 0;
+    c.base = GLX_FB_BLACK; c.bg = GLX_BG_BLACK;
+
+    if (p == 1) {          // Home Movie
+        c.style = GLX_FS_SUPER8; c.soft = 0.35f;
+        c.dust = 0.30f; c.scratch = 0.12f; c.weave = 0.45f; c.flicker = 0.30f; c.vignette = 0.40f;
+        c.leak = 0.35f; c.leakPos = 0.08f; c.leakSize = 1.1f; c.fog = 0.25f;
+    } else if (p == 2) {   // Slide Show
+        c.style = GLX_FS_SLIDE; c.base = GLX_FB_BROWN; c.bg = GLX_BG_LIGHTTABLE;
+        c.dust = 0.12f; c.vignette = 0.20f;
+    } else if (p == 3) {   // Negative Scan
+        c.style = GLX_FS_35STILL; c.base = GLX_FB_ORANGE; c.bg = GLX_BG_LIGHTTABLE;
+        c.dust = 0.18f; c.scratch = 0.05f; c.weave = 0.30f; c.vignette = 0.10f;
+    } else if (p == 4) {   // Cinema Print
+        c.style = GLX_FS_35MP;
+        c.dust = 0.20f; c.scratch = 0.25f; c.weave = 0.25f; c.flicker = 0.15f; c.vignette = 0.25f; c.cue = 1;
+    } else if (p == 5) {   // Silent Era Projector
+        c.style = GLX_FS_PROJECTOR; c.soft = 0.5f;
+        c.dust = 0.55f; c.scratch = 0.60f; c.hair = 1; c.weave = 0.60f; c.flicker = 0.70f; c.vignette = 0.60f;
+    } else if (p == 6) {   // 16mm Documentary
+        c.style = GLX_FS_16MM; c.bg = GLX_BG_CHARCOAL; c.edgeText = 1;
+        c.dust = 0.25f; c.scratch = 0.20f; c.weave = 0.30f; c.flicker = 0.15f; c.vignette = 0.30f;
+    } else if (p == 7) {   // Instant Memory
+        c.style = GLX_FS_INSTANT; c.bg = GLX_BG_CHARCOAL;
+        c.dust = 0.08f; c.vignette = 0.30f; c.leak = 0.30f; c.leakColor = 1; c.leakPos = 0.75f;
+        c.dateOn = 1;
+    } else if (p == 8) {   // Contact Sheet
+        c.style = GLX_FS_CONTACT; c.bg = GLX_BG_PAPER; c.grease = 1;
+        c.dust = 0.10f; c.weave = 0.30f; c.vignette = 0.10f;
+    } else if (p == 9) {   // Damaged Reel
+        c.style = GLX_FS_FILED; c.rough = 0.8f;
+        c.dust = 0.80f; c.scratch = 0.85f; c.hair = 1; c.weave = 0.55f; c.flicker = 0.55f; c.vignette = 0.50f;
+        c.leak = 0.35f; c.leakColor = 2; c.leakPos = -0.3f; c.fog = 0.30f;
+    } else if (p == 10) {  // Vintage Print
+        c.style = GLX_FS_VINTAGE; c.bg = GLX_BG_CHARCOAL;
+        c.dust = 0.08f; c.vignette = 0.30f;
+    } else if (p == 11) {  // Super 16 Indie
+        c.style = GLX_FS_SUPER16; c.edgeText = 2;
+        c.dust = 0.20f; c.scratch = 0.10f; c.weave = 0.30f; c.flicker = 0.12f; c.vignette = 0.25f;
+    } else {               // Regular 8 Reel
+        c.style = GLX_FS_REGULAR8; c.base = GLX_FB_BROWN;
+        c.dust = 0.40f; c.scratch = 0.30f; c.weave = 0.50f; c.flicker = 0.35f; c.vignette = 0.45f;
+        c.leak = 0.30f; c.leakPos = 0.1f; c.fog = 0.35f;
+    }
+    return c;
+}
+
+// -----------------------------------------------------------------------------
+//  Small math helpers (no reliance on floor/fmod intrinsics)
+// -----------------------------------------------------------------------------
+
+__DEVICE__ float glx_floor(float x)
+{
+    x = _fminf(_fmaxf(x, -16777216.0f), 16777216.0f);   // keeps the int cast in range
+    float t = (float)((int)x);
+    return (t > x) ? t - 1.0f : t;
+}
+__DEVICE__ float glx_fract(float x) { return x - glx_floor(x); }
+__DEVICE__ float glx_clamp(float x, float a, float b) { return _fminf(_fmaxf(x, a), b); }
+__DEVICE__ float glx_sat(float x) { return glx_clamp(x, 0.0f, 1.0f); }
+__DEVICE__ float glx_mix(float a, float b, float t) { return a + (b - a) * t; }
+__DEVICE__ int   glx_clampi(int x, int a, int b) { return x < a ? a : (x > b ? b : x); }
+__DEVICE__ float glx_smooth(float e0, float e1, float x)
+{
+    float t = glx_sat((x - e0) / (e1 - e0));
+    return t * t * (3.0f - 2.0f * t);
+}
+
+__DEVICE__ float3 glx_rgb(float r, float g, float b) { return make_float3(r, g, b); }
+__DEVICE__ float3 glx_mix3(float3 a, float3 b, float t)
+{
+    return make_float3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t);
+}
+__DEVICE__ float3 glx_scale3(float3 a, float s) { return make_float3(a.x * s, a.y * s, a.z * s); }
+__DEVICE__ float glx_luma(float3 c) { return 0.2126f * c.x + 0.7152f * c.y + 0.0722f * c.z; }
+
+// Screen-style blend that leaves super-whites alone and never goes negative.
+__DEVICE__ float glx_screen1(float c, float l) { return c + _fmaxf(1.0f - c, 0.0f) * glx_sat(l); }
+__DEVICE__ float3 glx_screen3(float3 c, float3 l)
+{
+    return make_float3(glx_screen1(c.x, l.x), glx_screen1(c.y, l.y), glx_screen1(c.z, l.z));
+}
+
+// -----------------------------------------------------------------------------
+//  Hashes and noise (deterministic, per pixel)
+// -----------------------------------------------------------------------------
+
+__DEVICE__ float glx_hash1(float p)
+{
+    p = glx_fract(p * 0.1031f);
+    p *= p + 33.33f;
+    p *= p + p;
+    return glx_fract(p);
+}
+
+__DEVICE__ float glx_hash2(float x, float y)
+{
+    float a = glx_fract(x * 0.1031f);
+    float b = glx_fract(y * 0.1030f);
+    float c = glx_fract(x * 0.0973f);
+    float d = a * (b + 33.33f) + b * (c + 33.33f) + c * (a + 33.33f);
+    a += d; b += d; c += d;
+    return glx_fract((a + b) * c);
+}
+
+__DEVICE__ float glx_noise1(float x)
+{
+    float i = glx_floor(x);
+    float f = x - i;
+    f = f * f * (3.0f - 2.0f * f);
+    return glx_mix(glx_hash1(i), glx_hash1(i + 1.0f), f);
+}
+
+__DEVICE__ float glx_fbm1(float x)
+{
+    return 0.5f * glx_noise1(x) + 0.3f * glx_noise1(x * 2.13f + 5.1f) + 0.2f * glx_noise1(x * 4.37f + 11.3f);
+}
+
+__DEVICE__ float glx_noise2(float x, float y)
+{
+    float ix = glx_floor(x), iy = glx_floor(y);
+    float fx = x - ix, fy = y - iy;
+    fx = fx * fx * (3.0f - 2.0f * fx);
+    fy = fy * fy * (3.0f - 2.0f * fy);
+    float a = glx_hash2(ix, iy), b = glx_hash2(ix + 1.0f, iy);
+    float c = glx_hash2(ix, iy + 1.0f), d = glx_hash2(ix + 1.0f, iy + 1.0f);
+    return glx_mix(glx_mix(a, b, fx), glx_mix(c, d, fx), fy);
+}
+
+__DEVICE__ float glx_fbm2(float x, float y)
+{
+    return 0.55f * glx_noise2(x, y) + 0.30f * glx_noise2(x * 2.1f + 3.1f, y * 2.1f - 1.7f)
+         + 0.15f * glx_noise2(x * 4.3f - 2.3f, y * 4.3f + 5.9f);
+}
+
+// -----------------------------------------------------------------------------
+//  Shapes
+// -----------------------------------------------------------------------------
+
+// Signed distance to a rounded box centred at the origin (negative inside).
+__DEVICE__ float glx_sdBox(float px, float py, float bx, float by, float r)
+{
+    r = _fmaxf(_fminf(r, _fminf(bx, by)), 0.0f);
+    float qx = _fabs(px) - bx + r;
+    float qy = _fabs(py) - by + r;
+    float ox = _fmaxf(qx, 0.0f);
+    float oy = _fmaxf(qy, 0.0f);
+    return _sqrtf(ox * ox + oy * oy) + _fminf(_fmaxf(qx, qy), 0.0f) - r;
+}
+
+__DEVICE__ float glx_segDist(float px, float py, float ax, float ay, float bx, float by)
+{
+    float vx = bx - ax, vy = by - ay;
+    float wx = px - ax, wy = py - ay;
+    float l2 = vx * vx + vy * vy;
+    float t = (l2 > 0.0f) ? glx_sat((wx * vx + wy * vy) / l2) : 0.0f;
+    float dx = wx - vx * t, dy = wy - vy * t;
+    return _sqrtf(dx * dx + dy * dy);
+}
+
+// Antialiased coverage from a signed distance and an edge width.
+__DEVICE__ float glx_cov(float d, float w) { return glx_sat(0.5f - d / _fmaxf(w, 1e-6f)); }
+
+// A coordinate that runs along the nearest edge of a box (for rough edges).
+__DEVICE__ float glx_edgeAlong(float x, float y, float bx, float by)
+{
+    float qx = _fabs(x) - bx, qy = _fabs(y) - by;
+    return (qx > qy) ? (y * 9.0f + 17.0f + (x > 0.0f ? 40.0f : 0.0f))
+                     : (x * 9.0f + 53.0f + (y > 0.0f ? 80.0f : 0.0f));
+}
+
+__DEVICE__ float3 glx_hsv(float h, float s, float v)
+{
+    float r = glx_sat(_fabs(glx_fract(h) * 6.0f - 3.0f) - 1.0f);
+    float g = glx_sat(2.0f - _fabs(glx_fract(h) * 6.0f - 2.0f));
+    float b = glx_sat(2.0f - _fabs(glx_fract(h) * 6.0f - 4.0f));
+    return make_float3(v * glx_mix(1.0f, r, s), v * glx_mix(1.0f, g, s), v * glx_mix(1.0f, b, s));
+}
+
+// -----------------------------------------------------------------------------
+//  Footage sampling
+// -----------------------------------------------------------------------------
+
+// Reads one footage pixel. A macro (not a function) so that only the main
+// function ever touches the footage textures.
+#define GLX_FETCH(fx_, fy_) make_float3(_tex2D(p_TexR, (fx_), (fy_)), _tex2D(p_TexG, (fx_), (fy_)), _tex2D(p_TexB, (fx_), (fy_)))
+
+__DEVICE__ float3 glx_bilerp(float3 a, float3 b, float3 c, float3 d, float tx, float ty)
+{
+    return glx_mix3(glx_mix3(a, b, tx), glx_mix3(c, d, tx), ty);
+}
+
+// -----------------------------------------------------------------------------
+//  Edge-print font (5 x 7 dot matrix)
+//  Codes: 0-9 digits, 10 A, 11 D, 12 E, 13 F, 14 G, 15 I, 16 L, 17 M, 18 R,
+//         19 S, 20 T, 21 U, 22 X, 23 Y, 24 arrow, 25 space
+// -----------------------------------------------------------------------------
+
+__CONSTANT__ int GLX_FONT[182] = {
+    14, 17, 19, 21, 25, 17, 14,   // 0
+     4, 12,  4,  4,  4,  4, 14,   // 1
+    14, 17,  1,  2,  4,  8, 31,   // 2
+    31,  2,  4,  2,  1, 17, 14,   // 3
+     2,  6, 10, 18, 31,  2,  2,   // 4
+    31, 16, 30,  1,  1, 17, 14,   // 5
+     6,  8, 16, 30, 17, 17, 14,   // 6
+    31,  1,  2,  4,  8,  8,  8,   // 7
+    14, 17, 17, 14, 17, 17, 14,   // 8
+    14, 17, 17, 15,  1,  2, 12,   // 9
+    14, 17, 17, 31, 17, 17, 17,   // A
+    30, 17, 17, 17, 17, 17, 30,   // D
+    31, 16, 16, 30, 16, 16, 31,   // E
+    31, 16, 16, 30, 16, 16, 16,   // F
+    14, 17, 16, 23, 17, 17, 15,   // G
+    14,  4,  4,  4,  4,  4, 14,   // I
+    16, 16, 16, 16, 16, 16, 31,   // L
+    17, 27, 21, 21, 17, 17, 17,   // M
+    30, 17, 17, 30, 20, 18, 17,   // R
+    15, 16, 16, 14,  1,  1, 30,   // S
+    31,  4,  4,  4,  4,  4,  4,   // T
+    17, 17, 17, 17, 17, 17, 14,   // U
+    17, 17, 10,  4, 10, 17, 17,   // X
+    17, 17, 10,  4,  4,  4,  4,   // Y
+    16, 24, 28, 30, 28, 24, 16,   // arrow
+     0,  0,  0,  0,  0,  0,  0    // space
+};
+
+__DEVICE__ int glx_glyphBit(int code, int row, int col)
+{
+    if (code < 0 || code > 25 || row < 0 || row > 6 || col < 0 || col > 4) return 0;
+    return (GLX_FONT[code * 7 + row] >> (4 - col)) & 1;
+}
+
+// Strings: 0 GRADELUX > NN, 1 SAFETY FILM > NN, 2 > NN, 3 GRADELUX
+__DEVICE__ int glx_strLen(int s)
+{
+    if (s == 0) return 13;
+    if (s == 1) return 16;
+    if (s == 2) return 4;
+    return 8;
+}
+
+__DEVICE__ int glx_wordGradelux(int i)
+{
+    if (i == 0) return 14;
+    if (i == 1) return 18;
+    if (i == 2) return 10;
+    if (i == 3) return 11;
+    if (i == 4) return 12;
+    if (i == 5) return 16;
+    if (i == 6) return 21;
+    return 22;
+}
+
+__DEVICE__ int glx_wordSafety(int i)
+{
+    if (i == 0) return 19;   // S
+    if (i == 1) return 10;   // A
+    if (i == 2) return 13;   // F
+    if (i == 3) return 12;   // E
+    if (i == 4) return 20;   // T
+    if (i == 5) return 23;   // Y
+    if (i == 6) return 25;   // space
+    if (i == 7) return 13;   // F
+    if (i == 8) return 15;   // I
+    if (i == 9) return 16;   // L
+    return 17;               // M
+}
+
+__DEVICE__ int glx_strChar(int s, int i, int num)
+{
+    int d1 = (num / 10) % 10;
+    int d0 = num % 10;
+    int wl = (s == 0) ? 8 : ((s == 1) ? 11 : ((s == 2) ? -1 : 8));
+    if (s == 3) return glx_wordGradelux(i);
+    if (i < wl) return (s == 0) ? glx_wordGradelux(i) : glx_wordSafety(i);
+    int j = i - wl - 1;              // position after the word and its space
+    if (s == 2) j = i;
+    if (j < 0) return 25;
+    if (j == 0) return 24;
+    if (j == 1) return 25;
+    return (j == 2) ? d1 : d0;
+}
+
+// Dot-matrix text centred at along = 0. fromTop is measured from the top of
+// the glyphs, h = glyph height. Returns coverage.
+__DEVICE__ float glx_text(float along, float fromTop, float h, int s, int num, float pxu)
+{
+    int len = glx_strLen(s);
+    float unit = h / 7.0f;
+    float adv = unit * 6.0f;
+    float total = (float)len * adv - unit;
+    float x = along + total * 0.5f;
+    if (x < 0.0f || x >= (float)len * adv || fromTop < 0.0f || fromTop >= h) return 0.0f;
+    int idx = (int)(x / adv);
+    float xc = x - (float)idx * adv;
+    int col = (int)(xc / unit);
+    if (col > 4) return 0.0f;
+    int row = (int)(fromTop / unit);
+    if (glx_glyphBit(glx_strChar(s, idx, num), row, col) == 0) return 0.0f;
+    float cx = xc - ((float)col + 0.5f) * unit;
+    float cy = fromTop - ((float)row + 0.5f) * unit;
+    float d = glx_sdBox(cx, cy, unit * 0.42f, unit * 0.42f, unit * 0.18f);
+    return glx_cov(d, pxu);
+}
+
+// One large solid glyph (countdown number). x, y from the glyph top-left.
+__DEVICE__ float glx_bigGlyph(float x, float y, float unit, int code, float pxu)
+{
+    float best = 0.0f;
+    int col0 = (int)glx_floor(x / unit);
+    int row0 = (int)glx_floor(y / unit);
+    for (int j = -1; j <= 1; j++) {
+        for (int i = -1; i <= 1; i++) {
+            int col = col0 + i, row = row0 + j;
+            if (glx_glyphBit(code, row, col) == 0) continue;
+            float cx = x - ((float)col + 0.5f) * unit;
+            float cy = y - ((float)row + 0.5f) * unit;
+            best = _fmaxf(best, glx_cov(glx_sdBox(cx, cy, unit * 0.5f, unit * 0.5f, unit * 0.12f), pxu));
+        }
+    }
+    return best;
+}
+
+// -----------------------------------------------------------------------------
+//  Seven-segment date stamp
+//  Codes: 0-9 digits, 10 blank digit, 11 apostrophe, 12 group space
+// -----------------------------------------------------------------------------
+
+__DEVICE__ int glx_segMask(int d)
+{
+    if (d == 0) return 0x3F;
+    if (d == 1) return 0x06;
+    if (d == 2) return 0x5B;
+    if (d == 3) return 0x4F;
+    if (d == 4) return 0x66;
+    if (d == 5) return 0x6D;
+    if (d == 6) return 0x7D;
+    if (d == 7) return 0x07;
+    if (d == 8) return 0x7F;
+    return 0x6F;
+}
+
+__DEVICE__ float glx_segChar(float x, float y, int code)
+{
+    float d = 1000.0f;
+    if (code >= 10 && code != 11) return d;
+    x -= (1.0f - y) * 0.10f;   // slight italic, like camera date backs
+    if (code == 11) return glx_segDist(x, y, 0.06f, 0.0f, 0.02f, 0.2f);
+    int m = glx_segMask(code);
+    float w = 0.5f, e = 0.08f;
+    if (m & 1)  d = _fminf(d, glx_segDist(x, y, e, 0.0f, w - e, 0.0f));
+    if (m & 2)  d = _fminf(d, glx_segDist(x, y, w, e, w, 0.5f - e));
+    if (m & 4)  d = _fminf(d, glx_segDist(x, y, w, 0.5f + e, w, 1.0f - e));
+    if (m & 8)  d = _fminf(d, glx_segDist(x, y, e, 1.0f, w - e, 1.0f));
+    if (m & 16) d = _fminf(d, glx_segDist(x, y, 0.0f, 0.5f + e, 0.0f, 1.0f - e));
+    if (m & 32) d = _fminf(d, glx_segDist(x, y, 0.0f, e, 0.0f, 0.5f - e));
+    if (m & 64) d = _fminf(d, glx_segDist(x, y, e, 0.5f, w - e, 0.5f));
+    return d;
+}
+
+__DEVICE__ int glx_dateCode(int fmt, int slot, int yy, int mm, int dd)
+{
+    int y1 = (yy / 10) % 10, y0 = yy % 10;
+    int m1 = (mm >= 10) ? 1 : 10, m0 = mm % 10;
+    int d1 = (dd >= 10) ? (dd / 10) : 10, d0 = dd % 10;
+    if (fmt == 0) {   // YY M D
+        if (slot == 0) return 11;
+        if (slot == 1) return y1;
+        if (slot == 2) return y0;
+        if (slot == 3) return 12;
+        if (slot == 4) return m1;
+        if (slot == 5) return m0;
+        if (slot == 6) return 12;
+        if (slot == 7) return d1;
+        return d0;
+    }
+    int a1 = (fmt == 1) ? m1 : d1, a0 = (fmt == 1) ? m0 : d0;
+    int b1 = (fmt == 1) ? d1 : m1, b0 = (fmt == 1) ? d0 : m0;
+    if (slot == 0) return a1;
+    if (slot == 1) return a0;
+    if (slot == 2) return 12;
+    if (slot == 3) return b1;
+    if (slot == 4) return b0;
+    if (slot == 5) return 12;
+    if (slot == 6) return 11;
+    if (slot == 7) return y1;
+    return y0;
+}
+
+__DEVICE__ float glx_dateAdv(int code)
+{
+    if (code == 11) return 0.30f;
+    if (code == 12) return 0.36f;
+    return 0.74f;
+}
+
+// Burns an LED date into the picture. u, v: window coordinates (centre
+// origin), hu, hv: window half sizes, all in frame-height units.
+__DEVICE__ float3 glx_dateStamp(float3 col, float u, float v, float hu, float hv, int fmt, int yy, int mm, int dd,
+                                float size, int color, float pxu)
+{
+    float dh = 0.052f * (2.0f * hv) * size;
+    float total = 0.0f;
+    for (int s = 0; s < 9; s++) total += glx_dateAdv(glx_dateCode(fmt, s, yy, mm, dd));
+    total -= 0.24f;
+    float right = hu - 1.3f * dh;
+    float bottom = hv - 1.1f * dh;
+    float lx = (u - (right - total * dh)) / dh;
+    float ly = (v - (bottom - dh)) / dh;
+    if (lx < -1.0f || lx > total + 1.0f || ly < -1.0f || ly > 2.0f) return col;
+    float d = 1000.0f;
+    float x0 = 0.0f;
+    for (int s = 0; s < 9; s++) {
+        int code = glx_dateCode(fmt, s, yy, mm, dd);
+        d = _fminf(d, glx_segChar(lx - x0, ly, code));
+        x0 += glx_dateAdv(code);
+    }
+    float core = glx_cov((d - 0.055f) * dh, pxu);
+    float glow = _expf(-d / 0.16f) * 0.55f;
+    float3 glowCol = glx_rgb(1.0f, 0.36f, 0.06f), coreCol = glx_rgb(1.0f, 0.66f, 0.28f);
+    if (color == 1) { glowCol = glx_rgb(0.95f, 0.08f, 0.04f); coreCol = glx_rgb(1.0f, 0.34f, 0.24f); }
+    if (color == 2) { glowCol = glx_rgb(1.0f, 0.62f, 0.10f); coreCol = glx_rgb(1.0f, 0.90f, 0.48f); }
+    col = glx_screen3(col, glx_scale3(glowCol, glow));
+    return glx_mix3(col, coreCol, core);
+}
+
+// -----------------------------------------------------------------------------
+//  Countdown leader (replaces the picture inside the frame)
+// -----------------------------------------------------------------------------
+
+__DEVICE__ float3 glx_leader(float u, float v, float hv, int number, float sweep, float pxu)
+{
+    float s = 2.0f * hv;
+    float x = u / s, y = v / s;
+    float px = pxu / s;
+    float r = _sqrtf(x * x + y * y);
+    float ang = _atan2f(x, -y);     // 0 at 12 o clock, clockwise
+    float a01 = glx_fract(ang / (2.0f * GLX_PI) + 1.0f);
+    float shade = (a01 < sweep) ? 0.70f : 0.50f;
+    float3 col = glx_rgb(shade, shade * 0.985f, shade * 0.96f);
+    float lw = 0.006f;
+    float ring = _fminf(_fabs(r - 0.36f), _fabs(r - 0.43f)) - lw;
+    float cross = _fminf(_fabs(x), _fabs(y)) - lw * 0.7f;
+    float line = _fmaxf(glx_cov(ring, px), glx_cov(cross, px) * (r < 0.47f ? 1.0f : 0.0f));
+    col = glx_mix3(col, glx_rgb(0.10f, 0.10f, 0.10f), line * 0.9f);
+    float disc = glx_cov(r - 0.27f, px);
+    col = glx_mix3(col, glx_rgb(0.86f, 0.85f, 0.82f), disc);
+    float unit = 0.40f / 7.0f;
+    float g = glx_bigGlyph(x + 2.5f * unit, y + 3.5f * unit, unit, number, px);
+    return glx_mix3(col, glx_rgb(0.06f, 0.06f, 0.06f), g);
+}
+
+
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
+{
+    float3 c = make_float3(_tex2D(p_TexR, p_X, p_Y), _tex2D(p_TexG, p_X, p_Y), _tex2D(p_TexB, p_X, p_Y));
+    c = make_float3(c.x + ui_testAmount * 0.0f, c.y, c.z);
+    c = make_float3(c.x + glx_hash1((float)p_X) * 0.0f, c.y, c.z);
+    return c;
+}

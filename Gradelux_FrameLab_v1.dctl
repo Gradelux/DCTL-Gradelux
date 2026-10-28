@@ -655,276 +655,281 @@ __DEVICE__ float3 glx_background(int bg, float sx, float sy)
 
 __DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, __TEXTURE__ p_TexR, __TEXTURE__ p_TexG, __TEXTURE__ p_TexB)
 {
-    // Nothing enabled: exact pass-through.
-    if (frameStyle == FS_NONE && dustAmt <= 0.0f && scratchAmt <= 0.0f && weaveAmt <= 0.0f &&
-        flickerAmt <= 0.0f && vignetteAmt <= 0.0f && leakAmt <= 0.0f && dateOn == 0 && leaderOn == 0) {
-        return GLX_FETCH(p_X, p_Y);
-    }
+    // Start from the untouched footage pixel. With nothing enabled this is
+    // returned as-is (exact pass-through). The only return is at the end.
+    float3 col = GLX_FETCH(p_X, p_Y);
+    int passThrough = (frameStyle == FS_NONE && dustAmt <= 0.0f && scratchAmt <= 0.0f &&
+        weaveAmt <= 0.0f && flickerAmt <= 0.0f && vignetteAmt <= 0.0f && leakAmt <= 0.0f &&
+        dateOn == 0 && leaderOn == 0) ? 1 : 0;
 
-    float W = (float)p_Width, H = (float)p_Height;
-    float aspect = W / H;
+    if (passThrough == 0) {
 
-    // ---- Animation ----------------------------------------------------------
-    float tSmooth = _fmaxf(animTime, 0.0f);
-    float seed, slow;
-    if (animSource == AS_TIME) {
-        seed = glx_floor(tSmooth) + (float)variation * 101.0f;
-        slow = glx_floor(tSmooth / 12.0f) + (float)variation * 31.0f;
-    } else {
-        // per-frame seed from a few footage pixels
-        float acc = 0.0f;
-        for (int i = 0; i < 12; i++) {
-            float fi = (float)i;
-            int sx0 = glx_clampi((int)((0.08f + 0.84f * glx_hash1(fi * 1.7f + 0.3f)) * W), 0, p_Width - 1);
-            int sy0 = glx_clampi((int)((0.08f + 0.84f * glx_hash1(fi * 2.9f + 0.7f)) * H), 0, p_Height - 1);
-            float sv = _tex2D(p_TexG, sx0, sy0) + 0.37f * _tex2D(p_TexR, sx0, sy0) + 0.21f * _tex2D(p_TexB, sx0, sy0);
-            acc = glx_fract(acc * 1.618f + glx_fract(sv * 917.13f) + fi * 0.0731f);
+        float W = (float)p_Width, H = (float)p_Height;
+        float aspect = W / H;
+
+        // ---- Animation ----------------------------------------------------------
+        float tSmooth = _fmaxf(animTime, 0.0f);
+        float seed, slow;
+        if (animSource == AS_TIME) {
+            seed = glx_floor(tSmooth) + (float)variation * 101.0f;
+            slow = glx_floor(tSmooth / 12.0f) + (float)variation * 31.0f;
+        } else {
+            // per-frame seed from a few footage pixels
+            float acc = 0.0f;
+            for (int i = 0; i < 12; i++) {
+                float fi = (float)i;
+                int sx0 = glx_clampi((int)((0.08f + 0.84f * glx_hash1(fi * 1.7f + 0.3f)) * W), 0, p_Width - 1);
+                int sy0 = glx_clampi((int)((0.08f + 0.84f * glx_hash1(fi * 2.9f + 0.7f)) * H), 0, p_Height - 1);
+                float sv = _tex2D(p_TexG, sx0, sy0) + 0.37f * _tex2D(p_TexR, sx0, sy0) + 0.21f * _tex2D(p_TexB, sx0, sy0);
+                acc = glx_fract(acc * 1.618f + glx_fract(sv * 917.13f) + fi * 0.0731f);
+            }
+            seed = glx_floor(glx_hash1(acc * 1000.0f + 0.5f) * 997.0f) + (float)variation * 101.0f;
+            slow = seed;
         }
-        seed = glx_floor(glx_hash1(acc * 1000.0f + 0.5f) * 997.0f) + (float)variation * 101.0f;
-        slow = seed;
-    }
-    seed = seed - glx_floor(seed / 4096.0f) * 4096.0f;
-    slow = slow - glx_floor(slow / 4096.0f) * 4096.0f;
+        seed = seed - glx_floor(seed / 4096.0f) * 4096.0f;
+        slow = slow - glx_floor(slow / 4096.0f) * 4096.0f;
 
-    // ---- Gate weave (moves the whole picture) -------------------------------
-    float amp = weaveAmt * 0.0045f * H;
-    float wx = amp * ((glx_noise1(seed * 0.13f) - 0.5f) + (glx_hash1(seed + 0.31f) - 0.5f) * 1.2f);
-    float wy = amp * 0.7f * ((glx_noise1(seed * 0.17f + 3.0f) - 0.5f) + (glx_hash1(seed + 0.77f) - 0.5f) * 1.2f);
+        // ---- Gate weave (moves the whole picture) -------------------------------
+        float amp = weaveAmt * 0.0045f * H;
+        float wx = amp * ((glx_noise1(seed * 0.13f) - 0.5f) + (glx_hash1(seed + 0.31f) - 0.5f) * 1.2f);
+        float wy = amp * 0.7f * ((glx_noise1(seed * 0.17f + 3.0f) - 0.5f) + (glx_hash1(seed + 0.77f) - 0.5f) * 1.2f);
 
-    float posX = (float)p_X + 0.5f - wx;
-    float posYraw = (float)p_Y + 0.5f;
-    if (GLX_Y_DOWN == 0) posYraw = H - posYraw;
-    float posY = posYraw - wy;   // measured from the top
+        float posX = (float)p_X + 0.5f - wx;
+        float posYraw = (float)p_Y + 0.5f;
+        if (GLX_Y_DOWN == 0) posYraw = H - posYraw;
+        float posY = posYraw - wy;   // measured from the top
 
-    // Screen position in output-height units (centre origin), for backgrounds.
-    float scrX = (posX - 0.5f * W) / H;
-    float scrY = (posY - 0.5f * H) / H;
+        // Screen position in output-height units (centre origin), for backgrounds.
+        float scrX = (posX - 0.5f * W) / H;
+        float scrY = (posY - 0.5f * H) / H;
 
-    GlxGauge g = glx_gauge(frameStyle);
-    int kind = g.kind;
-    float fhPx = (kind == LK_CANVAS) ? H : H * g.fhFrac * frameSize;
-    float pxu = 1.0f / fhPx;      // one pixel in layout units
-    float X = (posX - 0.5f * W) / fhPx;
-    float Y = (posY - 0.5f * H) / fhPx;
-    if (kind != LK_CANVAS) {
-        float ang = rotation * GLX_PI / 180.0f;
-        float cs = _cosf(ang), sn = _sinf(ang);
-        float rx = cs * X + sn * Y;
-        float ry = -sn * X + cs * Y;
-        X = rx; Y = ry;
-    }
-
-    float3 bgCol = glx_background(background, scrX, scrY);
-    float3 base = glx_baseColor(filmBase);
-    float3 backlight = glx_rgb(1.0f, 0.98f, 0.94f);
-
-    float3 col = bgCol;
-    float filmCov = 0.0f;          // where film material is (for damage, leaks, flicker)
-    float winCov = 0.0f;           // image window coverage
-    float u = 0.0f, v = 0.0f;      // window coordinates (centre origin)
-    float hu = 0.5f, hv = 0.5f;    // window half sizes
-    float sx = X, sy = Y;          // coordinates that dust and scratches follow
-    float sLo = -0.5f, sHi = 0.5f; // scratch range across sx
-    int frameNum = 12;
-
-    float edgeW = pxu * (1.0f + gateSoft * 6.0f);   // soft image edge
-
-    // ---- Layout -------------------------------------------------------------
-    if (kind == LK_CANVAS) {
-        hu = 0.5f * aspect; hv = 0.5f;
-        u = X; v = Y;
-        sx = X; sy = Y; sLo = -hu; sHi = hu;
-        filmCov = 1.0f;
-        winCov = 1.0f;
-        if (frameStyle == FS_FILED) {
-            float m = 0.02f + (1.5f - frameSize) * 0.06f;
-            float bx = hu - m, by = hv - m;
-            float d = glx_sdBox(X, Y, bx, by, 0.03f * cornerRound);
-            float qx = _fabs(X) - bx, qy = _fabs(Y) - by;
-            float along = (qx > qy) ? (Y * 9.0f + 17.0f + (X > 0.0f ? 40.0f : 0.0f))
-                                    : (X * 9.0f + 53.0f + (Y > 0.0f ? 80.0f : 0.0f));
-            float rough = roughness * 0.022f * (glx_fbm1(along) - 0.5f) * 2.0f
-                        + roughness * 0.006f * (glx_noise1(along * 7.0f) - 0.5f);
-            winCov = glx_cov(d + rough, pxu * (1.0f + gateSoft * 3.0f));
-            hu = bx; hv = by;
-        } else if (frameStyle == FS_PROJECTOR) {
-            float bx = (hu - 0.025f) * glx_clamp(frameSize, 0.5f, 1.05f);
-            float by = 0.475f * glx_clamp(frameSize, 0.5f, 1.05f);
-            float d = glx_sdBox(X, Y, bx, by, 0.10f * cornerRound);
-            winCov = glx_cov(d, 0.004f + gateSoft * 0.05f);
-            hu = bx; hv = by;
-        }
-    } else if (kind == LK_VSTRIP || kind == LK_HSTRIP) {
-        float a, c;
-        if (kind == LK_VSTRIP) { a = Y + filmRoll * g.pitch; c = X + g.viewC; }
-        else                   { a = X + filmRoll * g.pitch; c = Y + g.viewC; }
-        float k = glx_floor(a / g.pitch + 0.5f);
-        float aL = a - k * g.pitch;
-        int ki = (int)k;
-        frameNum = ((ki + 12) % 100 + 100) % 100;
-
-        filmCov = glx_cov(_fmaxf(-c, c - g.filmW), pxu);
-        float3 b = glx_scale3(base, 1.0f + 0.035f * (glx_noise1(a * 2.3f + 3.0f) - 0.5f));
-        col = glx_mix3(col, b, filmCov);
-
-        // perforations (backlit)
-        if (g.perfN > 0) {
-            float step = g.pitch / (float)g.perfN;
-            float ap = a - g.perfPhase;
-            float dn = ap - glx_floor(ap / step + 0.5f) * step;
-            float pc = glx_cov(glx_sdBox(c - g.perfC1, dn, g.perfC * 0.5f, g.perfA * 0.5f, g.perfR), pxu * 1.5f);
-            if (g.perfC2 > 0.0f)
-                pc = _fmaxf(pc, glx_cov(glx_sdBox(c - g.perfC2, dn, g.perfC * 0.5f, g.perfA * 0.5f, g.perfR), pxu * 1.5f));
-            col = glx_mix3(col, backlight, pc * filmCov);
+        GlxGauge g = glx_gauge(frameStyle);
+        int kind = g.kind;
+        float fhPx = (kind == LK_CANVAS) ? H : H * g.fhFrac * frameSize;
+        float pxu = 1.0f / fhPx;      // one pixel in layout units
+        float X = (posX - 0.5f * W) / fhPx;
+        float Y = (posY - 0.5f * H) / fhPx;
+        if (kind != LK_CANVAS) {
+            float ang = rotation * GLX_PI / 180.0f;
+            float cs = _cosf(ang), sn = _sinf(ang);
+            float rx = cs * X + sn * Y;
+            float ry = -sn * X + cs * Y;
+            X = rx; Y = ry;
         }
 
-        // optical soundtrack (variable area)
-        if (soundtrack != 0 && g.sndC1 > g.sndC0) {
-            float sc = 0.5f * (g.sndC0 + g.sndC1);
-            float halfW = 0.5f * (g.sndC1 - g.sndC0);
-            float band = glx_cov(_fabs(c - sc) - halfW, pxu);
-            float env = 0.35f + 0.65f * glx_noise1(a * 2.5f + 1.0f);
-            float wave = 0.5f * _sinf(a * 41.0f) + 0.3f * _sinf(a * 97.0f + 1.3f) + 0.2f * _sinf(a * 233.0f + 0.4f);
-            float open = halfW * glx_clamp(0.12f + 0.80f * env * _fabs(wave), 0.0f, 0.95f);
-            float clear = glx_cov(_fabs(c - sc) - open, pxu);
-            col = glx_mix3(col, glx_rgb(0.03f, 0.03f, 0.03f), band * filmCov);
-            col = glx_mix3(col, backlight, clear * band * filmCov * 0.92f);
-        }
+        float3 bgCol = glx_background(background, scrX, scrY);
+        float3 base = glx_baseColor(filmBase);
+        float3 backlight = glx_rgb(1.0f, 0.98f, 0.94f);
 
-        // edge print
-        if (edgeMarks != 0 && g.textC1 > g.textC0) {
-            float h = g.textC1 - g.textC0;
-            float fromTop = (kind == LK_VSTRIP) ? (g.textC1 - c) : (c - g.textC0);
-            float tc = glx_text(aL, fromTop, h, 0, frameNum, pxu);
-            col = glx_mix3(col, glx_textColor(filmBase), tc * filmCov * 0.9f);
-        }
+        col = bgCol;
+        float filmCov = 0.0f;          // where film material is (for damage, leaks, flicker)
+        float winCov = 0.0f;           // image window coverage
+        float u = 0.0f, v = 0.0f;      // window coordinates (centre origin)
+        float hu = 0.5f, hv = 0.5f;    // window half sizes
+        float sx = X, sy = Y;          // coordinates that dust and scratches follow
+        float sLo = -0.5f, sHi = 0.5f; // scratch range across sx
+        int frameNum = 12;
 
-        // image window
-        float wa = g.frameA * 0.5f, wc = g.frameC * 0.5f;
-        float dWin = glx_sdBox(c - g.imgC, aL, wc, wa, g.radius * cornerRound);
-        if (kind == LK_VSTRIP) { u = c - g.imgC; v = aL; hu = wc; hv = wa; }
-        else                   { u = aL; v = c - g.imgC; hu = wa; hv = wc; dWin = glx_sdBox(aL, c - g.imgC, wa, wc, g.radius * cornerRound); }
-        winCov = glx_cov(dWin, edgeW) * filmCov;
+        float edgeW = pxu * (1.0f + gateSoft * 6.0f);   // soft image edge
 
-        sx = c; sy = a; sLo = g.imgC - wc; sHi = g.imgC + wc;
-    } else if (kind == LK_INSTANT) {
-        float cw = 0.5715f, ch = 0.695f, off = -0.117f;
-        float shD = glx_sdBox(X - 0.012f, Y - 0.028f, cw, ch, 0.012f);
-        col = glx_scale3(col, 1.0f - 0.45f * (1.0f - glx_smooth(-0.02f, 0.07f, shD)));
-        float cardCov = glx_cov(glx_sdBox(X, Y, cw, ch, 0.012f), pxu);
-        hu = g.frameA * 0.5f; hv = 0.5f;
-        u = X; v = Y - off;
-        float dWin = glx_sdBox(u, v, hu, hv, 0.0f);
-        float3 card = glx_scale3(glx_rgb(0.945f, 0.935f, 0.905f), 1.0f - 0.035f * (Y / (2.0f * ch) + 0.5f));
-        card = glx_scale3(card, 1.0f - 0.14f * _expf(-_fmaxf(dWin, 0.0f) / 0.006f));
-        col = glx_mix3(col, card, cardCov);
-        winCov = glx_cov(dWin, pxu * 1.2f) * cardCov;
-        filmCov = winCov;
-        sx = u; sy = v; sLo = -hu; sHi = hu;
-    } else {  // LK_SLIDE
-        float mh = 1.085f;
-        float shD = glx_sdBox(X - 0.015f, Y - 0.03f, mh, mh, 0.09f);
-        col = glx_scale3(col, 1.0f - 0.45f * (1.0f - glx_smooth(-0.02f, 0.09f, shD)));
-        float mountCov = glx_cov(glx_sdBox(X, Y, mh, mh, 0.09f), pxu);
-        hu = g.frameA * 0.5f; hv = 0.5f;
-        u = X; v = Y;
-        float dWin = glx_sdBox(u, v, hu, hv, g.radius * cornerRound);
-        float3 mount = glx_rgb(0.91f, 0.90f, 0.87f);
-        float bevel = _expf(-_fmaxf(dWin, 0.0f) / 0.025f);
-        mount = glx_scale3(mount, 1.0f - 0.16f * bevel + 0.05f * _expf(-_fmaxf(dWin - 0.05f, 0.0f) / 0.01f) * (1.0f - bevel));
-        if (edgeMarks != 0) {
-            float th = 0.085f;
-            float t1 = glx_text(X, Y - (-0.80f - th * 0.5f), th, 1, 0, pxu);
-            float t2 = glx_text(X, Y - (0.80f - th * 0.5f), th, 2, frameNum, pxu);
-            mount = glx_mix3(mount, glx_rgb(0.30f, 0.29f, 0.27f), _fmaxf(t1, t2) * 0.9f);
-        }
-        col = glx_mix3(col, mount, mountCov);
-        winCov = glx_cov(dWin, edgeW) * mountCov;
-        filmCov = winCov;
-        sx = u; sy = v; sLo = -hu; sHi = hu;
-    }
-
-    // ---- Picture inside the window ------------------------------------------
-    if (winCov > 0.0f) {
-        float3 pic;
-        float fx = 0.0f, fy = 0.0f;
-        int exact = 0;
+        // ---- Layout -------------------------------------------------------------
         if (kind == LK_CANVAS) {
-            if (wx == 0.0f && wy == 0.0f) exact = 1;
-            else { fx = posX; fy = posY; }
-        } else {
-            // crop-to-fill the footage into the window
-            float winWpx = 2.0f * hu * fhPx, winHpx = 2.0f * hv * fhPx;
-            float s = _fmaxf(winWpx / W, winHpx / H);
-            fx = 0.5f * W + u * fhPx / s;
-            fy = 0.5f * H + v * fhPx / s;
-        }
-        if (exact != 0) {
-            pic = GLX_FETCH(p_X, p_Y);
-        } else {
-            // bilinear read (pixel centres at i + 0.5, fy from the top)
-            float bx = glx_clamp(fx - 0.5f, 0.0f, W - 1.0f);
-            float by = glx_clamp(fy - 0.5f, 0.0f, H - 1.0f);
-            float bx0 = glx_floor(bx), by0 = glx_floor(by);
-            int x0 = glx_clampi((int)bx0, 0, p_Width - 1), x1 = glx_clampi((int)bx0 + 1, 0, p_Width - 1);
-            int y0 = glx_clampi((int)by0, 0, p_Height - 1), y1 = glx_clampi((int)by0 + 1, 0, p_Height - 1);
-            if (GLX_Y_DOWN == 0) { y0 = p_Height - 1 - y0; y1 = p_Height - 1 - y1; }
-            pic = glx_bilerp(GLX_FETCH(x0, y0), GLX_FETCH(x1, y0), GLX_FETCH(x0, y1), GLX_FETCH(x1, y1), bx - bx0, by - by0);
+            hu = 0.5f * aspect; hv = 0.5f;
+            u = X; v = Y;
+            sx = X; sy = Y; sLo = -hu; sHi = hu;
+            filmCov = 1.0f;
+            winCov = 1.0f;
+            if (frameStyle == FS_FILED) {
+                float m = 0.02f + (1.5f - frameSize) * 0.06f;
+                float bx = hu - m, by = hv - m;
+                float d = glx_sdBox(X, Y, bx, by, 0.03f * cornerRound);
+                float qx = _fabs(X) - bx, qy = _fabs(Y) - by;
+                float along = (qx > qy) ? (Y * 9.0f + 17.0f + (X > 0.0f ? 40.0f : 0.0f))
+                                        : (X * 9.0f + 53.0f + (Y > 0.0f ? 80.0f : 0.0f));
+                float rough = roughness * 0.022f * (glx_fbm1(along) - 0.5f) * 2.0f
+                            + roughness * 0.006f * (glx_noise1(along * 7.0f) - 0.5f);
+                winCov = glx_cov(d + rough, pxu * (1.0f + gateSoft * 3.0f));
+                hu = bx; hv = by;
+            } else if (frameStyle == FS_PROJECTOR) {
+                float bx = (hu - 0.025f) * glx_clamp(frameSize, 0.5f, 1.05f);
+                float by = 0.475f * glx_clamp(frameSize, 0.5f, 1.05f);
+                float d = glx_sdBox(X, Y, bx, by, 0.10f * cornerRound);
+                winCov = glx_cov(d, 0.004f + gateSoft * 0.05f);
+                hu = bx; hv = by;
+            }
+        } else if (kind == LK_VSTRIP || kind == LK_HSTRIP) {
+            float a, c;
+            if (kind == LK_VSTRIP) { a = Y + filmRoll * g.pitch; c = X + g.viewC; }
+            else                   { a = X + filmRoll * g.pitch; c = Y + g.viewC; }
+            float k = glx_floor(a / g.pitch + 0.5f);
+            float aL = a - k * g.pitch;
+            int ki = (int)k;
+            frameNum = ((ki + 12) % 100 + 100) % 100;
+
+            filmCov = glx_cov(_fmaxf(-c, c - g.filmW), pxu);
+            float3 b = glx_scale3(base, 1.0f + 0.035f * (glx_noise1(a * 2.3f + 3.0f) - 0.5f));
+            col = glx_mix3(col, b, filmCov);
+
+            // perforations (backlit)
+            if (g.perfN > 0) {
+                float step = g.pitch / (float)g.perfN;
+                float ap = a - g.perfPhase;
+                float dn = ap - glx_floor(ap / step + 0.5f) * step;
+                float pc = glx_cov(glx_sdBox(c - g.perfC1, dn, g.perfC * 0.5f, g.perfA * 0.5f, g.perfR), pxu * 1.5f);
+                if (g.perfC2 > 0.0f)
+                    pc = _fmaxf(pc, glx_cov(glx_sdBox(c - g.perfC2, dn, g.perfC * 0.5f, g.perfA * 0.5f, g.perfR), pxu * 1.5f));
+                col = glx_mix3(col, backlight, pc * filmCov);
+            }
+
+            // optical soundtrack (variable area)
+            if (soundtrack != 0 && g.sndC1 > g.sndC0) {
+                float sc = 0.5f * (g.sndC0 + g.sndC1);
+                float halfW = 0.5f * (g.sndC1 - g.sndC0);
+                float band = glx_cov(_fabs(c - sc) - halfW, pxu);
+                float env = 0.35f + 0.65f * glx_noise1(a * 2.5f + 1.0f);
+                float wave = 0.5f * _sinf(a * 41.0f) + 0.3f * _sinf(a * 97.0f + 1.3f) + 0.2f * _sinf(a * 233.0f + 0.4f);
+                float open = halfW * glx_clamp(0.12f + 0.80f * env * _fabs(wave), 0.0f, 0.95f);
+                float clear = glx_cov(_fabs(c - sc) - open, pxu);
+                col = glx_mix3(col, glx_rgb(0.03f, 0.03f, 0.03f), band * filmCov);
+                col = glx_mix3(col, backlight, clear * band * filmCov * 0.92f);
+            }
+
+            // edge print
+            if (edgeMarks != 0 && g.textC1 > g.textC0) {
+                float h = g.textC1 - g.textC0;
+                float fromTop = (kind == LK_VSTRIP) ? (g.textC1 - c) : (c - g.textC0);
+                float tc = glx_text(aL, fromTop, h, 0, frameNum, pxu);
+                col = glx_mix3(col, glx_textColor(filmBase), tc * filmCov * 0.9f);
+            }
+
+            // image window
+            float wa = g.frameA * 0.5f, wc = g.frameC * 0.5f;
+            float dWin = glx_sdBox(c - g.imgC, aL, wc, wa, g.radius * cornerRound);
+            if (kind == LK_VSTRIP) { u = c - g.imgC; v = aL; hu = wc; hv = wa; }
+            else                   { u = aL; v = c - g.imgC; hu = wa; hv = wc; dWin = glx_sdBox(aL, c - g.imgC, wa, wc, g.radius * cornerRound); }
+            winCov = glx_cov(dWin, edgeW) * filmCov;
+
+            sx = c; sy = a; sLo = g.imgC - wc; sHi = g.imgC + wc;
+        } else if (kind == LK_INSTANT) {
+            float cw = 0.5715f, ch = 0.695f, off = -0.117f;
+            float shD = glx_sdBox(X - 0.012f, Y - 0.028f, cw, ch, 0.012f);
+            col = glx_scale3(col, 1.0f - 0.45f * (1.0f - glx_smooth(-0.02f, 0.07f, shD)));
+            float cardCov = glx_cov(glx_sdBox(X, Y, cw, ch, 0.012f), pxu);
+            hu = g.frameA * 0.5f; hv = 0.5f;
+            u = X; v = Y - off;
+            float dWin = glx_sdBox(u, v, hu, hv, 0.0f);
+            float3 card = glx_scale3(glx_rgb(0.945f, 0.935f, 0.905f), 1.0f - 0.035f * (Y / (2.0f * ch) + 0.5f));
+            card = glx_scale3(card, 1.0f - 0.14f * _expf(-_fmaxf(dWin, 0.0f) / 0.006f));
+            col = glx_mix3(col, card, cardCov);
+            winCov = glx_cov(dWin, pxu * 1.2f) * cardCov;
+            filmCov = winCov;
+            sx = u; sy = v; sLo = -hu; sHi = hu;
+        } else {  // LK_SLIDE
+            float mh = 1.085f;
+            float shD = glx_sdBox(X - 0.015f, Y - 0.03f, mh, mh, 0.09f);
+            col = glx_scale3(col, 1.0f - 0.45f * (1.0f - glx_smooth(-0.02f, 0.09f, shD)));
+            float mountCov = glx_cov(glx_sdBox(X, Y, mh, mh, 0.09f), pxu);
+            hu = g.frameA * 0.5f; hv = 0.5f;
+            u = X; v = Y;
+            float dWin = glx_sdBox(u, v, hu, hv, g.radius * cornerRound);
+            float3 mount = glx_rgb(0.91f, 0.90f, 0.87f);
+            float bevel = _expf(-_fmaxf(dWin, 0.0f) / 0.025f);
+            mount = glx_scale3(mount, 1.0f - 0.16f * bevel + 0.05f * _expf(-_fmaxf(dWin - 0.05f, 0.0f) / 0.01f) * (1.0f - bevel));
+            if (edgeMarks != 0) {
+                float th = 0.085f;
+                float t1 = glx_text(X, Y - (-0.80f - th * 0.5f), th, 1, 0, pxu);
+                float t2 = glx_text(X, Y - (0.80f - th * 0.5f), th, 2, frameNum, pxu);
+                mount = glx_mix3(mount, glx_rgb(0.30f, 0.29f, 0.27f), _fmaxf(t1, t2) * 0.9f);
+            }
+            col = glx_mix3(col, mount, mountCov);
+            winCov = glx_cov(dWin, edgeW) * mountCov;
+            filmCov = winCov;
+            sx = u; sy = v; sLo = -hu; sHi = hu;
         }
 
-        // countdown leader
-        if (leaderOn != 0) {
-            float fps = (float)leaderFps;
-            int number = 8 - (int)(tSmooth / fps);
-            if (number >= 2 && number <= 8) {
-                float sweep = glx_fract(tSmooth / fps);
-                pic = glx_leader(u, v, hv, number, sweep, pxu);
+        // ---- Picture inside the window ------------------------------------------
+        if (winCov > 0.0f) {
+            float3 pic;
+            float fx = 0.0f, fy = 0.0f;
+            int exact = 0;
+            if (kind == LK_CANVAS) {
+                if (wx == 0.0f && wy == 0.0f) exact = 1;
+                else { fx = posX; fy = posY; }
+            } else {
+                // crop-to-fill the footage into the window
+                float winWpx = 2.0f * hu * fhPx, winHpx = 2.0f * hv * fhPx;
+                float s = _fmaxf(winWpx / W, winHpx / H);
+                fx = 0.5f * W + u * fhPx / s;
+                fy = 0.5f * H + v * fhPx / s;
+            }
+            if (exact != 0) {
+                pic = GLX_FETCH(p_X, p_Y);
+            } else {
+                // bilinear read (pixel centres at i + 0.5, fy from the top)
+                float bx = glx_clamp(fx - 0.5f, 0.0f, W - 1.0f);
+                float by = glx_clamp(fy - 0.5f, 0.0f, H - 1.0f);
+                float bx0 = glx_floor(bx), by0 = glx_floor(by);
+                int x0 = glx_clampi((int)bx0, 0, p_Width - 1), x1 = glx_clampi((int)bx0 + 1, 0, p_Width - 1);
+                int y0 = glx_clampi((int)by0, 0, p_Height - 1), y1 = glx_clampi((int)by0 + 1, 0, p_Height - 1);
+                if (GLX_Y_DOWN == 0) { y0 = p_Height - 1 - y0; y1 = p_Height - 1 - y1; }
+                pic = glx_bilerp(GLX_FETCH(x0, y0), GLX_FETCH(x1, y0), GLX_FETCH(x0, y1), GLX_FETCH(x1, y1), bx - bx0, by - by0);
+            }
+
+            // countdown leader
+            if (leaderOn != 0) {
+                float fps = (float)leaderFps;
+                int number = 8 - (int)(tSmooth / fps);
+                if (number >= 2 && number <= 8) {
+                    float sweep = glx_fract(tSmooth / fps);
+                    pic = glx_leader(u, v, hv, number, sweep, pxu);
+                }
+            }
+
+            // projector hot spot
+            if (frameStyle == FS_PROJECTOR) {
+                float r2 = 0.5f * ((u / hu) * (u / hu) + (v / hv) * (v / hv));
+                pic = glx_scale3(pic, 1.05f - 0.16f * r2);
+            }
+
+            // vignette
+            if (vignetteAmt > 0.0f) {
+                float r2 = 0.5f * ((u / hu) * (u / hu) + (v / hv) * (v / hv));
+                float vg = 1.0f - vignetteAmt * 0.65f * _powf(glx_sat(r2), 1.4f);
+                pic = glx_scale3(pic, vg);
+            }
+
+            // date stamp
+            if (dateOn != 0)
+                pic = glx_dateStamp(pic, u, v, hu, hv, dateFmt, dateYear, dateMonth, dateDay, stampSize, pxu);
+
+            col = glx_mix3(col, pic, winCov);
+        }
+
+        // ---- Film damage, light leak and flicker --------------------------------
+        if (filmCov > 0.0f) {
+            if (dustAmt > 0.0f) {
+                float3 dd = glx_dust(sx, sy, seed, dustAmt, pxu);
+                col = glx_mix3(col, glx_rgb(0.025f, 0.022f, 0.02f), dd.x * filmCov);
+                col = glx_mix3(col, glx_rgb(0.95f, 0.95f, 0.92f), dd.y * filmCov * 0.85f);
+            }
+            if (scratchAmt > 0.0f) {
+                float3 sc = glx_scratches(sx, sy, sLo, sHi, seed, slow, scratchAmt, pxu);
+                col = glx_screen3(col, glx_scale3(glx_rgb(0.95f, 0.97f, 1.0f), sc.x * 0.8f * filmCov));
+                col = glx_mix3(col, glx_rgb(0.05f, 0.05f, 0.05f), sc.y * 0.6f * filmCov);
+            }
+            if (leakAmt > 0.0f) {
+                float nu = u / _fmaxf(hu, 1e-4f), nv = v / _fmaxf(hv, 1e-4f);
+                if (kind == LK_VSTRIP) { nu = X / _fmaxf(hu, 1e-4f); nv = Y / _fmaxf(hv, 1e-4f); }
+                if (kind == LK_HSTRIP) { nu = X / _fmaxf(hu, 1e-4f); nv = Y / _fmaxf(hv, 1e-4f); }
+                float3 lk = glx_leak(nu, nv, leakColor, leakPos, leakSize, tSmooth);
+                col = glx_screen3(col, glx_scale3(lk, leakAmt * filmCov));
+            }
+            if (flickerAmt > 0.0f) {
+                float gain = 1.0f + flickerAmt * 0.10f * (glx_hash1(seed * 1.37f + 0.5f) * 2.0f - 1.0f);
+                col = glx_mix3(col, glx_scale3(col, gain), filmCov);
             }
         }
 
-        // projector hot spot
-        if (frameStyle == FS_PROJECTOR) {
-            float r2 = 0.5f * ((u / hu) * (u / hu) + (v / hv) * (v / hv));
-            pic = glx_scale3(pic, 1.05f - 0.16f * r2);
-        }
-
-        // vignette
-        if (vignetteAmt > 0.0f) {
-            float r2 = 0.5f * ((u / hu) * (u / hu) + (v / hv) * (v / hv));
-            float vg = 1.0f - vignetteAmt * 0.65f * _powf(glx_sat(r2), 1.4f);
-            pic = glx_scale3(pic, vg);
-        }
-
-        // date stamp
-        if (dateOn != 0)
-            pic = glx_dateStamp(pic, u, v, hu, hv, dateFmt, dateYear, dateMonth, dateDay, stampSize, pxu);
-
-        col = glx_mix3(col, pic, winCov);
-    }
-
-    // ---- Film damage, light leak and flicker --------------------------------
-    if (filmCov > 0.0f) {
-        if (dustAmt > 0.0f) {
-            float3 dd = glx_dust(sx, sy, seed, dustAmt, pxu);
-            col = glx_mix3(col, glx_rgb(0.025f, 0.022f, 0.02f), dd.x * filmCov);
-            col = glx_mix3(col, glx_rgb(0.95f, 0.95f, 0.92f), dd.y * filmCov * 0.85f);
-        }
-        if (scratchAmt > 0.0f) {
-            float3 sc = glx_scratches(sx, sy, sLo, sHi, seed, slow, scratchAmt, pxu);
-            col = glx_screen3(col, glx_scale3(glx_rgb(0.95f, 0.97f, 1.0f), sc.x * 0.8f * filmCov));
-            col = glx_mix3(col, glx_rgb(0.05f, 0.05f, 0.05f), sc.y * 0.6f * filmCov);
-        }
-        if (leakAmt > 0.0f) {
-            float nu = u / _fmaxf(hu, 1e-4f), nv = v / _fmaxf(hv, 1e-4f);
-            if (kind == LK_VSTRIP) { nu = X / _fmaxf(hu, 1e-4f); nv = Y / _fmaxf(hv, 1e-4f); }
-            if (kind == LK_HSTRIP) { nu = X / _fmaxf(hu, 1e-4f); nv = Y / _fmaxf(hv, 1e-4f); }
-            float3 lk = glx_leak(nu, nv, leakColor, leakPos, leakSize, tSmooth);
-            col = glx_screen3(col, glx_scale3(lk, leakAmt * filmCov));
-        }
-        if (flickerAmt > 0.0f) {
-            float gain = 1.0f + flickerAmt * 0.10f * (glx_hash1(seed * 1.37f + 0.5f) * 2.0f - 1.0f);
-            col = glx_mix3(col, glx_scale3(col, gain), filmCov);
-        }
     }
 
     return col;

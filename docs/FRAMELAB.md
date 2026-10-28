@@ -147,8 +147,15 @@ So it means Resolve could not read the file, not that the return value is wrong.
 4. A variable named `half` (reserved in Metal and OpenCL) is renamed, `float2` is no longer
    used, and footage is read only inside the main function.
 
+5. The main function now has a single `return col;` at the end, like the check files.
+
 Output is bit-identical to before (200 random settings checked for each version). The tests now
-enforce all of these rules (`Resolve text rules` in `run_tests.py`).
+enforce the text rules (`Resolve text rules` in `run_tests.py`).
+
+Result in Resolve so far: check files A, B and C load; FrameLab does not. To find the failing part,
+`tests/framelab/make_split_tests.py` builds three pass-through DCTLs from FrameLab itself:
+`FrameLab_Test_1_Controls` (only the controls), `FrameLab_Test_2_FirstHalf` (the first half of the
+code) and `FrameLab_Test_3_AllCode` (all code except the main function).
 
 If Resolve still refuses it, load the three check files in `tests/framelab/`:
 `Gradelux_Check_A_Basic`, `Gradelux_Check_B_Struct` and `Gradelux_Check_C_Features`. Each one
